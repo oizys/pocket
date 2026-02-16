@@ -1,23 +1,25 @@
 using Terminal.Gui;
+using Pockets.Core;
+using Pockets.Core.Data;
+using Pockets.App.Views;
+
+// Resolve data path by walking up to the directory containing Pockets.sln
+var dir = new DirectoryInfo(AppContext.BaseDirectory);
+while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Pockets.sln")))
+    dir = dir.Parent;
+
+if (dir is null)
+{
+    Console.Error.WriteLine("Could not find Pockets.sln. Run from the project directory.");
+    return;
+}
+
+var dataPath = Path.Combine(dir.FullName, "data");
+var itemTypes = ItemTypeLoader.LoadFromDirectory(dataPath);
+var gameState = GameInitializer.CreateRandomStage1Game(itemTypes);
 
 Application.Init();
-
 var top = Application.Top;
-var window = new Window("Pockets")
-{
-    X = 0,
-    Y = 0,
-    Width = Dim.Fill(),
-    Height = Dim.Fill()
-};
-
-var label = new Label("Welcome to Pockets! Press Ctrl-Q to quit.")
-{
-    X = Pos.Center(),
-    Y = Pos.Center()
-};
-
-window.Add(label);
-top.Add(window);
+top.Add(new GameView(gameState));
 Application.Run();
 Application.Shutdown();
