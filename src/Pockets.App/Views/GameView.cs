@@ -10,6 +10,7 @@ public class GameView : Window
 {
     private GameState _state;
     private readonly GridPanel _gridPanel;
+    private readonly Random _rng = new();
 
     public GameView(GameState initialState) : base("Pockets")
     {
@@ -40,6 +41,23 @@ public class GameView : Window
         if (direction is not null)
         {
             _state = _state.MoveCursor(direction.Value);
+            _gridPanel.UpdateState(_state);
+            return true;
+        }
+
+        var newState = keyEvent.Key switch
+        {
+            (Key)'1' => _state.ToolGrab(),
+            (Key)'2' => _state.ToolDrop(),
+            (Key)'3' => _state.ToolQuickSplit(),
+            (Key)'4' => _state.ToolSort(),
+            (Key)'5' => _state.ToolAcquireRandom(_rng),
+            _ => null
+        };
+
+        if (newState is not null)
+        {
+            _state = newState;
             _gridPanel.UpdateState(_state);
             return true;
         }

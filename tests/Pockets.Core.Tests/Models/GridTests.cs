@@ -217,4 +217,21 @@ public class GridTests
         Assert.Equal(Gem, secondCell.Stack.ItemType);
         Assert.Equal(5, secondCell.Stack.Count);
     }
+
+    [Fact]
+    public void AcquireItems_WithSkipIndices_SkipsSpecifiedCells()
+    {
+        var grid = Grid.Create(3, 1);
+        var skipIndices = ImmutableHashSet.Create(0);
+        var stacks = new[] { new ItemStack(Ore, 10) };
+
+        var (updatedGrid, unplaced) = grid.AcquireItems(stacks, skipIndices);
+
+        Assert.Empty(unplaced);
+        Assert.True(updatedGrid.GetCell(0).IsEmpty);
+        var secondCell = updatedGrid.GetCell(1);
+        Assert.NotNull(secondCell.Stack);
+        Assert.Equal(Ore, secondCell.Stack.ItemType);
+        Assert.Equal(10, secondCell.Stack.Count);
+    }
 }

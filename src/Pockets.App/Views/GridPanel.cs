@@ -11,6 +11,8 @@ public class GridPanel : FrameView
     private readonly Label _breadcrumbs;
     private readonly GridView _gridView;
     private readonly ItemDescriptionView _descriptionView;
+    private readonly Label _toolbar;
+    private readonly Label _statusBar;
 
     public GridPanel(GameState state)
     {
@@ -42,12 +44,31 @@ public class GridPanel : FrameView
         };
         _descriptionView.UpdateState(state);
 
-        Add(_breadcrumbs, _gridView, _descriptionView);
+        _toolbar = new Label("[1:Grab] [2:Drop] [3:Split] [4:Sort] [5:Random]")
+        {
+            X = 0,
+            Y = Pos.AnchorEnd(2),
+            Width = Dim.Fill(),
+            Height = 1
+        };
+
+        _statusBar = new Label("")
+        {
+            X = 0,
+            Y = Pos.AnchorEnd(1),
+            Width = Dim.Fill(),
+            Height = 1
+        };
+
+        Add(_breadcrumbs, _gridView, _descriptionView, _toolbar, _statusBar);
     }
 
     public void UpdateState(GameState state)
     {
         _gridView.UpdateState(state);
         _descriptionView.UpdateState(state);
+        _statusBar.Text = state.HasItemsInHand
+            ? $"Hand: {state.ActiveHand.Count} item(s)"
+            : "";
     }
 }

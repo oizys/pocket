@@ -79,3 +79,17 @@ dotnet run --project src/Pockets.App  # run the TUI app
 - 15 randomly generated item type definitions in `/data`
 - Game starts with 4-10 random stacks from the data list
 - Ctrl-Q quits
+
+### Tools (hotkeys 1-5)
+
+| Key | Tool | Behavior |
+|-----|------|----------|
+| 1 | Grab | Toggle: grab cursor cell (marks position in Hand) or cancel grab |
+| 2 | Drop | Place hand items into cursor cell (merge if same type), remainder acquires from cell 0 |
+| 3 | Quick Split | Split cursor cell in half; left stays, right placed in grid and marked as grabbed |
+| 4 | Sort | Sort & merge entire bag by (Category, Name) |
+| 5 | Acquire Random | Debug: add 1 random item to grid |
+
+### Hand Model
+
+`GameState.Hand` is `ImmutableHashSet<Position>?` — null means empty hand. Items stay in the grid; Hand just marks which positions are "grabbed." Grabbed cells render cyan on dark gray. Drop clears hand positions, places items at cursor, overflows via AcquireItems. QuickSplit auto-grabs the right half so it can be immediately dropped elsewhere.

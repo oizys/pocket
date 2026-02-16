@@ -40,9 +40,11 @@ public record Grid(int Columns, int Rows, ImmutableArray<Cell> Cells)
     /// Places item stacks into the grid using the acquisition algorithm.
     /// Each stack scans cells 0..N-1, skipping filtered/mismatched cells,
     /// merging into matching stacks, and filling empty cells. Each stack restarts from cell 0.
+    /// Optional skipIndices excludes specific cell indices from placement.
     /// Returns the updated grid and any stacks that couldn't be placed.
     /// </summary>
-    public (Grid UpdatedGrid, IReadOnlyList<ItemStack> Unplaced) AcquireItems(IEnumerable<ItemStack> stacks)
+    public (Grid UpdatedGrid, IReadOnlyList<ItemStack> Unplaced) AcquireItems(
+        IEnumerable<ItemStack> stacks, ImmutableHashSet<int>? skipIndices = null)
     {
         var builder = Cells.ToBuilder();
         var unplaced = new List<ItemStack>();
@@ -53,6 +55,9 @@ public record Grid(int Columns, int Rows, ImmutableArray<Cell> Cells)
 
             for (int i = 0; i < builder.Count && remaining is not null; i++)
             {
+                if (skipIndices?.Contains(i) == true)
+                    continue;
+
                 var cell = builder[i];
 
                 if (!cell.Accepts(remaining.ItemType))

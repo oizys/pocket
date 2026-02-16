@@ -28,23 +28,29 @@ public class GridView : View
     {
         var grid = _state.RootBag.Grid;
         var cursorPos = _state.Cursor.Position;
+        var hand = _state.ActiveHand;
 
         for (int row = 0; row < grid.Rows; row++)
         {
             for (int col = 0; col < grid.Columns; col++)
             {
-                var cell = grid.GetCell(new Position(row, col));
+                var pos = new Position(row, col);
+                var cell = grid.GetCell(pos);
                 var isCursor = row == cursorPos.Row && col == cursorPos.Col;
-                DrawCell(col * CellRenderer.CellWidth, row * CellRenderer.CellHeight, cell, isCursor);
+                var isGrabbed = hand.Contains(pos);
+                DrawCell(col * CellRenderer.CellWidth, row * CellRenderer.CellHeight, cell, isCursor, isGrabbed);
             }
         }
     }
 
-    private void DrawCell(int x, int y, Cell cell, bool isCursor)
+    private void DrawCell(int x, int y, Cell cell, bool isCursor, bool isGrabbed)
     {
         var driver = Application.Driver;
         var normal = ColorScheme.Normal;
         var highlight = Application.Driver.MakeAttribute(Color.Black, Color.White);
+        var grabbed = Application.Driver.MakeAttribute(Color.Cyan, Color.DarkGray);
+
+        var contentAttr = isCursor ? highlight : isGrabbed ? grabbed : normal;
 
         // Top border
         driver.SetAttribute(normal);
@@ -57,7 +63,7 @@ public class GridView : View
         // Content row
         Move(x, y + 1);
         driver.AddRune('\u2502');
-        driver.SetAttribute(isCursor ? highlight : normal);
+        driver.SetAttribute(contentAttr);
         var content = CellRenderer.GetCellContent(cell);
         foreach (var ch in content)
             driver.AddRune(ch);
