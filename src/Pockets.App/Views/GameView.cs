@@ -4,11 +4,11 @@ using Pockets.Core.Models;
 namespace Pockets.App.Views;
 
 /// <summary>
-/// Main game window. Holds GameState, handles arrow key input, and manages child panels.
+/// Main game window. Holds GameSession (state + undo + log), handles input, manages child panels.
 /// </summary>
 public class GameView : Window
 {
-    private GameState _state;
+    private GameSession _session;
     private readonly GridPanel _gridPanel;
     private readonly Random _rng = new();
 
@@ -19,9 +19,9 @@ public class GameView : Window
         Width = Dim.Fill();
         Height = Dim.Fill();
 
-        _state = initialState;
+        _session = GameSession.New(initialState);
 
-        _gridPanel = new GridPanel(_state);
+        _gridPanel = new GridPanel(_session.Current);
         var rightPanel = new RightPanel();
 
         Add(_gridPanel, rightPanel);
@@ -40,25 +40,37 @@ public class GameView : Window
 
         if (direction is not null)
         {
-            _state = _state.MoveCursor(direction.Value);
-            _gridPanel.UpdateState(_state);
+            _session = _session.MoveCursor(direction.Value);
+            _gridPanel.UpdateState(_session.Current);
             return true;
         }
 
-        var result = keyEvent.Key switch
+        // Ctrl-Z = Undo
+        if (keyEvent.Key == (Key.Z | Key.CtrlMask))
         {
-            (Key)'1' => _state.ToolGrab(),
-            (Key)'2' => _state.ToolDrop(),
-            (Key)'3' => _state.ToolQuickSplit(),
-            (Key)'4' => _state.ToolSort(),
-            (Key)'5' => _state.ToolAcquireRandom(_rng),
+            var undone = _session.Undo();
+            if (undone is not null)
+            {
+                _session = undone;
+                _gridPanel.UpdateState(_session.Current);
+            }
+            return true;
+        }
+
+        GameSession? newSession = keyEvent.Key switch
+        {
+            (Key)'1' => _session.ExecuteGrab(),
+            (Key)'2' => _session.ExecuteDrop(),
+            (Key)'3' => _session.ExecuteQuickSplit(),
+            (Key)'4' => _session.ExecuteSort(),
+            (Key)'5' => _session.ExecuteAcquireRandom(_rng),
             _ => null
         };
 
-        if (result is not null)
+        if (newSession is not null)
         {
-            _state = result.State;
-            _gridPanel.UpdateState(_state);
+            _session = newSession;
+            _gridPanel.UpdateState(_session.Current);
             return true;
         }
 
