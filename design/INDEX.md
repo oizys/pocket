@@ -9,3 +9,4 @@
 | 5 | Cell Frames (Logic/Contents Separation) | Mid | Proposed | [cell-frames.md](cell-frames.md) |
 | 6 | Portals (Linked Cell-to-Cell Navigation) | Mid | Proposed | [portals.md](portals.md) |
 | 7 | Crafting (Recipes, Facilities, Timed Production) | Mid | Proposed | [crafting.md](crafting.md) |
+| 8 | Tick System (Hierarchical Fixed-Point Time) | Early-Mid | Proposed | [tick-system.md](tick-system.md) |
