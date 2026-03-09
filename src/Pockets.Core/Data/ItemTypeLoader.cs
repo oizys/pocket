@@ -10,9 +10,12 @@ public static class ItemTypeLoader
 {
     /// <summary>
     /// Parses a single markdown string into an ItemType.
+    /// Optional config supplies the default max stack size when not specified in the file.
     /// </summary>
-    public static ItemType ParseMarkdown(string filename, string content)
+    public static ItemType ParseMarkdown(string filename, string content, GameConfig? config = null)
     {
+        var defaultMax = config?.DefaultMaxStackSize ?? 20;
+
         var lines = content.Split('\n')
             .Select(l => l.Trim())
             .ToList();
@@ -30,7 +33,7 @@ public static class ItemTypeLoader
         var stackableStr = ExtractField(lines, "Stackable", filename);
         var isStackable = stackableStr.Equals("Yes", StringComparison.OrdinalIgnoreCase);
 
-        var maxStackSize = 20;
+        var maxStackSize = defaultMax;
         var maxStackField = TryExtractField(lines, "Max Stack Size");
         if (maxStackField is not null && int.TryParse(maxStackField, out var parsed))
             maxStackSize = parsed;
@@ -48,12 +51,13 @@ public static class ItemTypeLoader
 
     /// <summary>
     /// Loads all .md files from a directory and parses them into ItemTypes.
+    /// Optional config supplies the default max stack size when not specified in files.
     /// </summary>
-    public static ImmutableArray<ItemType> LoadFromDirectory(string directoryPath)
+    public static ImmutableArray<ItemType> LoadFromDirectory(string directoryPath, GameConfig? config = null)
     {
         return Directory.GetFiles(directoryPath, "*.md")
             .OrderBy(f => f)
-            .Select(f => ParseMarkdown(Path.GetFileName(f), File.ReadAllText(f)))
+            .Select(f => ParseMarkdown(Path.GetFileName(f), File.ReadAllText(f), config))
             .ToImmutableArray();
     }
 
