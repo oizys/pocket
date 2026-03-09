@@ -105,11 +105,16 @@ FacilityState (on crafting bag)
 
 ### Interaction with Undo
 
-Ticking mutates state. Two approaches:
-1. **Tick is undoable**: each tick pushes to undo stack. Impractical at high tick rates.
-2. **Tick is not undoable**: only player actions push to undo stack. Ticks are forward-only. Undo restores to last player action, then re-ticks to current time. This requires tracking the tick count at each undo snapshot.
+Ticking mutates state. The current undo system snapshots entire GameState. As the game grows, undo needs to become **localized** — scoped to the subtree affected by a player action, while the rest of the world continues ticking forward.
 
-Recommendation: ticks are not individually undoable. Undo restores to the state at the last player action. If real-time ticks have occurred since, they are replayed (or the snapshot includes the full post-tick state, making replay unnecessary since we snapshot after ticks settle).
+**Progression of undo models:**
+
+1. **Current (Stage 2):** Full state snapshot. Simple. Works because there are no ticks yet.
+2. **Near-term:** Snapshot post-tick state at each player action. Undo restores the snapshot. Ticks that occurred between actions are baked into the snapshot — undoing also undoes those ticks, which is acceptable for slow tick rates.
+3. **Mature:** Localized undo. The undo system records which subtree a player action affected. On undo, only that subtree is rewound to its pre-action state. The rest of the tree either continues forward or is replayed from the snapshot with ticks applied. Delta-based tick propagation makes this natural — you replay the subtree from a snapshot with different deltas (the original action removed, subsequent ticks reapplied).
+4. **Advanced:** Rewind-and-replay. Undo rewinds the affected subtree, removes the player action, then fast-forwards back to the current tick count. This requires storing the action + tick deltas as a log rather than just state snapshots. Most complex, but enables undoing an action from N ticks ago while preserving all subsequent time progression.
+
+Delta-based time feeds are key to making models 3 and 4 work — since each bag receives ticks as a delta from its parent, localizing the replay to a subtree is just re-ticking that subtree from the snapshot with the corrected inputs. No global clock to rewind.
 
 ## Methodology Fit
 
