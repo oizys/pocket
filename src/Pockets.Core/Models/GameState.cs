@@ -347,9 +347,11 @@ public record GameState(
             .GroupBy(s => s.ItemType)
             .SelectMany(g =>
             {
-                var total = g.Sum(s => s.Count);
+                // Preserve items with ContainedBag as-is (unique bag items)
+                var bagItems = g.Where(s => s.ContainedBag is not null).ToList();
+                var total = g.Where(s => s.ContainedBag is null).Sum(s => s.Count);
                 var max = g.Key.EffectiveMaxStackSize;
-                var stacks = new List<ItemStack>();
+                var stacks = new List<ItemStack>(bagItems);
                 while (total > 0)
                 {
                     var count = Math.Min(total, max);
@@ -361,8 +363,6 @@ public record GameState(
             .OrderBy(s => s.ItemType.Category)
             .ThenBy(s => s.ItemType.Name)
             .ToList();
-
-        // Bags travel with ItemStacks via ContainedBag, so they're preserved through sort
         var emptyGrid = Grid.Create(grid.Columns, grid.Rows);
         var (updatedGrid, _) = emptyGrid.AcquireItems(sorted);
 

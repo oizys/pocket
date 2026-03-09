@@ -241,6 +241,60 @@ public class BagNavigationTests
         Assert.Equal(new Position(0, 0), moved.Cursor.Position);
     }
 
+    // ==================== Sort preserves bag contents ====================
+
+    [Fact]
+    public void Sort_PreservesContainedBag()
+    {
+        // Put some unsorted items alongside the bag so sort actually moves things
+        var innerItems = new[] { new ItemStack(Rck, 3) };
+        var rootItems = new[] { new ItemStack(Swd, 1), new ItemStack(Rck, 2) };
+        var state = CreateWithInnerBag(innerContents: innerItems, rootContents: rootItems);
+
+        var sorted = state.ToolSort();
+        Assert.True(sorted.Success);
+
+        // Find the bag item in the sorted grid
+        var bagCell = sorted.State.RootBag.Grid.Cells
+            .FirstOrDefault(c => c.Stack?.ItemType == SmallBag);
+        Assert.NotNull(bagCell);
+        Assert.NotNull(bagCell!.Stack!.ContainedBag);
+        Assert.Equal(3, bagCell.Stack.ContainedBag!.Grid.Columns);
+
+        // Contents should still be there
+        Assert.Equal(Rck, bagCell.Stack.ContainedBag.Grid.GetCell(0).Stack!.ItemType);
+    }
+
+    [Fact]
+    public void Sort_ThenEnterBag_Works()
+    {
+        var innerItems = new[] { new ItemStack(Rck, 3) };
+        var rootItems = new[] { new ItemStack(Swd, 1) };
+        var state = CreateWithInnerBag(innerContents: innerItems, rootContents: rootItems);
+
+        // Sort moves things around
+        var sorted = state.ToolSort().State;
+
+        // Find where the bag ended up and move cursor there
+        var grid = sorted.RootBag.Grid;
+        Position? bagPos = null;
+        for (int r = 0; r < grid.Rows; r++)
+            for (int c = 0; c < grid.Columns; c++)
+            {
+                var pos = new Position(r, c);
+                if (grid.GetCell(pos).Stack?.ItemType == SmallBag)
+                    bagPos = pos;
+            }
+        Assert.NotNull(bagPos);
+
+        // Move cursor to bag position
+        sorted = sorted with { Cursor = new Cursor(bagPos!.Value) };
+        var entered = sorted.EnterBag();
+        Assert.True(entered.Success);
+        Assert.True(entered.State.IsNested);
+        Assert.Equal(Rck, entered.State.ActiveBag.Grid.GetCell(0).Stack!.ItemType);
+    }
+
     // ==================== Grab/Drop bag items preserves contents ====================
 
     [Fact]
