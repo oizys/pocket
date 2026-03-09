@@ -7,3 +7,4 @@
 | 3 | Platform-Adaptive Bags | Early | Proposed | [platform-adapters.md](platform-adapters.md) |
 | 4 | Wilderness Bags (Harvestable Worlds) | Early-Mid | Proposed | [wilderness-bags.md](wilderness-bags.md) |
 | 5 | Cell Frames (Logic/Contents Separation) | Mid | Proposed | [cell-frames.md](cell-frames.md) |
+| 6 | Portals (Linked Cell-to-Cell Navigation) | Mid | Proposed | [portals.md](portals.md) |
