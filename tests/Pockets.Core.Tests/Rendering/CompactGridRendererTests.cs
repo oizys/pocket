@@ -42,17 +42,6 @@ public class CompactGridRendererTests
     }
 
     [Fact]
-    public void Render_HandCellsMarked()
-    {
-        var state = GameState.CreateStage1(Types, new[] { new ItemStack(Ore, 5) });
-        state = state.ToolGrab();
-        state = state.MoveCursor(Direction.Right); // move cursor off hand cell
-        var output = _renderer.Render(state);
-
-        Assert.Contains("#", output);
-    }
-
-    [Fact]
     public void Render_AllRowsSameLength()
     {
         var state = GameState.CreateStage1(Types, new[] { new ItemStack(Ore, 10), new ItemStack(Sword, 1) });

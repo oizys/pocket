@@ -130,8 +130,8 @@ public static class GridDiagram
     /// <summary>
     /// Asserts that a Grid matches the expected diagram. Throws if any cell differs.
     /// </summary>
-    public static void AssertGridMatches(Grid actual, string expected,
-        Dictionary<string, ItemType>? types = null)
+    public static void AssertGridMatches(Grid actual,
+        Dictionary<string, ItemType>? types, string expected)
     {
         var parsed = Parse(expected, types,
             gridColumns: actual.Columns, gridRows: actual.Rows);

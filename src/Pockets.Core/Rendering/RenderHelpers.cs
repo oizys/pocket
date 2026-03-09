@@ -51,11 +51,11 @@ public static class RenderHelpers
     }
 
     /// <summary>
-    /// Returns a short cell content string with optional cursor/hand markers prepended.
+    /// Returns a short cell content string with optional cursor marker prepended.
     /// </summary>
-    public static string FormatCell(ItemStack? stack, bool isCursor, bool isHand)
+    public static string FormatCell(ItemStack? stack, bool isCursor)
     {
-        var marker = isCursor ? ">" : isHand ? "#" : "";
+        var marker = isCursor ? ">" : "";
         var content = FormatStack(stack);
         return $"{marker}{content}";
     }
@@ -85,14 +85,10 @@ public static class RenderHelpers
     {
         if (!state.HasItemsInHand) return "Hand: empty";
 
-        var items = state.Hand!
-            .Select(pos => (pos, stack: state.RootBag.Grid.GetCell(pos).Stack))
-            .Where(x => x.stack is not null)
-            .Select(x => $"{FormatStack(x.stack)} @({x.pos.Row},{x.pos.Col})")
+        var items = state.HandItems
+            .Select(stack => FormatStack(stack))
             .ToList();
 
-        return items.Count > 0
-            ? $"Hand: {string.Join(", ", items)}"
-            : "Hand: (marked but empty)";
+        return $"Hand: {string.Join(", ", items)}";
     }
 }

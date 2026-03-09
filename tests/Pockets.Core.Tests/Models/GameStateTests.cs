@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Pockets.Core.Models;
+using Pockets.Core.Rendering;
 
 namespace Pockets.Core.Tests.Models;
 
@@ -11,6 +12,36 @@ public class GameStateTests
 
     private static readonly ImmutableArray<ItemType> SampleTypes =
         ImmutableArray.Create(Ore, Gem, Sword);
+
+    // --- Diagram types for GridDiagram tests (3-char abbreviations, max stack 9) ---
+    private static readonly ItemType Rck = new("Rck", Category.Material, IsStackable: true, MaxStackSize: 9);
+    private static readonly ItemType Grs = new("Grs", Category.Material, IsStackable: true, MaxStackSize: 9);
+    private static readonly ItemType Swd = new("Swd", Category.Weapon, IsStackable: false);
+    private static readonly ItemType Bow = new("Bow", Category.Weapon, IsStackable: false);
+
+    private static readonly Dictionary<string, ItemType> DiagramTypes = new()
+    {
+        ["Rck"] = Rck, ["Grs"] = Grs, ["Swd"] = Swd, ["Bow"] = Bow,
+    };
+
+    /// <summary>
+    /// Helper: creates a small GameState from a GridDiagram for compact hand tests.
+    /// </summary>
+    private static GameState FromDiagram(string diagram, int handSize = 1)
+    {
+        var parsed = GridDiagram.Parse(diagram, DiagramTypes, gridColumns: 4, gridRows: 3);
+        var allTypes = DiagramTypes.Values.Distinct().ToImmutableArray();
+        var handBag = parsed.Hand.Length > 0
+            ? new Bag(Grid.Create(handSize, 1)).AcquireItems(parsed.Hand).UpdatedBag
+            : GameState.CreateHandBag(handSize);
+        return new GameState(
+            new Bag(parsed.Grid),
+            new Cursor(parsed.Cursor ?? new Position(0, 0)),
+            allTypes,
+            handBag);
+    }
+
+    // ==================== CreateStage1 ====================
 
     [Fact]
     public void CreateStage1_HasEightByFourGrid()
@@ -52,6 +83,24 @@ public class GameStateTests
     }
 
     [Fact]
+    public void CreateStage1_EmptyHandBag()
+    {
+        var state = GameState.CreateStage1(SampleTypes, Array.Empty<ItemStack>());
+        Assert.False(state.HasItemsInHand);
+        Assert.Empty(state.HandItems);
+    }
+
+    [Fact]
+    public void CreateStage1_HandSizeFromConfig()
+    {
+        var config = new GameConfig(HandSize: 3);
+        var state = GameState.CreateStage1(SampleTypes, Array.Empty<ItemStack>(), config);
+        Assert.Equal(3, state.HandBag.Grid.Columns);
+    }
+
+    // ==================== MoveCursor ====================
+
+    [Fact]
     public void MoveCursor_Right_UpdatesPosition()
     {
         var state = GameState.CreateStage1(SampleTypes, Array.Empty<ItemStack>());
@@ -76,6 +125,8 @@ public class GameStateTests
         Assert.Equal(new Position(1, 0), moved.Cursor.Position);
     }
 
+    // ==================== CurrentCell ====================
+
     [Fact]
     public void CurrentCell_ReturnsEmptyForEmptyGrid()
     {
@@ -96,233 +147,254 @@ public class GameStateTests
         Assert.True(moved.CurrentCell.IsEmpty);
     }
 
-    // ToolGrab Tests
+    // ==================== ToolGrab (GridDiagram-based) ====================
+
+    [Fact]
+    public void ToolGrab_CursorItem_MovesToHand()
+    {
+        // Diagram case 1: Grab from cursor
+        var state = FromDiagram("[Rck5]*[Swd-] [    ] [    ]");
+        var result = state.ToolGrab();
+
+        Assert.True(result.Success);
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[    ] [Swd-] [    ] [    ]");
+        Assert.Single(result.State.HandItems);
+        Assert.Equal(Rck, result.State.HandItems[0].ItemType);
+        Assert.Equal(5, result.State.HandItems[0].Count);
+    }
 
     [Fact]
     public void ToolGrab_EmptyCell_NoOp()
     {
-        var state = GameState.CreateStage1(SampleTypes, Array.Empty<ItemStack>());
-        var grabbed = state.ToolGrab();
-        Assert.Equal(state, grabbed);
-        Assert.False(grabbed.HasItemsInHand);
+        // Diagram case 9: Grab empty cell
+        var state = FromDiagram("[Rck5] [Swd-] [    ]*[    ]");
+        var result = state.ToolGrab();
+
+        Assert.True(result.Success);
+        Assert.False(result.State.HasItemsInHand);
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[Rck5] [Swd-] [    ] [    ]");
     }
 
     [Fact]
-    public void ToolGrab_NonEmptyCell_AddsToHand()
+    public void ToolGrab_HandFull_DifferentType_NoOp()
     {
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var grabbed = state.ToolGrab();
-        Assert.True(grabbed.HasItemsInHand);
-        Assert.Contains(new Position(0, 0), grabbed.ActiveHand);
+        // Diagram case 2: Hand full (1 slot), different type
+        var state = FromDiagram("[Rck5]*[Swd-] [    ] [    ]\nHand: (Grs3)");
+        var result = state.ToolGrab();
+
+        Assert.False(result.Success);
+        Assert.Equal("Hand is full", result.Error);
+        // Grid unchanged
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[Rck5] [Swd-] [    ] [    ]");
     }
 
     [Fact]
-    public void ToolGrab_ToggleCancelsGrab()
+    public void ToolGrab_HandHasSameType_Merges()
     {
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var grabbed = state.ToolGrab();
-        var released = grabbed.ToolGrab();
-        Assert.False(released.HasItemsInHand);
-        Assert.Null(released.Hand);
+        // Diagram case 3: Grab merge (same type in hand)
+        var state = FromDiagram("[Rck3]*[Swd-] [    ] [    ]\nHand: (Rck5)");
+        var result = state.ToolGrab();
+
+        Assert.True(result.Success);
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[    ] [Swd-] [    ] [    ]");
+        Assert.Single(result.State.HandItems);
+        Assert.Equal(Rck, result.State.HandItems[0].ItemType);
+        Assert.Equal(8, result.State.HandItems[0].Count);
     }
 
     [Fact]
-    public void ToolGrab_ItemStaysInGrid()
+    public void ToolGrab_TwoSlotHand_FillsSecondSlot()
     {
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var grabbed = state.ToolGrab();
-        var cell = grabbed.RootBag.Grid.GetCell(0);
-        Assert.NotNull(cell.Stack);
-        Assert.Equal(Ore, cell.Stack.ItemType);
-        Assert.Equal(10, cell.Stack.Count);
+        // Diagram case 4: 2-slot hand, different type fills second slot
+        var state = FromDiagram("[Rck5]*[Swd-] [    ] [    ]\nHand: (Grs3)");
+        // Recreate with 2-slot hand
+        state = FromDiagram2Slot("[Rck5]*[Swd-] [    ] [    ]\nHand: (Grs3)");
+        var result = state.ToolGrab();
+
+        Assert.True(result.Success);
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[    ] [Swd-] [    ] [    ]");
+        Assert.Equal(2, result.State.HandItems.Count);
     }
 
-    [Fact]
-    public void ToolGrab_HandContainsCursorPosition()
-    {
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var grabbed = state.ToolGrab();
-        Assert.NotNull(grabbed.Hand);
-        Assert.Single(grabbed.Hand);
-        Assert.Equal(new Position(0, 0), grabbed.Hand.First());
-    }
-
-    // ToolDrop Tests
+    // ==================== ToolDrop (GridDiagram-based) ====================
 
     [Fact]
     public void ToolDrop_EmptyHand_NoOp()
     {
-        var state = GameState.CreateStage1(SampleTypes, Array.Empty<ItemStack>());
-        var dropped = state.ToolDrop();
-        Assert.Equal(state, dropped);
+        var state = FromDiagram("[Rck5] [Swd-] [    ]*[    ]");
+        var result = state.ToolDrop();
+        Assert.True(result.Success);
+        Assert.False(result.State.HasItemsInHand);
     }
 
     [Fact]
-    public void ToolDrop_DropsIntoCursorCell()
+    public void ToolDrop_OntoEmptyCell()
     {
-        // Grab Ore(10) from cell 0, move cursor to cell 1, drop → item at cursor (cell 1)
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var grabbed = state.ToolGrab();
-        var moved = grabbed.MoveCursor(Direction.Right); // cursor now at (0,1)
-        var dropped = moved.ToolDrop();
+        // Diagram case 5: Drop onto empty cursor cell
+        var state = FromDiagram("[Rck5] [Swd-] [    ]*[    ]\nHand: (Rck3)");
+        var result = state.ToolDrop();
 
-        Assert.True(dropped.RootBag.Grid.GetCell(0).IsEmpty);
-        var cursorCell = dropped.RootBag.Grid.GetCell(1);
-        Assert.NotNull(cursorCell.Stack);
-        Assert.Equal(Ore, cursorCell.Stack.ItemType);
-        Assert.Equal(10, cursorCell.Stack.Count);
+        Assert.True(result.Success);
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[Rck5] [Swd-] [Rck3] [    ]");
+        Assert.False(result.State.HasItemsInHand);
     }
 
     [Fact]
-    public void ToolDrop_MergesIntoCursorCell()
+    public void ToolDrop_MergesSameType()
     {
-        // Ore(10) at cell 0, Ore(8) at cell 1. Grab cell 0, move to cell 1, drop → merge
-        var stacks = new[] { new ItemStack(Ore, 10), new ItemStack(Ore, 8) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var grabbed = state.ToolGrab();
-        var moved = grabbed.MoveCursor(Direction.Right);
-        var dropped = moved.ToolDrop();
+        // Diagram case 6: Drop merge same type
+        var state = FromDiagram("[    ] [Swd-] [Rck5]*[    ]\nHand: (Rck3)");
+        var result = state.ToolDrop();
 
-        Assert.True(dropped.RootBag.Grid.GetCell(0).IsEmpty);
-        var cursorCell = dropped.RootBag.Grid.GetCell(1);
-        Assert.NotNull(cursorCell.Stack);
-        Assert.Equal(Ore, cursorCell.Stack.ItemType);
-        Assert.Equal(18, cursorCell.Stack.Count);
+        Assert.True(result.Success);
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[    ] [Swd-] [Rck8] [    ]");
+        Assert.False(result.State.HasItemsInHand);
     }
 
     [Fact]
-    public void ToolDrop_RemainderAcquiredFromTop()
+    public void ToolDrop_OverflowAcquiresFromCell0()
     {
-        // Ore(15) at cell 0, Ore(8) at cell 1. Grab cell 0, move to cell 1, drop
-        // Merge: 8+15=23, max 20 → Ore(20) at cell 1, remainder Ore(3) acquired from cell 0
-        var stacks = new[] { new ItemStack(Ore, 15), new ItemStack(Ore, 8) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var grabbed = state.ToolGrab();
-        var moved = grabbed.MoveCursor(Direction.Right);
-        var dropped = moved.ToolDrop();
+        // Diagram case 7: Drop overflow, remainder acquires from cell 0
+        var state = FromDiagram("[    ] [Swd-] [Rck7]*[    ]\nHand: (Rck4)");
+        var result = state.ToolDrop();
 
-        var cell0 = dropped.RootBag.Grid.GetCell(0);
-        Assert.NotNull(cell0.Stack);
-        Assert.Equal(Ore, cell0.Stack.ItemType);
-        Assert.Equal(3, cell0.Stack.Count);
-
-        var cell1 = dropped.RootBag.Grid.GetCell(1);
-        Assert.NotNull(cell1.Stack);
-        Assert.Equal(20, cell1.Stack.Count);
+        Assert.True(result.Success);
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[Rck2] [Swd-] [Rck9] [    ]");
+        Assert.False(result.State.HasItemsInHand);
     }
 
     [Fact]
-    public void ToolDrop_SameCellDropRestoresItem()
+    public void ToolDrop_DifferentType_NoOp()
     {
-        // Grab and drop at same cell → item stays put
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var grabbed = state.ToolGrab();
-        var dropped = grabbed.ToolDrop();
+        // Diagram case 10: Drop on different type at cursor
+        var state = FromDiagram("[Rck5] [Swd-]*[    ] [    ]\nHand: (Grs3)");
+        var result = state.ToolDrop();
 
-        var cell0 = dropped.RootBag.Grid.GetCell(0);
-        Assert.NotNull(cell0.Stack);
-        Assert.Equal(Ore, cell0.Stack.ItemType);
-        Assert.Equal(10, cell0.Stack.Count);
+        Assert.False(result.Success);
+        Assert.Contains("different item type", result.Error);
+        // Grid unchanged
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[Rck5] [Swd-] [    ] [    ]");
+        Assert.True(result.State.HasItemsInHand);
     }
 
     [Fact]
-    public void ToolDrop_ClearsHandState()
+    public void ToolDrop_BagFull_NoOp()
     {
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var grabbed = state.ToolGrab();
-        var dropped = grabbed.ToolDrop();
-        Assert.False(dropped.HasItemsInHand);
-        Assert.Null(dropped.Hand);
+        // Diagram case 12: Drop overflow, bag full → no-op + error
+        var state = FromDiagram(
+            "[Rck9] [Swd-] [Grs9] [Bow-]\n[Rck7]*[Grs5] [Bow-] [Swd-]\n[Rck9] [Grs9] [Swd-] [Bow-]\nHand: (Rck5)");
+        var result = state.ToolDrop();
+
+        Assert.False(result.Success);
+        Assert.Contains("bag is full", result.Error);
+        Assert.True(result.State.HasItemsInHand);
     }
 
-    // ToolQuickSplit Tests
+    [Fact]
+    public void ToolDrop_SameCellGrabDrop_Roundtrip()
+    {
+        // Grab then drop at same cell → item restored
+        var state = FromDiagram("[Rck5]*[Swd-] [    ] [    ]");
+        var grabbed = state.ToolGrab();
+        Assert.True(grabbed.Success);
+        var dropped = grabbed.State.ToolDrop();
+        Assert.True(dropped.Success);
+
+        GridDiagram.AssertGridMatches(dropped.State.RootBag.Grid,
+            DiagramTypes, "[Rck5] [Swd-] [    ] [    ]");
+        Assert.False(dropped.State.HasItemsInHand);
+    }
+
+    [Fact]
+    public void ToolDrop_ClearsHand()
+    {
+        var state = FromDiagram("[    ]*[    ] [    ] [    ]\nHand: (Rck5)");
+        var result = state.ToolDrop();
+        Assert.True(result.Success);
+        Assert.False(result.State.HasItemsInHand);
+    }
+
+    // ==================== ToolQuickSplit (GridDiagram-based) ====================
 
     [Fact]
     public void ToolQuickSplit_EmptyCell_NoOp()
     {
-        var state = GameState.CreateStage1(SampleTypes, Array.Empty<ItemStack>());
-        var split = state.ToolQuickSplit();
-        Assert.Equal(state, split);
+        var state = FromDiagram("[    ]*[    ] [    ] [    ]");
+        var result = state.ToolQuickSplit();
+        Assert.True(result.Success);
+        Assert.False(result.State.HasItemsInHand);
     }
 
     [Fact]
     public void ToolQuickSplit_CountOne_NoOp()
     {
-        var stacks = new[] { new ItemStack(Ore, 1) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var split = state.ToolQuickSplit();
-        Assert.Equal(state, split);
+        var state = FromDiagram("[Rck1]*[    ] [    ] [    ]");
+        var result = state.ToolQuickSplit();
+        Assert.True(result.Success);
+        Assert.False(result.State.HasItemsInHand);
     }
 
     [Fact]
-    public void ToolQuickSplit_EvenSplit()
+    public void ToolQuickSplit_EvenSplit_RightToHand()
     {
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var split = state.ToolQuickSplit();
-        var cell0 = split.RootBag.Grid.GetCell(0);
-        Assert.NotNull(cell0.Stack);
-        Assert.Equal(5, cell0.Stack.Count);
-        var cell1 = split.RootBag.Grid.GetCell(1);
-        Assert.NotNull(cell1.Stack);
-        Assert.Equal(5, cell1.Stack.Count);
+        // Diagram case 8 (even): 8 → 4 left / 4 right
+        var state = FromDiagram("[Rck8]*[Swd-] [    ] [    ]");
+        var result = state.ToolQuickSplit();
+
+        Assert.True(result.Success);
+        var cursorCell = result.State.RootBag.Grid.GetCell(new Position(0, 0));
+        Assert.Equal(4, cursorCell.Stack!.Count);
+        Assert.Single(result.State.HandItems);
+        Assert.Equal(Rck, result.State.HandItems[0].ItemType);
+        Assert.Equal(4, result.State.HandItems[0].Count);
     }
 
     [Fact]
-    public void ToolQuickSplit_OddSplit_CeilingLeft()
+    public void ToolQuickSplit_OddSplit_CeilingLeft_FloorRight()
     {
-        var stacks = new[] { new ItemStack(Ore, 7) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var split = state.ToolQuickSplit();
-        var cell0 = split.RootBag.Grid.GetCell(0);
-        Assert.NotNull(cell0.Stack);
-        Assert.Equal(4, cell0.Stack.Count);
-        var cell1 = split.RootBag.Grid.GetCell(1);
-        Assert.NotNull(cell1.Stack);
-        Assert.Equal(3, cell1.Stack.Count);
+        // Diagram case 8: 7 → 4 left / 3 right to hand
+        var state = FromDiagram("[Rck7]*[Swd-] [    ] [    ]");
+        var result = state.ToolQuickSplit();
+
+        Assert.True(result.Success);
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[Rck4] [Swd-] [    ] [    ]");
+        Assert.Single(result.State.HandItems);
+        Assert.Equal(Rck, result.State.HandItems[0].ItemType);
+        Assert.Equal(3, result.State.HandItems[0].Count);
     }
 
     [Fact]
-    public void ToolQuickSplit_RightHalfIsGrabbed()
+    public void ToolQuickSplit_HandFull_NoOp()
     {
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var split = state.ToolQuickSplit();
+        // Split when hand already has items → error
+        var state = FromDiagram("[Rck7]*[Swd-] [    ] [    ]\nHand: (Grs3)");
+        var result = state.ToolQuickSplit();
 
-        Assert.True(split.HasItemsInHand);
-        Assert.Contains(new Position(0, 1), split.ActiveHand);
-        Assert.DoesNotContain(state.Cursor.Position, split.ActiveHand);
+        Assert.False(result.Success);
+        Assert.Equal("Hand is full", result.Error);
+        // Grid unchanged
+        GridDiagram.AssertGridMatches(result.State.RootBag.Grid,
+            DiagramTypes, "[Rck7] [Swd-] [    ] [    ]");
     }
 
-    [Fact]
-    public void ToolQuickSplit_RightHalfPlacedInSeparateCell()
-    {
-        var stacks = new[] { new ItemStack(Ore, 10) };
-        var state = GameState.CreateStage1(SampleTypes, stacks);
-        var split = state.ToolQuickSplit();
-        var cell0 = split.RootBag.Grid.GetCell(0);
-        var cell1 = split.RootBag.Grid.GetCell(1);
-        Assert.NotNull(cell0.Stack);
-        Assert.NotNull(cell1.Stack);
-        Assert.Equal(cell0.Stack.ItemType, cell1.Stack.ItemType);
-        Assert.NotEqual(10, cell0.Stack.Count);
-    }
-
-    // ToolSort Tests
+    // ==================== ToolSort ====================
 
     [Fact]
     public void ToolSort_EmptyGrid_NoOp()
     {
         var state = GameState.CreateStage1(SampleTypes, Array.Empty<ItemStack>());
-        var sorted = state.ToolSort();
-        Assert.Equal(state, sorted);
+        var result = state.ToolSort();
+        Assert.True(result.Success);
     }
 
     [Fact]
@@ -330,8 +402,8 @@ public class GameStateTests
     {
         var stacks = new[] { new ItemStack(Ore, 10) };
         var state = GameState.CreateStage1(SampleTypes, stacks);
-        var sorted = state.ToolSort();
-        var cell0 = sorted.RootBag.Grid.GetCell(0);
+        var result = state.ToolSort();
+        var cell0 = result.State.RootBag.Grid.GetCell(0);
         Assert.NotNull(cell0.Stack);
         Assert.Equal(Ore, cell0.Stack.ItemType);
         Assert.Equal(10, cell0.Stack.Count);
@@ -345,21 +417,16 @@ public class GameStateTests
         grid = grid.SetCell(1, new Cell(new ItemStack(Gem, 5)));
         grid = grid.SetCell(2, new Cell(new ItemStack(Ore, 10)));
         var bag = new Bag(grid);
-        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes);
+        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes, GameState.CreateHandBag());
 
-        var sorted = state.ToolSort();
+        var result = state.ToolSort();
 
-        var cell0 = sorted.RootBag.Grid.GetCell(0);
-        Assert.NotNull(cell0.Stack);
-        Assert.Equal(Ore, cell0.Stack.ItemType);
-
-        var cell1 = sorted.RootBag.Grid.GetCell(1);
-        Assert.NotNull(cell1.Stack);
-        Assert.Equal(Gem, cell1.Stack.ItemType);
-
-        var cell2 = sorted.RootBag.Grid.GetCell(2);
-        Assert.NotNull(cell2.Stack);
-        Assert.Equal(Sword, cell2.Stack.ItemType);
+        var cell0 = result.State.RootBag.Grid.GetCell(0);
+        Assert.Equal(Ore, cell0.Stack!.ItemType);
+        var cell1 = result.State.RootBag.Grid.GetCell(1);
+        Assert.Equal(Gem, cell1.Stack!.ItemType);
+        var cell2 = result.State.RootBag.Grid.GetCell(2);
+        Assert.Equal(Sword, cell2.Stack!.ItemType);
     }
 
     [Fact]
@@ -369,17 +436,11 @@ public class GameStateTests
         grid = grid.SetCell(0, new Cell(new ItemStack(Ore, 10)));
         grid = grid.SetCell(1, new Cell(new ItemStack(Ore, 10)));
         var bag = new Bag(grid);
-        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes);
+        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes, GameState.CreateHandBag());
 
-        var sorted = state.ToolSort();
-
-        var cell0 = sorted.RootBag.Grid.GetCell(0);
-        Assert.NotNull(cell0.Stack);
-        Assert.Equal(Ore, cell0.Stack.ItemType);
-        Assert.Equal(20, cell0.Stack.Count);
-
-        var cell1 = sorted.RootBag.Grid.GetCell(1);
-        Assert.True(cell1.IsEmpty);
+        var result = state.ToolSort();
+        Assert.Equal(20, result.State.RootBag.Grid.GetCell(0).Stack!.Count);
+        Assert.True(result.State.RootBag.Grid.GetCell(1).IsEmpty);
     }
 
     [Fact]
@@ -389,32 +450,24 @@ public class GameStateTests
         grid = grid.SetCell(0, new Cell(new ItemStack(Ore, 15)));
         grid = grid.SetCell(1, new Cell(new ItemStack(Ore, 15)));
         var bag = new Bag(grid);
-        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes);
+        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes, GameState.CreateHandBag());
 
-        var sorted = state.ToolSort();
-
-        var cell0 = sorted.RootBag.Grid.GetCell(0);
-        Assert.NotNull(cell0.Stack);
-        Assert.Equal(Ore, cell0.Stack.ItemType);
-        Assert.Equal(20, cell0.Stack.Count);
-
-        var cell1 = sorted.RootBag.Grid.GetCell(1);
-        Assert.NotNull(cell1.Stack);
-        Assert.Equal(Ore, cell1.Stack.ItemType);
-        Assert.Equal(10, cell1.Stack.Count);
+        var result = state.ToolSort();
+        Assert.Equal(20, result.State.RootBag.Grid.GetCell(0).Stack!.Count);
+        Assert.Equal(10, result.State.RootBag.Grid.GetCell(1).Stack!.Count);
     }
 
-    // ToolAcquireRandom Tests
+    // ==================== ToolAcquireRandom ====================
 
     [Fact]
     public void ToolAcquireRandom_AddsOneItem()
     {
         var state = GameState.CreateStage1(SampleTypes, Array.Empty<ItemStack>());
         var rng = new Random(42);
-        var acquired = state.ToolAcquireRandom(rng);
+        var result = state.ToolAcquireRandom(rng);
 
         var nonEmptyCells = Enumerable.Range(0, 32)
-            .Select(i => acquired.RootBag.Grid.GetCell(i))
+            .Select(i => result.State.RootBag.Grid.GetCell(i))
             .Where(c => !c.IsEmpty)
             .ToList();
 
@@ -426,12 +479,11 @@ public class GameStateTests
     public void ToolAcquireRandom_DeterministicWithSeed()
     {
         var state = GameState.CreateStage1(SampleTypes, Array.Empty<ItemStack>());
-        var acquired1 = state.ToolAcquireRandom(new Random(42));
-        var acquired2 = state.ToolAcquireRandom(new Random(42));
+        var result1 = state.ToolAcquireRandom(new Random(42));
+        var result2 = state.ToolAcquireRandom(new Random(42));
 
-        var cell1 = acquired1.RootBag.Grid.GetCell(0);
-        var cell2 = acquired2.RootBag.Grid.GetCell(0);
-
+        var cell1 = result1.State.RootBag.Grid.GetCell(0);
+        var cell2 = result2.State.RootBag.Grid.GetCell(0);
         Assert.Equal(cell1.Stack?.ItemType, cell2.Stack?.ItemType);
     }
 
@@ -442,10 +494,26 @@ public class GameStateTests
         grid = grid.SetCell(0, new Cell(new ItemStack(Ore, 20)));
         grid = grid.SetCell(1, new Cell(new ItemStack(Gem, 20)));
         var bag = new Bag(grid);
-        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes);
+        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes, GameState.CreateHandBag());
 
         var rng = new Random(42);
         var exception = Record.Exception(() => state.ToolAcquireRandom(rng));
         Assert.Null(exception);
+    }
+
+    // ==================== Helper ====================
+
+    private GameState FromDiagram2Slot(string diagram)
+    {
+        var parsed = GridDiagram.Parse(diagram, DiagramTypes, gridColumns: 4, gridRows: 3);
+        var allTypes = DiagramTypes.Values.Distinct().ToImmutableArray();
+        var handBag = parsed.Hand.Length > 0
+            ? new Bag(Grid.Create(2, 1)).AcquireItems(parsed.Hand).UpdatedBag
+            : GameState.CreateHandBag(2);
+        return new GameState(
+            new Bag(parsed.Grid),
+            new Cursor(parsed.Cursor ?? new Position(0, 0)),
+            allTypes,
+            handBag);
     }
 }

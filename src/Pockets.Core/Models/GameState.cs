@@ -1,35 +1,47 @@
 namespace Pockets.Core.Models;
 
 /// <summary>
-/// Top-level game state composing the root bag, cursor, and known item types.
-/// Hand tracks grabbed cell positions. All operations return new instances (immutable).
+/// Top-level game state composing the root bag, cursor, hand bag, and known item types.
+/// Hand is a real bag that holds grabbed items (true cut). All operations return new instances (immutable).
 /// </summary>
 public record GameState(
     Bag RootBag,
     Cursor Cursor,
     ImmutableArray<ItemType> ItemTypes,
-    ImmutableHashSet<Position>? Hand = null)
+    Bag HandBag)
 {
     /// <summary>
-    /// The set of grabbed positions, or empty if nothing is grabbed.
+    /// True when the hand bag contains at least one item.
     /// </summary>
-    public ImmutableHashSet<Position> ActiveHand => Hand ?? ImmutableHashSet<Position>.Empty;
+    public bool HasItemsInHand => HandBag.Grid.Cells.Any(c => !c.IsEmpty);
 
     /// <summary>
-    /// True when the hand holds at least one grabbed position.
+    /// Returns all item stacks currently in the hand bag.
     /// </summary>
-    public bool HasItemsInHand => Hand is not null && Hand.Count > 0;
+    public IReadOnlyList<ItemStack> HandItems => HandBag.Grid.Cells
+        .Where(c => !c.IsEmpty)
+        .Select(c => c.Stack!)
+        .ToList();
+
+    /// <summary>
+    /// Creates an empty hand bag with the given number of slots (1×N grid).
+    /// </summary>
+    public static Bag CreateHandBag(int handSize = 1) =>
+        new Bag(Grid.Create(handSize, 1));
+
     /// <summary>
     /// Creates the initial Stage 1 game state: 8×4 bag, cursor at origin,
     /// with the given item stacks acquired into the grid.
     /// </summary>
     public static GameState CreateStage1(
         ImmutableArray<ItemType> itemTypes,
-        IEnumerable<ItemStack> initialStacks)
+        IEnumerable<ItemStack> initialStacks,
+        GameConfig? config = null)
     {
+        config ??= new GameConfig();
         var bag = new Bag(Grid.Create(8, 4));
         var (filledBag, _) = bag.AcquireItems(initialStacks);
-        return new GameState(filledBag, new Cursor(new Position(0, 0)), itemTypes);
+        return new GameState(filledBag, new Cursor(new Position(0, 0)), itemTypes, CreateHandBag(config.HandSize));
     }
 
     /// <summary>
@@ -44,110 +56,120 @@ public record GameState(
     public Cell CurrentCell => RootBag.Grid.GetCell(Cursor.Position);
 
     /// <summary>
-    /// Toggle grab: if hand is empty and cursor cell has items, grab cursor position.
-    /// If hand is non-empty, cancel grab (clear hand). Empty cell with empty hand is no-op.
+    /// Grab: remove item from cursor cell and acquire it into the hand bag.
+    /// If cursor is empty, no-op success. If hand is full, no-op with error.
+    /// Always adds to hand (no toggle cancel).
     /// </summary>
-    public GameState ToolGrab()
+    public ToolResult ToolGrab()
     {
-        if (HasItemsInHand)
-            return this with { Hand = null };
-
         if (CurrentCell.IsEmpty)
-            return this;
+            return ToolResult.Ok(this);
 
-        return this with { Hand = ImmutableHashSet.Create(Cursor.Position) };
+        var stack = CurrentCell.Stack!;
+        var (updatedHand, unplaced) = HandBag.AcquireItems(new[] { stack });
+
+        if (unplaced.Count > 0)
+            return ToolResult.Fail(this, "Hand is full");
+
+        var grid = RootBag.Grid.SetCell(Cursor.Position, new Cell());
+        return ToolResult.Ok(this with
+        {
+            RootBag = RootBag with { Grid = grid },
+            HandBag = updatedHand
+        });
     }
 
     /// <summary>
-    /// Drop: collect items from hand positions, empty those cells, place items into
-    /// the cursor cell first (merge if same type), then acquire any remainder from cell 0.
-    /// Empty hand is no-op.
+    /// Drop: place all hand items at cursor cell (merge if same type), then acquire
+    /// any remainder from cell 0. No-op if hand is empty. No-op with error if cursor
+    /// has a different type or bag is completely full.
     /// </summary>
-    public GameState ToolDrop()
+    public ToolResult ToolDrop()
     {
         if (!HasItemsInHand)
-            return this;
+            return ToolResult.Ok(this);
 
+        var handItems = HandItems;
         var grid = RootBag.Grid;
-        var items = Hand!
-            .Select(pos => grid.GetCell(pos).Stack)
-            .Where(s => s is not null)
-            .Cast<ItemStack>()
-            .ToList();
+        var cursorCell = grid.GetCell(Cursor.Position);
+        var firstItem = handItems[0];
 
-        var clearedGrid = Hand!.Aggregate(grid, (g, pos) => g.SetCell(pos, new Cell()));
-
-        var cursorCell = clearedGrid.GetCell(Cursor.Position);
         var remainders = new List<ItemStack>();
 
-        foreach (var item in items)
+        if (cursorCell.IsEmpty)
         {
-            if (cursorCell.IsEmpty && cursorCell.Accepts(item.ItemType))
-            {
-                var max = item.ItemType.EffectiveMaxStackSize;
-                var placeCount = Math.Min(item.Count, max);
-                cursorCell = cursorCell with { Stack = item with { Count = placeCount } };
-                if (item.Count > placeCount)
-                    remainders.Add(item with { Count = item.Count - placeCount });
-            }
-            else if (!cursorCell.IsEmpty && cursorCell.Stack!.ItemType == item.ItemType)
-            {
-                var (merged, remainder) = cursorCell.Stack.TryMerge(item);
-                cursorCell = cursorCell with { Stack = merged };
-                if (remainder is not null)
-                    remainders.Add(remainder);
-            }
-            else
-            {
-                remainders.Add(item);
-            }
+            var max = firstItem.ItemType.EffectiveMaxStackSize;
+            var placeCount = Math.Min(firstItem.Count, max);
+            cursorCell = cursorCell with { Stack = firstItem with { Count = placeCount } };
+            if (firstItem.Count > placeCount)
+                remainders.Add(firstItem with { Count = firstItem.Count - placeCount });
+        }
+        else if (cursorCell.Stack!.ItemType == firstItem.ItemType)
+        {
+            var (merged, remainder) = cursorCell.Stack.TryMerge(firstItem);
+            cursorCell = cursorCell with { Stack = merged };
+            if (remainder is not null)
+                remainders.Add(remainder);
+        }
+        else
+        {
+            return ToolResult.Fail(this, "Cannot drop: different item type at cursor");
         }
 
-        clearedGrid = clearedGrid.SetCell(Cursor.Position, cursorCell);
-        var (updatedGrid, _) = clearedGrid.AcquireItems(remainders);
+        remainders.AddRange(handItems.Skip(1));
+        grid = grid.SetCell(Cursor.Position, cursorCell);
 
-        return this with { RootBag = RootBag with { Grid = updatedGrid }, Hand = null };
+        if (remainders.Count > 0)
+        {
+            var (updatedGrid, unplaced) = grid.AcquireItems(remainders);
+            if (unplaced.Count > 0)
+                return ToolResult.Fail(this, "Cannot drop: bag is full");
+            grid = updatedGrid;
+        }
+
+        var emptyHand = CreateHandBag(HandBag.Grid.Columns);
+        return ToolResult.Ok(this with
+        {
+            RootBag = RootBag with { Grid = grid },
+            HandBag = emptyHand
+        });
     }
 
     /// <summary>
     /// Quick split: split cursor cell in half (ceiling left, floor right).
-    /// Left stays at cursor, right is placed into the grid (skipping cursor) and
-    /// marked as grabbed in the Hand.
-    /// No-op if cell is empty or count ≤ 1.
+    /// Left stays at cursor, right goes into hand bag.
+    /// No-op if cell is empty, count ≤ 1, or hand can't accept the split.
     /// </summary>
-    public GameState ToolQuickSplit()
+    public ToolResult ToolQuickSplit()
     {
         var cell = CurrentCell;
         if (cell.IsEmpty || cell.Stack!.Count <= 1)
-            return this;
+            return ToolResult.Ok(this);
 
         var splitResult = cell.Stack.Split();
         if (splitResult is null)
-            return this;
+            return ToolResult.Ok(this);
 
         var (left, right) = splitResult.Value;
-        var cursorIndex = Cursor.Position.ToIndex(RootBag.Grid.Columns);
-        var gridBefore = RootBag.Grid.SetCell(Cursor.Position, cell with { Stack = left });
-        var skipIndices = ImmutableHashSet.Create(cursorIndex);
-        var (gridAfter, _) = gridBefore.AcquireItems(new[] { right }, skipIndices);
 
-        var grabbedPositions = Enumerable.Range(0, gridAfter.Cells.Length)
-            .Where(i => i != cursorIndex && gridBefore.Cells[i] != gridAfter.Cells[i])
-            .Select(i => Position.FromIndex(i, RootBag.Grid.Columns))
-            .ToImmutableHashSet();
+        var (updatedHand, unplaced) = HandBag.AcquireItems(new[] { right });
+        if (unplaced.Count > 0)
+            return ToolResult.Fail(this, "Hand is full");
 
-        return this with
+        var grid = RootBag.Grid.SetCell(Cursor.Position, cell with { Stack = left });
+
+        return ToolResult.Ok(this with
         {
-            RootBag = RootBag with { Grid = gridAfter },
-            Hand = grabbedPositions.Count > 0 ? grabbedPositions : null
-        };
+            RootBag = RootBag with { Grid = grid },
+            HandBag = updatedHand
+        });
     }
 
     /// <summary>
     /// Sort: collect all stacks, group by type summing counts, split into max-size stacks,
     /// sort by (Category, Name), empty grid, re-acquire sorted stacks. No-op if grid is empty.
     /// </summary>
-    public GameState ToolSort()
+    public ToolResult ToolSort()
     {
         var grid = RootBag.Grid;
         var allStacks = grid.Cells
@@ -156,7 +178,7 @@ public record GameState(
             .ToList();
 
         if (allStacks.Count == 0)
-            return this;
+            return ToolResult.Ok(this);
 
         var sorted = allStacks
             .GroupBy(s => s.ItemType)
@@ -180,17 +202,17 @@ public record GameState(
         var emptyGrid = Grid.Create(grid.Columns, grid.Rows);
         var (updatedGrid, _) = emptyGrid.AcquireItems(sorted);
 
-        return this with { RootBag = RootBag with { Grid = updatedGrid } };
+        return ToolResult.Ok(this with { RootBag = RootBag with { Grid = updatedGrid } });
     }
 
     /// <summary>
     /// Debug tool: pick a random item type and acquire 1 into the grid.
     /// </summary>
-    public GameState ToolAcquireRandom(Random rng)
+    public ToolResult ToolAcquireRandom(Random rng)
     {
         var itemType = ItemTypes[rng.Next(ItemTypes.Length)];
         var stack = new ItemStack(itemType, 1);
         var (updatedBag, _) = RootBag.AcquireItems(new[] { stack });
-        return this with { RootBag = updatedBag };
+        return ToolResult.Ok(this with { RootBag = updatedBag });
     }
 }

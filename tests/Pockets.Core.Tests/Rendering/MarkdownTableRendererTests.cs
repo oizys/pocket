@@ -33,18 +33,6 @@ public class MarkdownTableRendererTests
     }
 
     [Fact]
-    public void Render_HandCell_HasMarker()
-    {
-        var state = GameState.CreateStage1(Types, new[] { new ItemStack(Ore, 5) });
-        state = state.ToolGrab();
-        // Move cursor away so hand cell isn't also cursor
-        state = state.MoveCursor(Direction.Right);
-        var output = _renderer.Render(state);
-
-        Assert.Contains("#", output);
-    }
-
-    [Fact]
     public void Render_IncludesHandSummary()
     {
         var state = GameState.CreateStage1(Types, Array.Empty<ItemStack>());

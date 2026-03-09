@@ -50,18 +50,6 @@ public class ListRendererTests
     }
 
     [Fact]
-    public void Render_HandCellMarked()
-    {
-        var state = GameState.CreateStage1(Types, new[] { new ItemStack(Ore, 5) });
-        state = state.ToolGrab();
-        state = state.MoveCursor(Direction.Right); // move cursor off hand cell
-        var output = _renderer.Render(state);
-
-        Assert.Contains("#", output);
-        Assert.Contains("Iron Ore", output);
-    }
-
-    [Fact]
     public void Render_IncludesCursorItemDescription()
     {
         var state = GameState.CreateStage1(Types, new[] { new ItemStack(Ore, 10) });

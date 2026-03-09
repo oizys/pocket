@@ -47,8 +47,7 @@ public class CompactGridRenderer : IStateRenderer
                 var pos = new Position(row, col);
                 var cell = grid.GetCell(pos);
                 var isCursor = state.Cursor.Position == pos;
-                var isHand = state.ActiveHand.Contains(pos);
-                var content = FormatCompactCell(cell.Stack, isCursor, isHand);
+                var content = FormatCompactCell(cell.Stack, isCursor);
                 return PadOrTruncate(content, _cellWidth);
             });
 
@@ -59,12 +58,12 @@ public class CompactGridRenderer : IStateRenderer
     /// Width-aware cell formatting: abbreviation length adapts to fit within cell width,
     /// accounting for marker, category symbol, ×, and count digits.
     /// </summary>
-    private string FormatCompactCell(ItemStack? stack, bool isCursor, bool isHand)
+    private string FormatCompactCell(ItemStack? stack, bool isCursor)
     {
         if (stack is null)
-            return isCursor ? ">" : isHand ? "#" : "";
+            return isCursor ? ">" : "";
 
-        var marker = isCursor ? ">" : isHand ? "#" : "";
+        var marker = isCursor ? ">" : "";
         var sym = RenderHelpers.CategorySymbol(stack.ItemType.Category);
 
         if (!stack.ItemType.IsStackable)

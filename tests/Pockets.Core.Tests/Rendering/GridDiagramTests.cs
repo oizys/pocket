@@ -246,7 +246,7 @@ public class GridDiagramTests
             .SetCell(2, new Cell(new ItemStack(Sword, 1)));
 
         // Should not throw
-        GridDiagram.AssertGridMatches(grid, "[Rck5] [    ] [Swd-]", Types);
+        GridDiagram.AssertGridMatches(grid, Types, "[Rck5] [    ] [Swd-]");
     }
 
     [Fact]
@@ -256,6 +256,6 @@ public class GridDiagramTests
             .SetCell(0, new Cell(new ItemStack(Rock, 5)));
 
         Assert.ThrowsAny<Exception>(() =>
-            GridDiagram.AssertGridMatches(grid, "[Rck3] [    ]", Types));
+            GridDiagram.AssertGridMatches(grid, Types, "[Rck3] [    ]"));
     }
 }

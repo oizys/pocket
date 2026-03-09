@@ -14,10 +14,7 @@ public class ListRenderer : IStateRenderer
         var grid = state.RootBag.Grid;
         var sb = new StringBuilder();
 
-        var handPositions = state.HasItemsInHand
-            ? string.Join(" ", state.Hand!.Select(p => $"({p.Row},{p.Col})"))
-            : "none";
-        sb.AppendLine($"Grid: {grid.Columns}×{grid.Rows} | Cursor: ({state.Cursor.Position.Row},{state.Cursor.Position.Col}) | Hand: {handPositions}");
+        sb.AppendLine($"Grid: {grid.Columns}×{grid.Rows} | Cursor: ({state.Cursor.Position.Row},{state.Cursor.Position.Col})");
 
         var occupied = Enumerable.Range(0, grid.Cells.Length)
             .Select(i => (pos: Position.FromIndex(i, grid.Columns), cell: grid.Cells[i]))
@@ -33,8 +30,7 @@ public class ListRenderer : IStateRenderer
             foreach (var (pos, cell) in occupied)
             {
                 var isCursor = state.Cursor.Position == pos;
-                var isHand = state.ActiveHand.Contains(pos);
-                var marker = isCursor ? ">" : isHand ? "#" : " ";
+                var marker = isCursor ? ">" : " ";
                 var stack = cell.Stack!;
                 var sym = RenderHelpers.CategorySymbol(stack.ItemType.Category);
                 var kind = stack.ItemType.IsStackable
@@ -44,6 +40,7 @@ public class ListRenderer : IStateRenderer
             }
         }
 
+        sb.AppendLine(RenderHelpers.FormatHandSummary(state));
         sb.Append($"> {RenderHelpers.DescribeCursorItem(state)}");
         return sb.ToString();
     }

@@ -56,23 +56,15 @@ public class RenderHelpersTests
     public void FormatCell_CursorMarker()
     {
         var stack = new ItemStack(Ore, 5);
-        var result = RenderHelpers.FormatCell(stack, isCursor: true, isHand: false);
+        var result = RenderHelpers.FormatCell(stack, isCursor: true);
         Assert.StartsWith(">", result);
         Assert.Contains("IO×5", result);
     }
 
     [Fact]
-    public void FormatCell_HandMarker()
-    {
-        var stack = new ItemStack(Ore, 5);
-        var result = RenderHelpers.FormatCell(stack, isCursor: false, isHand: true);
-        Assert.StartsWith("#", result);
-    }
-
-    [Fact]
     public void FormatCell_Empty_NoMarkers()
     {
-        var result = RenderHelpers.FormatCell(null, isCursor: false, isHand: false);
+        var result = RenderHelpers.FormatCell(null, isCursor: false);
         Assert.Equal("", result);
     }
 
@@ -106,10 +98,9 @@ public class RenderHelpersTests
     {
         var types = ImmutableArray.Create(Ore);
         var state = GameState.CreateStage1(types, new[] { new ItemStack(Ore, 5) });
-        state = state.ToolGrab(); // grabs cursor cell (0,0)
+        state = state.ToolGrab().State; // grabs cursor cell (0,0)
         var summary = RenderHelpers.FormatHandSummary(state);
         Assert.Contains("Hand:", summary);
         Assert.Contains("IO", summary);
-        Assert.Contains("(0,0)", summary);
     }
 }

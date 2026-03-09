@@ -45,7 +45,7 @@ public class GameView : Window
             return true;
         }
 
-        var newState = keyEvent.Key switch
+        var result = keyEvent.Key switch
         {
             (Key)'1' => _state.ToolGrab(),
             (Key)'2' => _state.ToolDrop(),
@@ -55,9 +55,9 @@ public class GameView : Window
             _ => null
         };
 
-        if (newState is not null)
+        if (result is not null)
         {
-            _state = newState;
+            _state = result.State;
             _gridPanel.UpdateState(_state);
             return true;
         }

@@ -28,7 +28,6 @@ public class GridView : View
     {
         var grid = _state.RootBag.Grid;
         var cursorPos = _state.Cursor.Position;
-        var hand = _state.ActiveHand;
 
         for (int row = 0; row < grid.Rows; row++)
         {
@@ -37,20 +36,18 @@ public class GridView : View
                 var pos = new Position(row, col);
                 var cell = grid.GetCell(pos);
                 var isCursor = row == cursorPos.Row && col == cursorPos.Col;
-                var isGrabbed = hand.Contains(pos);
-                DrawCell(col * CellRenderer.CellWidth, row * CellRenderer.CellHeight, cell, isCursor, isGrabbed);
+                DrawCell(col * CellRenderer.CellWidth, row * CellRenderer.CellHeight, cell, isCursor);
             }
         }
     }
 
-    private void DrawCell(int x, int y, Cell cell, bool isCursor, bool isGrabbed)
+    private void DrawCell(int x, int y, Cell cell, bool isCursor)
     {
         var driver = Application.Driver;
         var normal = ColorScheme.Normal;
         var highlight = Application.Driver.MakeAttribute(Color.Black, Color.White);
-        var grabbed = Application.Driver.MakeAttribute(Color.Cyan, Color.DarkGray);
 
-        var contentAttr = isCursor ? highlight : isGrabbed ? grabbed : normal;
+        var contentAttr = isCursor ? highlight : normal;
 
         // Top border
         driver.SetAttribute(normal);

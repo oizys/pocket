@@ -35,12 +35,10 @@ public class MarkdownTableRenderer : IStateRenderer
                 var pos = new Position(row, col);
                 var cell = grid.GetCell(pos);
                 var isCursor = state.Cursor.Position == pos;
-                var isHand = state.ActiveHand.Contains(pos);
                 var content = RenderHelpers.FormatStack(cell.Stack);
 
                 if (isCursor && content.Length > 0) content = $"**>{content}**";
                 else if (isCursor) content = "**>**";
-                else if (isHand && content.Length > 0) content = $"#{content}";
 
                 sb.Append($" {content} |");
             }

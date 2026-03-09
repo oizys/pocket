@@ -68,7 +68,7 @@ public class GridPanel : FrameView
         _gridView.UpdateState(state);
         _descriptionView.UpdateState(state);
         _statusBar.Text = state.HasItemsInHand
-            ? $"Hand: {state.ActiveHand.Count} item(s)"
+            ? $"Hand: {state.HandItems.Count} item(s)"
             : "";
     }
 }

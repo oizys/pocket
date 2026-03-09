@@ -5,4 +5,5 @@ namespace Pockets.Core.Models;
 /// Use small values (e.g. 9) for compact test/feedback scenarios.
 /// </summary>
 public record GameConfig(
-    int DefaultMaxStackSize = 20);
+    int DefaultMaxStackSize = 20,
+    int HandSize = 1);
