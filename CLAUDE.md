@@ -16,6 +16,8 @@ Pockets is a grid-based inventory puzzle game where everything exists inside nes
 - **Git commits** after each successful build → test → run cycle (known good builds only).
 - **Stage-based development:** Each stage must be fully functional. Keep stage builds and task lists in separate sub-folders so earlier stages can be revisited.
 - **Plan features first:** Document plans with ASCII diagrams. Break implementation into sub-tasks with testing plans. Ask about ambiguities before coding.
+- **Design ideas go in `/design/`:** Each new game design idea gets its own markdown file following the template (Concept, Cohesion, Intuition, Architecture, Methodology Fit, Status). Update `/design/INDEX.md` with a one-line entry. Commit immediately after creating the file — the user will review post-commit.
+- **`Pockets.md` is the concrete spec.** Only add details to `Pockets.md` when an idea is approved and scheduled for implementation. Design ideas stay in `/design/` until then.
 
 ## Code Conventions
 
