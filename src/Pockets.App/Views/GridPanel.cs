@@ -44,7 +44,7 @@ public class GridPanel : FrameView
         };
         _descriptionView.UpdateState(state);
 
-        _toolbar = new Label("[1:Grab] [2:Drop] [3:Split] [4:Sort] [5:Random]")
+        _toolbar = new Label("[1:Grab] [2:Drop] [3:Split] [#:Modal] [4:Sort] [5:Rand] [E:Open] [Q:Back] [^Z:Undo]")
         {
             X = 0,
             Y = Pos.AnchorEnd(2),
@@ -67,8 +67,13 @@ public class GridPanel : FrameView
     {
         _gridView.UpdateState(state);
         _descriptionView.UpdateState(state);
+
+        // Breadcrumb trail
+        _breadcrumbs.Text = string.Join(" > ", state.BreadcrumbPath);
+
+        // Status bar: hand contents
         _statusBar.Text = state.HasItemsInHand
-            ? $"Hand: {state.HandItems.Count} item(s)"
+            ? $"Hand: {string.Join(", ", state.HandItems.Select(i => $"{i.Count} {i.ItemType.Name}"))}"
             : "";
     }
 }

@@ -370,6 +370,65 @@ public record GameState(
     }
 
     /// <summary>
+    /// Harvest: remove item from cursor cell in the active (inner) bag and acquire it
+    /// into the parent bag. Only works when inside a nested bag. Skips the cell that
+    /// holds the inner bag so it won't be overwritten.
+    /// </summary>
+    public ToolResult ToolHarvest()
+    {
+        if (!IsNested)
+            return ToolResult.Fail(this, "Not in a bag");
+
+        var cell = CurrentCell;
+        if (cell.IsEmpty)
+            return ToolResult.Ok(this);
+
+        var item = cell.Stack!;
+
+        // 1. Clear cursor cell in active bag and propagate to root
+        var activeBag = ActiveBag;
+        var clearedGrid = activeBag.Grid.SetCell(Cursor.Position, new Cell());
+        var state = WithActiveBag(activeBag with { Grid = clearedGrid });
+
+        // 2. Find parent bag in the updated tree
+        var entries = state.BreadcrumbStack.Reverse().ToList();
+        var parentDepth = entries.Count - 1;
+        var parentBag = parentDepth == 0 ? state.RootBag : state.GetBagAtDepth(parentDepth);
+        var innerBagCellIndex = entries[^1].CellIndex;
+
+        // 3. Acquire harvested item into parent, skipping the cell that holds the inner bag
+        var (updatedParentGrid, unplaced) = parentBag.Grid.AcquireItems(
+            new[] { new ItemStack(item.ItemType, item.Count) },
+            ImmutableHashSet.Create(innerBagCellIndex));
+
+        if (unplaced.Count > 0)
+            return ToolResult.Fail(this, "Parent bag is full");
+
+        // 4. Update parent bag in tree
+        if (parentDepth == 0)
+        {
+            return ToolResult.Ok(state with { RootBag = parentBag with { Grid = updatedParentGrid } });
+        }
+        else
+        {
+            // Deep nesting: rebuild from parent level to root
+            var updatedParent = parentBag with { Grid = updatedParentGrid };
+            var currentBag = updatedParent;
+            for (int i = parentDepth - 1; i >= 0; i--)
+            {
+                var ancestor = i == 0
+                    ? state.RootBag
+                    : state.GetBagAtDepth(i);
+                var ancestorCell = ancestor.Grid.GetCell(entries[i].CellIndex);
+                var updatedCell = ancestorCell with { Stack = ancestorCell.Stack! with { ContainedBag = currentBag } };
+                var updatedGrid = ancestor.Grid.SetCell(entries[i].CellIndex, updatedCell);
+                currentBag = ancestor with { Grid = updatedGrid };
+            }
+            return ToolResult.Ok(state with { RootBag = currentBag });
+        }
+    }
+
+    /// <summary>
     /// Debug tool: pick a random item type and acquire 1 into the active bag.
     /// </summary>
     public ToolResult ToolAcquireRandom(Random rng)

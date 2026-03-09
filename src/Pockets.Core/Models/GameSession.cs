@@ -125,6 +125,18 @@ public record GameSession(
     }
 
     /// <summary>
+    /// Execute Harvest tool on current state. Removes item from cursor cell
+    /// in active bag and acquires it into the parent bag.
+    /// </summary>
+    public GameSession ExecuteHarvest()
+    {
+        var cursorItem = Current.CurrentCell.Stack;
+        var result = Current.ToolHarvest();
+        return ApplyResult(result, () =>
+            cursorItem != null ? $"Harvest: {cursorItem.Count} {cursorItem.ItemType.Name}" : "Harvest: empty cell");
+    }
+
+    /// <summary>
     /// Execute AcquireRandom tool on current state.
     /// </summary>
     public GameSession ExecuteAcquireRandom(Random rng)

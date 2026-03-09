@@ -16,7 +16,7 @@ if (dir is null)
 
 var dataPath = Path.Combine(dir.FullName, "data");
 var itemTypes = ItemTypeLoader.LoadFromDirectory(dataPath);
-var gameState = GameInitializer.CreateRandomStage1Game(itemTypes);
+var gameState = GameInitializer.CreateRandomStage2Game(itemTypes);
 
 Application.Init();
 var top = Application.Top;

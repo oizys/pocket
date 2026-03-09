@@ -21,12 +21,14 @@ public class GridView : View
     public void UpdateState(GameState state)
     {
         _state = state;
+        Width = CellRenderer.CellWidth * state.ActiveBag.Grid.Columns;
+        Height = CellRenderer.CellHeight * state.ActiveBag.Grid.Rows;
         SetNeedsDisplay();
     }
 
     public override void Redraw(Rect bounds)
     {
-        var grid = _state.RootBag.Grid;
+        var grid = _state.ActiveBag.Grid;
         var cursorPos = _state.Cursor.Position;
 
         for (int row = 0; row < grid.Rows; row++)

@@ -10,6 +10,7 @@ public class GameView : Window
 {
     private GameSession _session;
     private readonly GridPanel _gridPanel;
+    private readonly RightPanel _rightPanel;
     private readonly Random _rng = new();
 
     public GameView(GameState initialState) : base("Pockets")
@@ -22,9 +23,9 @@ public class GameView : Window
         _session = GameSession.New(initialState);
 
         _gridPanel = new GridPanel(_session.Current);
-        var rightPanel = new RightPanel();
+        _rightPanel = new RightPanel();
 
-        Add(_gridPanel, rightPanel);
+        Add(_gridPanel, _rightPanel);
     }
 
     public override bool ProcessKey(KeyEvent keyEvent)
@@ -41,7 +42,7 @@ public class GameView : Window
         if (direction is not null)
         {
             _session = _session.MoveCursor(direction.Value);
-            _gridPanel.UpdateState(_session.Current);
+            UpdateUI();
             return true;
         }
 
@@ -52,7 +53,7 @@ public class GameView : Window
             if (undone is not null)
             {
                 _session = undone;
-                _gridPanel.UpdateState(_session.Current);
+                UpdateUI();
             }
             return true;
         }
@@ -71,6 +72,7 @@ public class GameView : Window
             (Key)'3' => _session.ExecuteQuickSplit(),
             (Key)'4' => _session.ExecuteSort(),
             (Key)'5' => _session.ExecuteAcquireRandom(_rng),
+            (Key)'6' => _session.ExecuteHarvest(),
             (Key)'e' or (Key)'E' => _session.ExecuteEnterBag(),
             (Key)'q' or (Key)'Q' => _session.ExecuteLeaveBag(),
             _ => null
@@ -79,15 +81,21 @@ public class GameView : Window
         if (newSession is not null)
         {
             _session = newSession;
-            _gridPanel.UpdateState(_session.Current);
+            UpdateUI();
             return true;
         }
 
         return base.ProcessKey(keyEvent);
     }
 
+    private void UpdateUI()
+    {
+        _gridPanel.UpdateState(_session.Current);
+        _rightPanel.UpdateLog(_session.ActionLog);
+    }
+
     /// <summary>
-    /// Opens a dialog for modal split: user enters the amount to keep in the cell.
+    /// Opens a dialog for modal split: user enters the amount to grab.
     /// </summary>
     private void ShowModalSplitDialog()
     {
@@ -117,7 +125,7 @@ public class GameView : Window
                 if (newSession is not null)
                 {
                     _session = newSession;
-                    _gridPanel.UpdateState(_session.Current);
+                    UpdateUI();
                 }
             }
             Application.RequestStop();
