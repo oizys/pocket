@@ -210,26 +210,69 @@ Development should be done in stages, and should be fully functional at the end 
 
 ### Stage 2
 
-- Hand-only stacks 
-- Modal Split
-- Undo operations, log
-- Harvesting World
-- Bag in bag
-- Breadcrumbs
-- Are
-- Rope
+#### Hand as Hidden Bag
+- Hand becomes a real Bag (not visible in the root bag) instead of position markers
+- Grab removes items from the source bag and places them in the Hand bag (true cut)
+- Drop takes items from the Hand bag and places them at cursor / via Acquire
+- A single GameState transition covers both the source bag mutation and hand bag mutation (atomicity via immutable swap)
+- Hand bag renders as an overlay or indicator, not as a navigable bag
 
+#### Modal Split
+- Key: Shift-3
+- Opens a popup dialog with a slider to adjust split amounts
+- Defaults to half (remainder on left, e.g. 31 → 16/15)
+- OK confirms and places the right portion in the Hand bag
+- Cancel returns to previous state
+- Only works on a single stack with count > 1
 
-Stage 3
+#### Undo and Action Log
+- Undo: Ctrl-Z
+- State snapshot undo — push entire GameState onto an ImmutableStack before each action
+- Max depth: 1000 (effectively unlimited given low memory cost of shared immutable structure)
+- Action Log: visible panel showing human-readable history of operations
+  - e.g. "Grabbed 5 Plain Rock from (2,3)", "Sorted bag", "Undo: Sorted bag"
+  - Primarily for debugging and visual feedback in Stage 2
+
+#### Bag Navigation
+- Open bag: E — if cursor cell contains a bag item, push current cursor onto breadcrumb stack and enter the bag's grid
+- Go back: Q — pop breadcrumb stack, return to parent bag. Disabled at root bag
+- Breadcrumb trail displayed above the grid showing bag path
+
+#### Wilderness Bags (Minimal)
+- See `/design/wilderness-bags.md` for full design
+- Stage 2 scope: one wilderness template (e.g. "Forest"), manually placed in starting inventory
+- Wilderness bag contains a randomly generated grid of harvestable resource items
+- Harvest tool (new, key 6): per-item action, removes item from wilderness cell, acquires into parent bag
+- No bag lifecycle/depletion tracking yet — just enter, harvest, leave
+
+#### New/Changed Hotkeys
+
+| Key | Action |
+|-----|--------|
+| Arrows | Move cursor |
+| 1 | Grab (true cut to Hand bag) |
+| 2 | Drop (from Hand bag to cursor/acquire) |
+| 3 | Quick Split (right half goes to Hand bag) |
+| Shift-3 | Modal Split (dialog, right portion to Hand bag) |
+| 4 | Sort |
+| 5 | Acquire Random (debug) |
+| 6 | Harvest (wilderness only) |
+| E | Open bag at cursor |
+| Q | Go back up (pop breadcrumb) |
+| Ctrl-Z | Undo |
+| Ctrl-Q | Quit |
+
+### Stage 3
 
 - Adding mouse support
-- 
 
-Stage 4
+### Stage 4
+
+- TBD
 
 ### Future Stages
 
-- will be added later
+- See `/design/INDEX.md` for proposed feature ideas
 
 # Notes
 
