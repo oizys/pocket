@@ -6,3 +6,4 @@
 | 2 | Progressive Unveiling | Early-Late | Proposed | [progressive-unveiling.md](progressive-unveiling.md) |
 | 3 | Platform-Adaptive Bags | Early | Proposed | [platform-adapters.md](platform-adapters.md) |
 | 4 | Wilderness Bags (Harvestable Worlds) | Early-Mid | Proposed | [wilderness-bags.md](wilderness-bags.md) |
+| 5 | Cell Frames (Logic/Contents Separation) | Mid | Proposed | [cell-frames.md](cell-frames.md) |
