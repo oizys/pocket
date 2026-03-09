@@ -57,6 +57,13 @@ public class GameView : Window
             return true;
         }
 
+        // Shift-3 (#) = Modal Split dialog
+        if (keyEvent.Key == (Key)'#')
+        {
+            ShowModalSplitDialog();
+            return true;
+        }
+
         GameSession? newSession = keyEvent.Key switch
         {
             (Key)'1' => _session.ExecuteGrab(),
@@ -77,5 +84,52 @@ public class GameView : Window
         }
 
         return base.ProcessKey(keyEvent);
+    }
+
+    /// <summary>
+    /// Opens a dialog for modal split: user enters the amount to keep in the cell.
+    /// </summary>
+    private void ShowModalSplitDialog()
+    {
+        var cell = _session.Current.CurrentCell;
+        if (cell.IsEmpty || cell.Stack!.Count <= 1)
+            return;
+
+        var stack = cell.Stack;
+        var max = stack.Count - 1;
+
+        var dialog = new Dialog("Split", 40, 8);
+        var label = new Label($"Grab how many {stack.ItemType.Name}? (1-{max})")
+        {
+            X = 1, Y = 0
+        };
+        var input = new TextField("")
+        {
+            X = 1, Y = 1, Width = 10
+        };
+        var okButton = new Button("OK");
+        okButton.Clicked += () =>
+        {
+            if (int.TryParse(input.Text.ToString(), out var grabCount))
+            {
+                var leftCount = stack.Count - grabCount;
+                var newSession = _session.ExecuteModalSplit(leftCount);
+                if (newSession is not null)
+                {
+                    _session = newSession;
+                    _gridPanel.UpdateState(_session.Current);
+                }
+            }
+            Application.RequestStop();
+        };
+        var cancelButton = new Button("Cancel");
+        cancelButton.Clicked += () => Application.RequestStop();
+
+        dialog.AddButton(okButton);
+        dialog.AddButton(cancelButton);
+        dialog.Add(label, input);
+        input.SetFocus();
+
+        Application.Run(dialog);
     }
 }

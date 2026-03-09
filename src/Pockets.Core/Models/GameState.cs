@@ -34,9 +34,9 @@ public record GameState(
             foreach (var entry in BreadcrumbStack.Reverse())
             {
                 var cell = bag.Grid.GetCell(entry.CellIndex);
-                if (cell.InnerBag is null)
+                if (cell.Stack?.ContainedBag is null)
                     break;
-                bag = cell.InnerBag;
+                bag = cell.Stack.ContainedBag;
             }
             return bag;
         }
@@ -61,7 +61,7 @@ public record GameState(
                 ? RootBag
                 : GetBagAtDepth(i);
             var cell = parentBag.Grid.GetCell(entries[i].CellIndex);
-            var updatedCell = cell with { InnerBag = currentBag };
+            var updatedCell = cell with { Stack = cell.Stack! with { ContainedBag = currentBag } };
             var updatedGrid = parentBag.Grid.SetCell(entries[i].CellIndex, updatedCell);
             currentBag = parentBag with { Grid = updatedGrid };
         }
@@ -79,8 +79,8 @@ public record GameState(
         for (int i = 0; i < depth && i < entries.Count; i++)
         {
             var cell = bag.Grid.GetCell(entries[i].CellIndex);
-            if (cell.InnerBag is null) break;
-            bag = cell.InnerBag;
+            if (cell.Stack?.ContainedBag is null) break;
+            bag = cell.Stack.ContainedBag;
         }
         return bag;
     }
@@ -140,7 +140,7 @@ public record GameState(
     {
         var cell = CurrentCell;
         if (!cell.HasBag)
-            return ToolResult.Fail(this, "No bag to enter");
+            return ToolResult.Fail(this, "No bag at cursor");
 
         var cellIndex = Cursor.Position.ToIndex(ActiveBag.Grid.Columns);
         var entry = new BreadcrumbEntry(cellIndex, Cursor);
@@ -185,10 +185,10 @@ public record GameState(
             foreach (var entry in BreadcrumbStack.Reverse())
             {
                 var cell = bag.Grid.GetCell(entry.CellIndex);
-                if (cell.InnerBag is null) break;
-                var name = cell.Stack?.ItemType.Name ?? cell.InnerBag.EnvironmentType;
+                if (cell.Stack?.ContainedBag is null) break;
+                var name = cell.Stack.ItemType.Name;
                 path.Add(name);
-                bag = cell.InnerBag;
+                bag = cell.Stack.ContainedBag;
             }
             return path;
         }
@@ -362,7 +362,7 @@ public record GameState(
             .ThenBy(s => s.ItemType.Name)
             .ToList();
 
-        // Preserve InnerBag references when sorting: clear only stacks, keep bags
+        // Bags travel with ItemStacks via ContainedBag, so they're preserved through sort
         var emptyGrid = Grid.Create(grid.Columns, grid.Rows);
         var (updatedGrid, _) = emptyGrid.AcquireItems(sorted);
 

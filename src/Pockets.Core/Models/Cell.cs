@@ -1,10 +1,10 @@
 namespace Pockets.Core.Models;
 
 /// <summary>
-/// A single cell in a grid. Holds an optional ItemStack, an optional category filter,
-/// and an optional inner Bag (for bag-type items that contain their own grid).
+/// A single cell in a grid. Holds an optional ItemStack and an optional category filter.
+/// Bag contents are carried by ItemStack.ContainedBag, not by the cell.
 /// </summary>
-public record Cell(ItemStack? Stack = null, Category? CategoryFilter = null, Bag? InnerBag = null)
+public record Cell(ItemStack? Stack = null, Category? CategoryFilter = null)
 {
     /// <summary>
     /// True when this cell contains no item stack.
@@ -12,9 +12,9 @@ public record Cell(ItemStack? Stack = null, Category? CategoryFilter = null, Bag
     public bool IsEmpty => Stack is null;
 
     /// <summary>
-    /// True when this cell contains a bag that can be opened.
+    /// True when this cell contains a bag-type item with contents.
     /// </summary>
-    public bool HasBag => InnerBag is not null;
+    public bool HasBag => Stack?.ContainedBag is not null;
 
     /// <summary>
     /// Returns true if the given item type is allowed in this cell.

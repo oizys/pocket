@@ -32,7 +32,7 @@ public class BagNavigationTests
 
         // Create root bag with the inner bag at cell 0
         var rootGrid = Grid.Create(4, 3);
-        var bagCell = new Cell(new ItemStack(SmallBag, 1), InnerBag: innerBag);
+        var bagCell = new Cell(new ItemStack(SmallBag, 1, ContainedBag: innerBag));
         rootGrid = rootGrid.SetCell(0, bagCell);
 
         if (rootContents != null)
@@ -73,7 +73,7 @@ public class BagNavigationTests
         var result = state.EnterBag();
 
         Assert.False(result.Success);
-        Assert.Contains("No bag", result.Error);
+        Assert.Contains("No bag at cursor", result.Error);
     }
 
     [Fact]
@@ -206,7 +206,7 @@ public class BagNavigationTests
         Assert.Equal(SmallBag, left.RootBag.Grid.GetCell(0).Stack!.ItemType);
 
         // But the inner bag should now have an empty cell 0
-        var innerBag = left.RootBag.Grid.GetCell(0).InnerBag!;
+        var innerBag = left.RootBag.Grid.GetCell(0).Stack!.ContainedBag!;
         Assert.True(innerBag.Grid.GetCell(0).IsEmpty);
     }
 
@@ -239,6 +239,56 @@ public class BagNavigationTests
             .MoveCursor(Direction.Right);
 
         Assert.Equal(new Position(0, 0), moved.Cursor.Position);
+    }
+
+    // ==================== Grab/Drop bag items preserves contents ====================
+
+    [Fact]
+    public void GrabBagItem_PreservesContainedBag()
+    {
+        var innerItems = new[] { new ItemStack(Rck, 5), new ItemStack(Swd, 1) };
+        var state = CreateWithInnerBag(innerContents: innerItems);
+
+        // Grab the bag item from cell 0
+        var grabbed = state.ToolGrab();
+        Assert.True(grabbed.Success);
+
+        // The bag item is now in hand — verify it still has its ContainedBag
+        var handItem = grabbed.State.HandItems[0];
+        Assert.Equal(SmallBag, handItem.ItemType);
+        Assert.NotNull(handItem.ContainedBag);
+        Assert.Equal(3, handItem.ContainedBag!.Grid.Columns);
+
+        // Contents should still be there
+        var innerBag = handItem.ContainedBag;
+        Assert.Equal(Rck, innerBag.Grid.GetCell(0).Stack!.ItemType);
+        Assert.Equal(5, innerBag.Grid.GetCell(0).Stack!.Count);
+    }
+
+    [Fact]
+    public void GrabAndDropBagItem_RoundTrip_PreservesContents()
+    {
+        var innerItems = new[] { new ItemStack(Rck, 5) };
+        var state = CreateWithInnerBag(innerContents: innerItems);
+
+        // Grab bag from cell 0
+        var grabbed = state.ToolGrab().State;
+        // Move cursor to empty cell and drop
+        grabbed = grabbed.MoveCursor(Direction.Right);
+        var dropped = grabbed.ToolDrop();
+
+        Assert.True(dropped.Success);
+        // Bag should now be at cell (0,1)
+        var cell = dropped.State.RootBag.Grid.GetCell(new Position(0, 1));
+        Assert.Equal(SmallBag, cell.Stack!.ItemType);
+        Assert.NotNull(cell.Stack.ContainedBag);
+
+        // Enter the bag and verify contents survived the move
+        var movedState = dropped.State;
+        var entered = movedState.EnterBag();
+        Assert.True(entered.Success);
+        Assert.Equal(Rck, entered.State.ActiveBag.Grid.GetCell(0).Stack!.ItemType);
+        Assert.Equal(5, entered.State.ActiveBag.Grid.GetCell(0).Stack!.Count);
     }
 
     // ==================== Enter/Leave roundtrip via GameSession ====================

@@ -102,4 +102,4 @@ dotnet run --project src/Pockets.App  # run the TUI app
 
 ### Bag Navigation
 
-`Cell.InnerBag` holds a nested `Bag` for bag-type items. `GameState.Breadcrumbs` is an `ImmutableStack<BreadcrumbEntry>` tracking the path from root to active bag. `ActiveBag` computed property follows the breadcrumb trail. `WithActiveBag(Bag)` propagates changes back up to root (zipper pattern). `GameSession` wraps `GameState` with undo stack + action log.
+`ItemStack.ContainedBag` holds a nested `Bag` for bag-type items — the bag travels with the item through grab/drop/sort. `Cell.HasBag` is a convenience property that checks `Stack?.ContainedBag`. `GameState.Breadcrumbs` is an `ImmutableStack<BreadcrumbEntry>` tracking the path from root to active bag. `ActiveBag` computed property follows the breadcrumb trail. `WithActiveBag(Bag)` propagates changes back up to root (zipper pattern). `GameSession` wraps `GameState` with undo stack + action log.

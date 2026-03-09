@@ -2,8 +2,9 @@ namespace Pockets.Core.Models;
 
 /// <summary>
 /// An ItemType paired with a count. Supports merging same-type stacks and splitting.
+/// Bag-type items carry their contents via ContainedBag, so the bag travels with the item.
 /// </summary>
-public record ItemStack(ItemType ItemType, int Count)
+public record ItemStack(ItemType ItemType, int Count, Bag? ContainedBag = null)
 {
     /// <summary>
     /// Attempts to merge another stack into this one.
