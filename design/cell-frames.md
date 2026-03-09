@@ -74,12 +74,16 @@ Option 2 (orthogonal slots) is probably the right middle ground if needed, since
 - **Reduces friction:** separates concerns that would otherwise accumulate as Cell properties, keeps each behavior in its own class
 - **Emergent potential:** High. Player-placed frames turn grids into programmable systems. Combined with nested bags, you get player-designed machines (a bag with conveyor frames = an auto-sorter)
 
+## Implementation Decisions
+
+- **Sealed abstract record pattern** (decided): Use `abstract record CellFrame(bool IsLocked = false)` with `sealed record` subtypes (ConveyorFrame, FilterFrame, etc.). This gives immutability, structural equality, `with` expressions, and switch-expression pattern matching — effectively C# discriminated unions. Each subtype is sealed to keep the set closed.
+- **CategoryFilter stays separate initially**: Migrate into a `FilterFrame` later once core frame behaviors are proven. No reason to add risk for no immediate gain.
+- **One frame per cell, with orthogonal slots as escape hatch**: If we later need both a constraint and a behavior on one cell, split into two typed slots (e.g. `ConstraintFrame?` + `BehaviorFrame?`) rather than a general list.
+
 ## Open Questions
 
-- Should frames be immutable records (like everything else) or use inheritance? Records with a discriminated union pattern (sealed abstract + subtypes) fit the codebase better than classical inheritance.
 - When do players unlock frame placement? Too early might overwhelm; too late and grids feel static.
 - How do frame behaviors interact with the tool/action queue? Conveyors and spawners imply a tick/turn system.
-- Should `CategoryFilter` migrate into frames immediately or stay as a separate field for simplicity?
 
 ## Status
 
