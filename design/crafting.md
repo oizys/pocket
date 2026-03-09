@@ -23,10 +23,18 @@ Recipe
 ├── Id: string
 ├── Name: string
 ├── Inputs: ImmutableArray<ItemStack>        (required materials)
-├── Outputs: ImmutableArray<ItemStack>       (produced items)
+├── Output: RecipeOutput                     (static list OR generator function)
 ├── Duration: int                            (time units)
 └── FacilityType: string?                    (which facility types can run this, null = any)
 ```
+
+**Output as factory/generator:** Rather than a static list of output ItemStacks, recipe outputs should support generator functions (`Func<Random, ImmutableArray<ItemStack>>`). This is essential for:
+- **Bag crafting**: each crafted bag needs a unique Id and fresh grid (see `bag-crafting.md`)
+- **Slot machines / gambling**: outputs drawn from a weighted loot table with randomness
+- **Spawners**: periodic output generation with variation
+- **Procedural items**: unique items with randomly rolled properties
+
+Static outputs are just the degenerate case where the generator ignores the RNG and returns a fixed list.
 
 ### Facility
 
