@@ -64,6 +64,8 @@ public class GameView : Window
             (Key)'3' => _session.ExecuteQuickSplit(),
             (Key)'4' => _session.ExecuteSort(),
             (Key)'5' => _session.ExecuteAcquireRandom(_rng),
+            (Key)'e' or (Key)'E' => _session.ExecuteEnterBag(),
+            (Key)'q' or (Key)'Q' => _session.ExecuteLeaveBag(),
             _ => null
         };
 

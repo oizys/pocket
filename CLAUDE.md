@@ -82,16 +82,24 @@ dotnet run --project src/Pockets.App  # run the TUI app
 - Game starts with 4-10 random stacks from the data list
 - Ctrl-Q quits
 
-### Tools (hotkeys 1-5)
+### Tools and Navigation
 
 | Key | Tool | Behavior |
 |-----|------|----------|
 | 1 | Grab | Remove cursor item, place in Hand bag (merge if same type). No-op if hand full |
 | 2 | Drop | Place hand items at cursor (merge if same type), remainder acquires from cell 0. No-op if type mismatch or bag full |
 | 3 | Quick Split | Split cursor cell in half; left stays, right goes to Hand bag |
+| Shift-3 | Modal Split | Dialog to adjust split amount; right portion goes to Hand bag |
 | 4 | Sort | Sort & merge entire bag by (Category, Name) |
 | 5 | Acquire Random | Debug: add 1 random item to grid |
+| E | Enter Bag | Open bag at cursor, push breadcrumb, reset cursor to (0,0) |
+| Q | Leave Bag | Pop breadcrumb, return to parent bag with saved cursor position |
+| Ctrl-Z | Undo | Restore previous GameState from snapshot stack (max 1000 deep) |
 
 ### Hand Model
 
 `GameState.HandBag` is a real `Bag` with a configurable number of slots (default 1, set via `GameConfig.HandSize`). Grab performs a true cut — items are removed from the grid and placed in the hand bag. Drop places hand items at cursor, with remainder acquired from cell 0. All tool methods return `ToolResult(State, Success, Error?)` instead of raw GameState.
+
+### Bag Navigation
+
+`Cell.InnerBag` holds a nested `Bag` for bag-type items. `GameState.Breadcrumbs` is an `ImmutableStack<BreadcrumbEntry>` tracking the path from root to active bag. `ActiveBag` computed property follows the breadcrumb trail. `WithActiveBag(Bag)` propagates changes back up to root (zipper pattern). `GameSession` wraps `GameState` with undo stack + action log.

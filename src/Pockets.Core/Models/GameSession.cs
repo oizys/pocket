@@ -57,6 +57,25 @@ public record GameSession(
         this with { Current = Current.MoveCursor(direction) };
 
     /// <summary>
+    /// Enter the bag at cursor cell. Undoable.
+    /// </summary>
+    public GameSession ExecuteEnterBag()
+    {
+        var result = Current.EnterBag();
+        var bagName = Current.CurrentCell.Stack?.ItemType.Name ?? "bag";
+        return ApplyResult(result, () => $"Enter: {bagName}");
+    }
+
+    /// <summary>
+    /// Leave the current bag, return to parent. Undoable.
+    /// </summary>
+    public GameSession ExecuteLeaveBag()
+    {
+        var result = Current.LeaveBag();
+        return ApplyResult(result, () => "Leave: returned to parent bag");
+    }
+
+    /// <summary>
     /// Execute Grab tool on current state.
     /// </summary>
     public GameSession ExecuteGrab()
@@ -84,6 +103,16 @@ public record GameSession(
         var cursorItem = Current.CurrentCell.Stack;
         var result = Current.ToolQuickSplit();
         return ApplyResult(result, () => FormatSplitLog(cursorItem));
+    }
+
+    /// <summary>
+    /// Execute ModalSplit tool with a specific left count.
+    /// </summary>
+    public GameSession ExecuteModalSplit(int leftCount)
+    {
+        var cursorItem = Current.CurrentCell.Stack;
+        var result = Current.ToolModalSplit(leftCount);
+        return ApplyResult(result, () => FormatModalSplitLog(cursorItem, leftCount));
     }
 
     /// <summary>
@@ -176,5 +205,10 @@ public record GameSession(
     private static string FormatSplitLog(ItemStack? item) =>
         item != null
             ? $"Split: {item.Count} {item.ItemType.Name} → {(int)Math.Ceiling(item.Count / 2.0)}/{item.Count / 2}"
+            : "Split: empty cell";
+
+    private static string FormatModalSplitLog(ItemStack? item, int leftCount) =>
+        item != null
+            ? $"Split: {item.Count} {item.ItemType.Name} → {leftCount}/{item.Count - leftCount}"
             : "Split: empty cell";
 }
