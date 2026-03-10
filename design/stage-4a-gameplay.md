@@ -77,42 +77,108 @@ Farming is wilderness-in-reverse: the player plants items and they grow over tim
 
 ### 5. Data-Driven Content
 
-Move hardcoded content definitions out of C# code and into data files:
+Move hardcoded content definitions out of C# code and into data files.
 
-**Current state (hardcoded):**
-- RecipeRegistry: all recipes in C#
-- FacilityBuilder: facility grid layouts in C#
-- GameInitializer: starter items, facility types in C#
-- WildernessGenerator templates: inline in GameInitializer
+#### Design Decisions
 
-**Target state:**
-- `/data/items/*.md` — item definitions (exists, keep as-is)
-- `/data/recipes/*.md` — recipe definitions with facility type, inputs, outputs, duration
-- `/data/facilities/*.md` — facility templates: grid size, slot layout, environment, recipes
-- `/data/wilderness/*.md` — wilderness templates: biome, dimensions, density, loot table
-- C# code only handles: loading/parsing data files, generator logic (random placement, unique bag creation), the factory functions that recipes reference by id
+**File format:** Markdown with typed headers. `# Type: Id` marks the start of each definition block. Multiple definitions can coexist in one file (package-style) or live in separate files. The loader recursively scans all `.md` files under `data/`, splits on typed headers, and routes each block to the correct parser. Directory structure is arbitrary — purely human convenience.
 
+**Definition types and their headers:**
+- `# Item: Plain Rock` — item type definition
+- `# Recipe: stone-axe` — recipe with grid/slot layout, inputs, outputs, duration
+- `# Facility: Workbench` — bag + timer + recipe selector (lists recipe ids it can run)
+- `# GridTemplate: belt-pouch-2x3` — reusable bag layout (dimensions, environment, color, cell frames)
+- `# LootTableTemplate: forest-materials` — weighted item list for generators
+
+**Recipes own the slot layout.** A recipe defines its grid dimensions, input slot positions/filters, and output slot positions. Facilities are generic containers — just a bag, timer, and recipe selector. When the active recipe changes, the facility grid is rebuilt from the recipe's layout.
+
+**Facilities own their recipe list.** A facility definition lists the recipe ids it supports. This allows the same recipe to appear in multiple facility types.
+
+#### Output Pipeline Syntax
+
+Recipe outputs use a composable pipeline. Operations chain left-to-right with `->`:
+
+| Syntax | Type | Behavior |
+|--------|------|----------|
+| `3 Plain Rock` | Static | Produces ItemStack(s) directly |
+| `@forest` | Template ref | Looks up a parsed template by id, produces a PipelineValue |
+| `!wilderness` | Generator ref | Code function, receives previous pipeline value, produces next |
+
+Examples:
 ```
-# data/recipes/stone-axe.md
-# Stone Axe
-Facility: Workbench
-Duration: 3
-Inputs: 5 Plain Rock, 3 Rough Wood
-Output: 1 Stone Axe
+Output: 1 Stone Axe                              ← pure static
+Output: @forest -> !wilderness                   ← template → generator
+Output: @belt-pouch-2x3 -> !bag                  ← grid template → bag generator
+Output: @forest -> !wilderness -> !shuffle        ← template → generate → transform
+Output: 1 Belt Pouch -> !attach-bag(@belt-pouch)  ← static → attach generated bag
 ```
 
+**PipelineValue** is a discriminated union:
 ```
-# data/facilities/workbench.md
-# Workbench
-Category: Structure
-Grid: 3x1
-Slots: in1(Material), in2(Material), out1
-Environment: Workbench
-ColorScheme: Brown
+PipelineValue
+├── TemplateValue(string Id, object Template)     ← GridTemplate, LootTableTemplate, etc.
+├── StacksValue(IReadOnlyList<ItemStack> Stacks)  ← produced items
+├── BagValue(Bag Bag)                             ← intermediate bag
 ```
 
-- Generator-type outputs (bags, wilderness) use an output type reference: `Output: generate:belt-pouch` where the generator id maps to a C# factory registered at startup
-- This keeps data files simple while allowing complex output logic
+Each generator declares accepted input type and output type. Pipeline type-checks at load time (resolve phase), not runtime. Generators are the only C# code — everything else is data.
+
+#### Example Package File
+
+```markdown
+# Item: Workbench
+**Category**: Structure
+**Stackable**: No
+A crafting station for basic tools and structures.
+
+# Facility: Workbench
+**Environment**: Workbench
+**ColorScheme**: Brown
+**Recipes**: stone-axe, stone-bench
+
+# Recipe: stone-axe
+**Name**: Stone Axe
+**Duration**: 3
+**Grid**: 3x1
+**Input 1**: Plain Rock ×5
+**Input 2**: Rough Wood ×3
+**Output**: 1 Stone Axe
+
+# Recipe: stone-bench
+**Name**: Stone Bench
+**Duration**: 5
+**Grid**: 3x1
+**Input 1**: Plain Rock ×8
+**Input 2**: Rough Wood ×2
+**Output**: 1 Stone Bench
+```
+
+#### Example Wilderness Package
+
+```markdown
+# Item: Forest Bag
+**Category**: Bag
+**Stackable**: No
+A bag containing a small forest wilderness.
+
+# LootTableTemplate: forest-materials
+**Items**: Plain Rock ×2.0, Rough Wood ×3.0, Forest Seed ×0.5
+**FillRatio**: 0.6
+
+# GridTemplate: forest-6x4
+**Columns**: 6
+**Rows**: 4
+**Environment**: Forest
+**ColorScheme**: Green
+
+# Recipe: seedling-forest
+**Name**: Forest Bag
+**Duration**: 8
+**Grid**: 3x1
+**Input 1**: Forest Seed ×5
+**Input 2**: Rich Soil ×3
+**Output**: 1 Forest Bag -> !wilderness(@forest-6x4, @forest-materials)
+```
 
 ### 6. More Wilderness Content
 
@@ -124,8 +190,8 @@ ColorScheme: Brown
 
 ## Implementation Order
 
-1. **Data architecture** — Recipe/facility/wilderness data files + loaders (foundation for everything else)
-2. **Multiple recipes per facility** — Adapt slot filtering, recipe selection UI
+1. **Data architecture** — PipelineValue DU, header parser, content registry, loaders, migrate existing data
+2. **Multiple recipes per facility** — Recipe selector, grid rebuild on switch, slot dump to parent
 3. **Facility crafting** — Workshop meta-facility, facility-as-recipe-output
 4. **Harvest tool** — Wilderness interaction, parent-bag acquisition
 5. **Farming & real-time mode** — Farm bags, tick timer, mode toggle
@@ -133,37 +199,58 @@ ColorScheme: Brown
 
 ## Architecture Notes
 
-### Data Loading Pipeline
+### Loading Pipeline
 
 ```
-Startup:
-  ItemTypeLoader.LoadFromDirectory("data/items/")
-  → ImmutableArray<ItemType>
+Phase 1 — Parse (directory-agnostic):
+  Scan all .md files under data/ recursively
+  Split each file on "# Type: Id" headers
+  Route each block to type-specific parser
+  → Raw definitions (no cross-references resolved yet)
 
-  RecipeLoader.LoadFromDirectory("data/recipes/", itemTypes, generatorRegistry)
-  → ImmutableArray<Recipe>
+Phase 2 — Resolve (cross-reference):
+  Build ItemType dictionary (name → ItemType)
+  Resolve recipe inputs (item names → ItemTypes)
+  Resolve recipe outputs (parse pipeline, validate types)
+  Resolve facility recipe lists (recipe ids → Recipe refs)
+  Resolve template refs in pipelines (template ids → parsed templates)
+  → ContentRegistry (fully resolved, ready for game init)
 
-  FacilityTemplateLoader.LoadFromDirectory("data/facilities/")
-  → ImmutableArray<FacilityTemplate>
-
-  WildernessTemplateLoader.LoadFromDirectory("data/wilderness/")
-  → ImmutableArray<WildernessTemplate>
-
-  GameInitializer.Create(itemTypes, recipes, facilityTemplates, wildernessTemplates)
-  → GameState + GameSession
+Phase 3 — Initialize:
+  Register generators in code (wilderness, bag, shuffle, attach-bag, etc.)
+  GameInitializer.Create(contentRegistry) → GameState + GameSession
 ```
 
-### Generator Registry
-
-For recipe outputs that need code (bags with unique Ids, wilderness with RNG):
+### ContentRegistry
 
 ```csharp
-GeneratorRegistry
-├── Register(string id, Func<IReadOnlyList<ItemStack>> factory)
-├── Get(string id) → Func<IReadOnlyList<ItemStack>>
+ContentRegistry
+├── Items: ImmutableDictionary<string, ItemType>
+├── Recipes: ImmutableDictionary<string, Recipe>
+├── Facilities: ImmutableDictionary<string, FacilityTemplate>
+├── GridTemplates: ImmutableDictionary<string, GridTemplate>
+├── LootTableTemplates: ImmutableDictionary<string, LootTableTemplate>
+├── Generators: ImmutableDictionary<string, Generator>
 ```
 
-Recipe data files reference generators by id. Static outputs (e.g. "1 Stone Axe") don't need a generator — the loader creates the output factory inline.
+### Generator Interface
+
+```csharp
+Generator
+├── Id: string
+├── InputType: Type (typeof(PipelineValue) subtype it accepts, or null for no input)
+├── OutputType: Type (typeof(PipelineValue) subtype it produces)
+├── Execute(PipelineValue? input) → PipelineValue
+```
+
+### Built-in Generators
+
+| Id | Input | Output | Behavior |
+|----|-------|--------|----------|
+| `wilderness` | GridTemplate + LootTableTemplate | BagValue | Creates wilderness bag with random loot |
+| `bag` | GridTemplate | BagValue | Creates empty bag from template |
+| `shuffle` | StacksValue or BagValue | same | Randomizes item positions |
+| `attach-bag` | StacksValue + GridTemplate arg | StacksValue | Sets ContainedBag on first stack's item |
 
 ## Status
 
