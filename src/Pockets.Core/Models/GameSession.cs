@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Pockets.Core.Data;
 
 namespace Pockets.Core.Models;
 
@@ -11,13 +12,23 @@ public record GameSession(
     GameState Current,
     ImmutableStack<GameState> UndoStack,
     ImmutableList<string> ActionLog,
+    ImmutableArray<Recipe> Recipes = default,
+    int TickCount = 0,
     int MaxUndoDepth = 1000)
 {
     /// <summary>
     /// Creates a new session with empty undo history.
     /// </summary>
     public static GameSession New(GameState initialState, int maxUndoDepth = 1000) =>
-        new(initialState, ImmutableStack<GameState>.Empty, ImmutableList<string>.Empty, maxUndoDepth);
+        new(initialState, ImmutableStack<GameState>.Empty, ImmutableList<string>.Empty,
+            ImmutableArray<Recipe>.Empty, 0, maxUndoDepth);
+
+    /// <summary>
+    /// Creates a new session with recipes for facility crafting.
+    /// </summary>
+    public static GameSession New(GameState initialState, ImmutableArray<Recipe> recipes, int maxUndoDepth = 1000) =>
+        new(initialState, ImmutableStack<GameState>.Empty, ImmutableList<string>.Empty,
+            recipes, 0, maxUndoDepth);
 
     /// <summary>
     /// True if there is at least one state to undo to.
@@ -236,13 +247,49 @@ public record GameSession(
         if (result.State == Current)
             return this;
 
+        // Tick facilities after each successful action
+        var tickedState = TickFacilities(result.State);
+
         var newStack = PushWithLimit(UndoStack, Current);
         return this with
         {
-            Current = result.State,
+            Current = tickedState,
             UndoStack = newStack,
-            ActionLog = ActionLog.Add(formatLog())
+            ActionLog = ActionLog.Add(formatLog()),
+            TickCount = TickCount + 1
         };
+    }
+
+    /// <summary>
+    /// Ticks all facility bags found via the BagRegistry.
+    /// Updates each facility in-place within the bag tree.
+    /// </summary>
+    private GameState TickFacilities(GameState state)
+    {
+        if (Recipes.IsDefaultOrEmpty)
+            return state;
+
+        var registry = state.Registry;
+        var facilities = registry.Facilities.ToList();
+        if (facilities.Count == 0)
+            return state;
+
+        foreach (var facility in facilities)
+        {
+            var facilityRecipes = Data.RecipeRegistry.GetRecipesForFacility(
+                facility.EnvironmentType, Recipes);
+            if (facilityRecipes.Count == 0)
+                continue;
+
+            var ticked = FacilityLogic.Tick(facility, facilityRecipes);
+            if (ticked == facility)
+                continue;
+
+            // Propagate the updated facility back into the bag tree
+            state = state.ReplaceBagById(facility.Id, ticked);
+        }
+
+        return state;
     }
 
     /// <summary>

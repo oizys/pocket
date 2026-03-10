@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Terminal.Gui;
 using Pockets.Core.Models;
 using Pockets.App.Rendering;
@@ -14,7 +15,7 @@ public class GameView : Window
     private readonly RightPanel _rightPanel;
     private readonly Random _rng = new();
 
-    public GameView(GameState initialState) : base("Pockets")
+    public GameView(GameState initialState, ImmutableArray<Recipe> recipes = default) : base("Pockets")
     {
         X = 0;
         Y = 0;
@@ -29,7 +30,9 @@ public class GameView : Window
             HotFocus = Application.Driver.MakeAttribute(Color.White, Color.Black)
         };
 
-        _session = GameSession.New(initialState);
+        _session = recipes.IsDefaultOrEmpty
+            ? GameSession.New(initialState)
+            : GameSession.New(initialState, recipes);
 
         _gridPanel = new GridPanel(_session.Current);
         _rightPanel = new RightPanel();

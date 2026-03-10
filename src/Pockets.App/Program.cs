@@ -16,10 +16,11 @@ if (dir is null)
 
 var dataPath = Path.Combine(dir.FullName, "data");
 var itemTypes = ItemTypeLoader.LoadFromDirectory(dataPath);
-var gameState = GameInitializer.CreateRandomStage2Game(itemTypes);
+var gameState = GameInitializer.CreateRandomStage3Game(itemTypes);
+var recipes = RecipeRegistry.BuildRecipes(gameState.ItemTypes);
 
 Application.Init();
 var top = Application.Top;
-top.Add(new GameView(gameState));
+top.Add(new GameView(gameState, recipes));
 Application.Run();
 Application.Shutdown();

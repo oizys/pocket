@@ -217,6 +217,51 @@ public record GameState(
         }
     }
 
+    /// <summary>
+    /// Replaces a bag anywhere in the tree (root or nested) by its Id.
+    /// Uses DFS to find and replace, rebuilding parent bags on the way back up.
+    /// Returns unchanged state if the bag Id is not found.
+    /// </summary>
+    public GameState ReplaceBagById(Guid bagId, Bag replacement)
+    {
+        if (RootBag.Id == bagId)
+            return this with { RootBag = replacement };
+
+        var updatedRoot = ReplaceBagInTree(RootBag, bagId, replacement);
+        if (updatedRoot is null)
+            return this; // not found
+
+        return this with { RootBag = updatedRoot };
+    }
+
+    /// <summary>
+    /// Recursively searches for and replaces a bag by Id within a bag tree.
+    /// Returns the updated parent bag, or null if not found.
+    /// </summary>
+    private static Bag? ReplaceBagInTree(Bag parent, Guid targetId, Bag replacement)
+    {
+        for (int i = 0; i < parent.Grid.Cells.Length; i++)
+        {
+            var cell = parent.Grid.GetCell(i);
+            if (cell.Stack?.ContainedBag is not { } inner)
+                continue;
+
+            if (inner.Id == targetId)
+            {
+                var updatedCell = cell with { Stack = cell.Stack! with { ContainedBag = replacement } };
+                return parent with { Grid = parent.Grid.SetCell(i, updatedCell) };
+            }
+
+            var updatedInner = ReplaceBagInTree(inner, targetId, replacement);
+            if (updatedInner is not null)
+            {
+                var updatedCell = cell with { Stack = cell.Stack! with { ContainedBag = updatedInner } };
+                return parent with { Grid = parent.Grid.SetCell(i, updatedCell) };
+            }
+        }
+        return null;
+    }
+
     // ==================== Tools (operate on ActiveBag) ====================
 
     /// <summary>
