@@ -132,6 +132,22 @@ public record GameState(
     public Cell CurrentCell => ActiveBag.Grid.GetCell(Cursor.Position);
 
     /// <summary>
+    /// Context-sensitive interaction at cursor cell. Dispatches to:
+    /// - EnterBag if cursor cell contains a bag
+    /// - Harvest if nested and cursor cell has an item (non-bag)
+    /// Returns no-op if nothing to interact with.
+    /// </summary>
+    public ToolResult Interact()
+    {
+        var cell = CurrentCell;
+        if (cell.HasBag)
+            return EnterBag();
+        if (IsNested && !cell.IsEmpty)
+            return ToolHarvest();
+        return ToolResult.Ok(this);
+    }
+
+    /// <summary>
     /// Enter the bag at the cursor cell. Pushes current cursor onto breadcrumb stack
     /// and resets cursor to (0,0) in the inner bag.
     /// No-op if cursor cell doesn't contain a bag.
@@ -195,6 +211,138 @@ public record GameState(
     }
 
     // ==================== Tools (operate on ActiveBag) ====================
+
+    /// <summary>
+    /// Primary action (left-click / key 1). Context-sensitive:
+    /// - Cell has bag → enter bag
+    /// - Nested + empty hand + occupied cell → harvest to parent
+    /// - Empty hand + occupied cell → grab full stack
+    /// - Full hand + empty cell → drop all
+    /// - Full hand + same type → merge (overflow stays in hand)
+    /// - Full hand + different type → swap
+    /// </summary>
+    public ToolResult ToolPrimary()
+    {
+        var cell = CurrentCell;
+
+        // Interact first: enter bags (always), harvest when nested
+        if (cell.HasBag)
+            return EnterBag();
+
+        if (!HasItemsInHand)
+        {
+            if (cell.IsEmpty)
+                return ToolResult.Ok(this);
+            // Nested non-bag item → harvest; root → grab
+            return IsNested ? ToolHarvest() : ToolGrab();
+        }
+
+        // Hand is full
+        if (cell.IsEmpty)
+            return ToolDrop();
+        if (cell.Stack!.ItemType == HandItems[0].ItemType)
+            return ToolDrop(); // merge
+        return ToolSwap();
+    }
+
+    /// <summary>
+    /// Secondary action (right-click / key 2). Half/one variant:
+    /// - Empty hand + occupied cell → grab half
+    /// - Full hand + empty cell → place one
+    /// - Full hand + same type → place one
+    /// </summary>
+    public ToolResult ToolSecondary()
+    {
+        var cell = CurrentCell;
+
+        if (!HasItemsInHand)
+        {
+            if (cell.IsEmpty || cell.Stack!.Count <= 1)
+                return ToolResult.Ok(this);
+            return ToolQuickSplit();
+        }
+
+        // Hand is full: place one
+        if (cell.IsEmpty || cell.Stack!.ItemType == HandItems[0].ItemType)
+            return ToolPlaceOne();
+
+        return ToolResult.Ok(this);
+    }
+
+    /// <summary>
+    /// Swap: exchange hand contents with cursor cell contents.
+    /// </summary>
+    public ToolResult ToolSwap()
+    {
+        if (!HasItemsInHand || CurrentCell.IsEmpty)
+            return ToolResult.Ok(this);
+
+        var cellStack = CurrentCell.Stack!;
+        var handStack = HandItems[0];
+
+        // Put hand item in cell, cell item in hand
+        var activeBag = ActiveBag;
+        var grid = activeBag.Grid.SetCell(Cursor.Position, new Cell(handStack));
+
+        var emptyHand = CreateHandBag(HandBag.Grid.Columns);
+        var (newHand, unplaced) = emptyHand.AcquireItems(new[] { cellStack });
+        if (unplaced.Count > 0)
+            return ToolResult.Fail(this, "Cannot swap: hand cannot hold this item");
+
+        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
+        {
+            HandBag = newHand
+        });
+    }
+
+    /// <summary>
+    /// Place one item from hand into cursor cell (empty or same type).
+    /// </summary>
+    public ToolResult ToolPlaceOne()
+    {
+        if (!HasItemsInHand)
+            return ToolResult.Ok(this);
+
+        var handStack = HandItems[0];
+        var cell = CurrentCell;
+
+        ItemStack newCellStack;
+        if (cell.IsEmpty)
+        {
+            newCellStack = handStack with { Count = 1 };
+        }
+        else if (cell.Stack!.ItemType == handStack.ItemType)
+        {
+            if (cell.Stack.Count >= cell.Stack.ItemType.EffectiveMaxStackSize)
+                return ToolResult.Fail(this, "Stack is full");
+            newCellStack = cell.Stack with { Count = cell.Stack.Count + 1 };
+        }
+        else
+        {
+            return ToolResult.Ok(this);
+        }
+
+        var activeBag = ActiveBag;
+        var grid = activeBag.Grid.SetCell(Cursor.Position, new Cell(newCellStack));
+
+        // Reduce hand by 1
+        Bag updatedHand;
+        if (handStack.Count <= 1)
+        {
+            updatedHand = CreateHandBag(HandBag.Grid.Columns);
+        }
+        else
+        {
+            var reducedStack = handStack with { Count = handStack.Count - 1 };
+            updatedHand = CreateHandBag(HandBag.Grid.Columns);
+            (updatedHand, _) = updatedHand.AcquireItems(new[] { reducedStack });
+        }
+
+        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
+        {
+            HandBag = updatedHand
+        });
+    }
 
     /// <summary>
     /// Grab: remove item from cursor cell and acquire it into the hand bag.

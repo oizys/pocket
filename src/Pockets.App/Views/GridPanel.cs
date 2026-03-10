@@ -44,7 +44,7 @@ public class GridPanel : FrameView
         };
         _descriptionView.UpdateState(state);
 
-        _toolbar = new Label("[1:Grab] [2:Drop] [3:Split] [#:Modal] [4:Sort] [5:Rand] [E:Open] [Q:Back] [^Z:Undo]")
+        _toolbar = new Label("[1/E/LClick:Action] [2/RClick:Half] [#:Modal] [4:Sort] [Q:Back] [^Z:Undo]")
         {
             X = 0,
             Y = Pos.AnchorEnd(2),
@@ -62,6 +62,8 @@ public class GridPanel : FrameView
 
         Add(_breadcrumbs, _gridView, _descriptionView, _toolbar, _statusBar);
     }
+
+    public GridView GetGridView() => _gridView;
 
     public void UpdateState(GameState state)
     {

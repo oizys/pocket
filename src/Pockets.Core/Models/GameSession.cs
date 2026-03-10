@@ -51,10 +51,77 @@ public record GameSession(
     }
 
     /// <summary>
-    /// Moves the cursor. Not undoable, not logged.
+    /// Moves the cursor one step. Not undoable, not logged.
     /// </summary>
     public GameSession MoveCursor(Direction direction) =>
         this with { Current = Current.MoveCursor(direction) };
+
+    /// <summary>
+    /// Moves the cursor to a specific position. Not undoable, not logged.
+    /// </summary>
+    public GameSession MoveCursor(GameState state, Position position) =>
+        this with { Current = state with { Cursor = new Cursor(position) } };
+
+    /// <summary>
+    /// Primary action (left-click / key 1). Contextual grab/drop/swap/merge/interact. Undoable.
+    /// </summary>
+    public GameSession ExecutePrimary()
+    {
+        var cell = Current.CurrentCell;
+        var handFull = Current.HasItemsInHand;
+        var result = Current.ToolPrimary();
+        return ApplyResult(result, () =>
+        {
+            if (cell.HasBag)
+                return $"Enter: {cell.Stack?.ItemType.Name ?? "bag"}";
+            if (!handFull && !cell.IsEmpty && Current.IsNested)
+                return $"Harvest: {cell.Stack!.Count} {cell.Stack.ItemType.Name}";
+            if (!handFull && !cell.IsEmpty)
+                return $"Grab: {cell.Stack!.Count} {cell.Stack!.ItemType.Name}";
+            if (handFull && cell.IsEmpty)
+                return $"Drop: {Current.HandItems[0].Count} {Current.HandItems[0].ItemType.Name}";
+            if (handFull && !cell.IsEmpty && cell.Stack!.ItemType == Current.HandItems[0].ItemType)
+                return $"Merge: {Current.HandItems[0].Count} {Current.HandItems[0].ItemType.Name}";
+            if (handFull && !cell.IsEmpty)
+                return $"Swap: {Current.HandItems[0].ItemType.Name} ↔ {cell.Stack!.ItemType.Name}";
+            return "Primary: no-op";
+        });
+    }
+
+    /// <summary>
+    /// Secondary action (right-click / key 2). Half/one variant. Undoable.
+    /// </summary>
+    public GameSession ExecuteSecondary()
+    {
+        var cell = Current.CurrentCell;
+        var handFull = Current.HasItemsInHand;
+        var result = Current.ToolSecondary();
+        return ApplyResult(result, () =>
+        {
+            if (!handFull && !cell.IsEmpty)
+                return $"Grab half: {cell.Stack!.ItemType.Name}";
+            if (handFull)
+                return $"Place 1: {Current.HandItems[0].ItemType.Name}";
+            return "Secondary: no-op";
+        });
+    }
+
+    /// <summary>
+    /// Context-sensitive interact at cursor. Enters bags, harvests in wilderness, etc. Undoable.
+    /// </summary>
+    public GameSession ExecuteInteract()
+    {
+        var cell = Current.CurrentCell;
+        var result = Current.Interact();
+        return ApplyResult(result, () =>
+        {
+            if (cell.HasBag)
+                return $"Enter: {cell.Stack?.ItemType.Name ?? "bag"}";
+            if (Current.IsNested && !cell.IsEmpty)
+                return $"Harvest: {cell.Stack!.Count} {cell.Stack.ItemType.Name}";
+            return "Interact: nothing to do";
+        });
+    }
 
     /// <summary>
     /// Enter the bag at cursor cell. Undoable.
@@ -72,7 +139,7 @@ public record GameSession(
     public GameSession ExecuteLeaveBag()
     {
         var result = Current.LeaveBag();
-        return ApplyResult(result, () => "Leave: returned to parent bag");
+        return ApplyResult(result, () => "Back: returned to parent bag");
     }
 
     /// <summary>
