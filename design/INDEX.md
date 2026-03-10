@@ -11,3 +11,4 @@
 | 7 | Crafting (Recipes, Facilities, Timed Production) | Mid | Proposed | [crafting.md](crafting.md) |
 | 8 | Tick System (Hierarchical Fixed-Point Time) | Early-Mid | Proposed | [tick-system.md](tick-system.md) |
 | 9 | Bag Crafting (Building Better Bags) | Mid | Proposed | [bag-crafting.md](bag-crafting.md) |
+| -- | Inventory Controls Research (Cross-Game) | -- | Reference | [inventory-controls-research.md](inventory-controls-research.md) |

@@ -21,6 +21,14 @@ public class GameView : Window
         Width = Dim.Fill();
         Height = Dim.Fill();
 
+        ColorScheme = new ColorScheme
+        {
+            Normal = Application.Driver.MakeAttribute(Color.White, Color.Black),
+            Focus = Application.Driver.MakeAttribute(Color.White, Color.Black),
+            HotNormal = Application.Driver.MakeAttribute(Color.White, Color.Black),
+            HotFocus = Application.Driver.MakeAttribute(Color.White, Color.Black)
+        };
+
         _session = GameSession.New(initialState);
 
         _gridPanel = new GridPanel(_session.Current);
@@ -29,7 +37,8 @@ public class GameView : Window
         // Wire mouse events from GridView back to us
         _gridPanel.GetGridView().GridCellClicked += OnGridCellClicked;
         _gridPanel.GetGridView().GridCellRightClicked += OnGridCellRightClicked;
-        _gridPanel.GetGridView().GridCellDragged += OnGridCellDragged;
+        _gridPanel.GetGridView().MouseStateChanged += OnMouseStateChanged;
+        _gridPanel.GetBackButton().BackClicked += OnBackClicked;
 
         Add(_gridPanel, _rightPanel);
     }
@@ -110,18 +119,19 @@ public class GameView : Window
         UpdateUI();
     }
 
-    private void OnGridCellDragged(Position from, Position to)
+    private void OnBackClicked()
     {
-        _session = _session.MoveCursor(_session.Current, from);
-        _session = _session.ExecutePrimary();
-
-        if (!_session.Current.HasItemsInHand)
-            return;
-
-        _session = _session.MoveCursor(_session.Current, to);
-        _session = _session.ExecutePrimary();
-        _gridPanel.SetInputStatus($"Drag: ({from.Row},{from.Col})→({to.Row},{to.Col})");
+        var newSession = _session.ExecuteLeaveBag();
+        _session = newSession;
+        _gridPanel.SetInputStatus("Back (click)");
         UpdateUI();
+    }
+
+    private void OnMouseStateChanged(MouseFlags flags)
+    {
+        var l = flags.HasFlag(MouseFlags.Button1Pressed) ? "■" : "·";
+        var r = flags.HasFlag(MouseFlags.Button3Pressed) ? "■" : "·";
+        _gridPanel.SetInputStatus($"[L{l}] [R{r}] {flags}");
     }
 
     private void UpdateUI()

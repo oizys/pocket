@@ -1,6 +1,7 @@
 using Terminal.Gui;
 using Pockets.Core.Models;
 using Pockets.App.Rendering;
+using static Pockets.App.Rendering.CategoryColors;
 
 namespace Pockets.App.Views;
 
@@ -11,16 +12,15 @@ namespace Pockets.App.Views;
 public class GridView : View
 {
     private GameState _state;
-    private Position? _dragStart;
 
-    /// <summary>Fired when a cell is left-clicked (on button release).</summary>
+    /// <summary>Fired when a cell is left-clicked.</summary>
     public event Action<Position>? GridCellClicked;
 
     /// <summary>Fired when a cell is right-clicked.</summary>
     public event Action<Position>? GridCellRightClicked;
 
-    /// <summary>Fired when a drag from one cell to another completes.</summary>
-    public event Action<Position, Position>? GridCellDragged;
+    /// <summary>Fired when any mouse event occurs (for debug display).</summary>
+    public event Action<MouseFlags>? MouseStateChanged;
 
     public GridView(GameState state)
     {
@@ -56,29 +56,9 @@ public class GridView : View
 
     public override bool MouseEvent(MouseEvent mouseEvent)
     {
-        // Left button pressed — record drag start
-        if (mouseEvent.Flags.HasFlag(MouseFlags.Button1Pressed))
-        {
-            _dragStart = MouseToGridPosition(mouseEvent.X, mouseEvent.Y);
-            return true;
-        }
+        MouseStateChanged?.Invoke(mouseEvent.Flags);
 
-        // Left button released — click or complete drag
-        if (mouseEvent.Flags.HasFlag(MouseFlags.Button1Released))
-        {
-            var releasePos = MouseToGridPosition(mouseEvent.X, mouseEvent.Y);
-            if (releasePos is not null)
-            {
-                if (_dragStart is not null && _dragStart != releasePos)
-                    GridCellDragged?.Invoke(_dragStart.Value, releasePos.Value);
-                else
-                    GridCellClicked?.Invoke(releasePos.Value);
-            }
-            _dragStart = null;
-            return true;
-        }
-
-        // Also handle Button1Clicked as fallback (some drivers send this instead of press+release)
+        // Left click — primary action (immediate, like Minecraft/Factorio)
         if (mouseEvent.Flags.HasFlag(MouseFlags.Button1Clicked))
         {
             var pos = MouseToGridPosition(mouseEvent.X, mouseEvent.Y);
@@ -89,7 +69,7 @@ public class GridView : View
 
         // Right click — secondary action
         if (mouseEvent.Flags.HasFlag(MouseFlags.Button3Clicked) ||
-            mouseEvent.Flags.HasFlag(MouseFlags.Button3Released))
+            mouseEvent.Flags.HasFlag(MouseFlags.Button2Clicked))
         {
             var pos = MouseToGridPosition(mouseEvent.X, mouseEvent.Y);
             if (pos is not null)
@@ -97,21 +77,23 @@ public class GridView : View
             return true;
         }
 
-        // Right button = Button2 on some drivers
-        if (mouseEvent.Flags.HasFlag(MouseFlags.Button2Clicked) ||
-            mouseEvent.Flags.HasFlag(MouseFlags.Button2Released))
-        {
-            var pos = MouseToGridPosition(mouseEvent.X, mouseEvent.Y);
-            if (pos is not null)
-                GridCellRightClicked?.Invoke(pos.Value);
-            return true;
-        }
-
-        return base.MouseEvent(mouseEvent);
+        return true; // consume all mouse events on the grid
     }
 
     public override void Redraw(Rect bounds)
     {
+        var driver = Application.Driver;
+        var bg = driver.MakeAttribute(Color.White, Color.Black);
+
+        // Clear entire view area to black
+        driver.SetAttribute(bg);
+        for (int row = 0; row < bounds.Height; row++)
+        {
+            Move(0, row);
+            for (int col = 0; col < bounds.Width; col++)
+                driver.AddRune(' ');
+        }
+
         var grid = _state.ActiveBag.Grid;
         var cursorPos = _state.Cursor.Position;
 
@@ -130,13 +112,19 @@ public class GridView : View
     private void DrawCell(int x, int y, Cell cell, bool isCursor)
     {
         var driver = Application.Driver;
-        var normal = ColorScheme.Normal;
-        var highlight = Application.Driver.MakeAttribute(Color.Black, Color.White);
 
-        var contentAttr = isCursor ? highlight : normal;
+        // Border color: category-colored background with white box-drawing chars
+        var borderBg = cell.IsEmpty ? Color.Black : CategoryColors.GetBackground(cell.Stack!.ItemType.Category);
+        var borderFg = cell.IsEmpty ? Color.DarkGray : CategoryColors.GetBorderForeground(cell.Stack!.ItemType.Category);
+        var borderAttr = driver.MakeAttribute(borderFg, borderBg);
+
+        // Content color: black bg normally, inverted for cursor
+        var contentAttr = isCursor
+            ? driver.MakeAttribute(Color.Black, Color.White)
+            : driver.MakeAttribute(Color.White, Color.Black);
 
         // Top border
-        driver.SetAttribute(normal);
+        driver.SetAttribute(borderAttr);
         Move(x, y);
         driver.AddRune('\u250c');
         for (int i = 0; i < CellRenderer.ContentWidth; i++)
@@ -145,12 +133,13 @@ public class GridView : View
 
         // Content row
         Move(x, y + 1);
+        driver.SetAttribute(borderAttr);
         driver.AddRune('\u2502');
         driver.SetAttribute(contentAttr);
         var content = CellRenderer.GetCellContent(cell);
         foreach (var ch in content)
             driver.AddRune(ch);
-        driver.SetAttribute(normal);
+        driver.SetAttribute(borderAttr);
         driver.AddRune('\u2502');
 
         // Bottom border
