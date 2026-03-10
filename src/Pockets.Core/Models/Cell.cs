@@ -1,10 +1,10 @@
 namespace Pockets.Core.Models;
 
 /// <summary>
-/// A single cell in a grid. Holds an optional ItemStack and an optional category filter.
-/// Bag contents are carried by ItemStack.ContainedBag, not by the cell.
+/// A single cell in a grid. Holds an optional ItemStack, optional category filter,
+/// and optional CellFrame (behavior/chrome). Bag contents are carried by ItemStack.ContainedBag.
 /// </summary>
-public record Cell(ItemStack? Stack = null, Category? CategoryFilter = null)
+public record Cell(ItemStack? Stack = null, Category? CategoryFilter = null, CellFrame? Frame = null)
 {
     /// <summary>
     /// True when this cell contains no item stack.
@@ -17,9 +17,30 @@ public record Cell(ItemStack? Stack = null, Category? CategoryFilter = null)
     public bool HasBag => Stack?.ContainedBag is not null;
 
     /// <summary>
-    /// Returns true if the given item type is allowed in this cell.
-    /// No filter means any item is accepted; a filter requires a category match.
+    /// True when this cell has a CellFrame attached.
     /// </summary>
-    public bool Accepts(ItemType itemType) =>
-        CategoryFilter is null || CategoryFilter == itemType.Category;
+    public bool HasFrame => Frame is not null;
+
+    /// <summary>
+    /// True when this cell is an input slot (has InputSlotFrame).
+    /// </summary>
+    public bool IsInputSlot => Frame is InputSlotFrame;
+
+    /// <summary>
+    /// True when this cell is an output slot (has OutputSlotFrame).
+    /// </summary>
+    public bool IsOutputSlot => Frame is OutputSlotFrame;
+
+    /// <summary>
+    /// Returns true if the given item type is allowed in this cell.
+    /// Checks both CategoryFilter and InputSlotFrame filter if present.
+    /// </summary>
+    public bool Accepts(ItemType itemType)
+    {
+        if (CategoryFilter is not null && CategoryFilter != itemType.Category)
+            return false;
+        if (Frame is InputSlotFrame input && !input.Accepts(itemType))
+            return false;
+        return true;
+    }
 }

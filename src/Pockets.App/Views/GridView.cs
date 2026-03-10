@@ -113,9 +113,11 @@ public class GridView : View
     {
         var driver = Application.Driver;
 
-        // Border color: category-colored background with white box-drawing chars
+        // Border color: category-colored background, frame-colored foreground
         var borderBg = cell.IsEmpty ? Color.Black : CategoryColors.GetBackground(cell.Stack!.ItemType.Category);
-        var borderFg = cell.IsEmpty ? Color.DarkGray : CategoryColors.GetBorderForeground(cell.Stack!.ItemType.Category);
+        var borderFg = cell.HasFrame
+            ? CategoryColors.GetFrameForeground(cell.Frame)
+            : cell.IsEmpty ? Color.DarkGray : CategoryColors.GetBorderForeground(cell.Stack!.ItemType.Category);
         var borderAttr = driver.MakeAttribute(borderFg, borderBg);
 
         // Content color: black bg normally, inverted for cursor

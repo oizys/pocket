@@ -28,7 +28,19 @@ public static class CategoryColors
 
     /// <summary>
     /// Returns the border foreground color (the box-drawing chars themselves).
-    /// Currently white for all categories; reserved for CellFrame differentiation later.
+    /// White by default; frame-specific colors override via GetFrameForeground.
     /// </summary>
     public static Color GetBorderForeground(Category _) => Color.White;
+
+    /// <summary>
+    /// Returns the border foreground color for a cell with a CellFrame.
+    /// Input slots render yellow, output slots render bright green.
+    /// Falls back to category-based foreground if no frame.
+    /// </summary>
+    public static Color GetFrameForeground(CellFrame? frame) => frame switch
+    {
+        InputSlotFrame  => Color.BrightYellow,
+        OutputSlotFrame => Color.BrightGreen,
+        _               => Color.White
+    };
 }
