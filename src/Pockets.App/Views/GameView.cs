@@ -35,6 +35,8 @@ public class GameView : Window
             : GameSession.New(initialState, recipes);
 
         _gridPanel = new GridPanel(_session.Current);
+        if (!recipes.IsDefaultOrEmpty)
+            _gridPanel.SetRecipes(recipes);
         _rightPanel = new RightPanel();
 
         // Wire mouse events from GridView back to us

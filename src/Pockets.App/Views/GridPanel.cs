@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Terminal.Gui;
 using Pockets.Core.Models;
 
@@ -104,6 +105,11 @@ public class GridPanel : FrameView
 
     public GridView GetGridView() => _gridView;
     public BackButtonView GetBackButton() => _backButton;
+
+    /// <summary>
+    /// Passes recipe data to the item description view for facility slot display.
+    /// </summary>
+    public void SetRecipes(ImmutableArray<Recipe> recipes) => _descriptionView.SetRecipes(recipes);
 
     public void SetInputStatus(string status)
     {
