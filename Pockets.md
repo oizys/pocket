@@ -264,7 +264,74 @@ Development should be done in stages, and should be fully functional at the end 
 
 ### Stage 3
 
-- Adding mouse support
+#### UI/UX Improvements (done)
+- WASD + arrow keys for cursor movement
+- Unified Primary/Secondary input model (Factorio-style contextual grab/drop/swap/merge)
+- Mouse support: left-click = Primary, right-click = Secondary
+- Back button cell (clickable, left of grid)
+- Hand cell display (right of grid, category-colored border)
+- Category-colored cell borders, black background
+- Mouse state LED debug indicators
+
+#### CellFrame
+- See `/design/cell-frames.md` for full design
+- Stage 3 scope: `CellFrame` sealed abstract record with `InputSlotFrame` and `OutputSlotFrame` subtypes
+- `Cell` gets optional `CellFrame? Frame` field
+- Frames render via border foreground color (reserved from category background work)
+- InputSlotFrame has optional Category filter; OutputSlotFrame is read-only (player can only grab from it)
+- Empty cells with frames still render the frame border (visible slot affordance)
+
+#### BagRegistry
+- `ImmutableDictionary<Guid, Bag>` on GameState mapping Bag.Id → Bag reference
+- Rebuilt on any state mutation that changes bags (or maintained incrementally)
+- Enables O(1) bag lookup by Id for tick dispatch, facility tracking, future event systems
+- Foundation for subscription-based dispatch patterns (tick listeners, dirty tracking, etc.)
+
+#### Tick System (Minimal)
+- See `/design/tick-system.md` for full design
+- Stage 3 scope: action-based ticks only (1 tick per undoable action, no wall-clock)
+- `int TickCount` on GameSession, incremented in ApplyResult
+- After each action, tick all facility bags found via BagRegistry
+- No hierarchical propagation or TimeTransform yet
+
+#### Crafting (Minimal)
+- See `/design/crafting.md` and `/design/bag-crafting.md` for full designs
+- Stage 3 scope: 3 hardcoded facilities with 1 recipe each
+- `Recipe` record: Id, Name, Inputs (ItemType + count pairs), OutputFactory (Func), Duration (ticks)
+- `FacilityState` record on Bag: RecipeId?, Progress, IsActive
+- Facility bags have small grids (e.g. 1×3) with InputSlot and OutputSlot CellFrames
+- Production loop: player places materials in input slots → facility auto-detects recipe match → progress advances 1 per tick → on completion, inputs consumed, output placed in output slot
+- OutputSlot is grab-only (Primary on output slot grabs, doesn't drop)
+
+##### Facilities and Recipes
+1. **Workbench** (1×3 grid: 2 input, 1 output)
+   - Recipe: Rock ×5 + Wood ×3 → Stone Axe (duration: 3 ticks)
+2. **Tanner** (1×3 grid: 2 input, 1 output)
+   - Recipe: Leather ×3 + Fiber ×2 → Belt Pouch bag (2×3 grid, duration: 5 ticks)
+3. **Seedling Pot** (1×3 grid: 2 input, 1 output)
+   - Recipe: Seed ×5 + Soil ×3 → Forest Wilderness Bag (duration: 8 ticks)
+
+##### New Item Types (add to `/data/`)
+- Wood (Material, stackable)
+- Leather (Material, stackable)
+- Fiber (Material, stackable)
+- Seed (Material, stackable)
+- Soil (Material, stackable)
+- Stone Axe (Tool, unique)
+
+#### New/Changed Hotkeys
+
+| Key | Action |
+|-----|--------|
+| Arrows / WASD | Move cursor |
+| 1 / E / Left-click | Primary: contextual grab/drop/swap/merge/enter/harvest |
+| 2 / Right-click | Secondary: grab half / place one |
+| Shift-3 | Modal Split (dialog) |
+| 4 | Sort |
+| 5 | Acquire Random (debug) |
+| Q | Go back up (pop breadcrumb) |
+| Ctrl-Z | Undo |
+| Ctrl-Q | Quit |
 
 ### Stage 4
 
