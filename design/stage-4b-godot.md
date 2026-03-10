@@ -141,10 +141,15 @@ Key mappings mirror the TUI exactly. Mouse adds: left-click = move cursor, right
 
 ## Open Questions
 
-- Should the Godot project be on a separate branch, or in the main tree from the start?
 - Godot 4.3 vs 4.4? (4.4 has better .NET 8 support but may be less stable)
 - Do we want a shared `Pockets.UI` abstraction library between the two apps, or keep them fully independent with just Core shared?
 - Build pipeline: should `dotnet test` still work from repo root with the Godot project present? (Godot C# projects sometimes need the Godot SDK to build)
+
+## Branch Strategy (decided)
+
+- Develop on a separate branch (`godot`) to allow parallel work with a second Claude instance
+- Merge to main once compatibility is stabilized (end of Stage 4 or Stage 5)
+- Core abstraction changes (GameBootstrap, color data, key bindings) should be PR'd to main early so both branches benefit
 
 ## Status
 

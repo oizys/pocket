@@ -33,10 +33,13 @@ Workbench recipes:
   - Wooden Shield: 6 Rough Wood + 2 Woven Fiber → 1 Wooden Shield (4 ticks)
 ```
 
-- Recipe auto-detection: FacilityLogic already scans inputs and finds the first matching recipe
-- With per-slot ItemTypeFilter, we need a new approach: slot filters update dynamically based on what's partially loaded, OR slots use category filters (broader) and recipe matching stays as-is
-- **Recommended**: Remove per-slot ItemTypeFilter for multi-recipe facilities. Instead, use category filters on slots (e.g. "Material" category) and let the recipe matcher determine which recipe the current inputs satisfy. Show available recipes in the description panel.
-- Alternative: A recipe selector (toggle key inside facility) that locks in a recipe and sets slot filters accordingly
+- **Recipe selector toggle (decided)**: Each facility has one "active" recipe. Player cycles through available recipes with a key (e.g. R). Switching the active recipe:
+  1. Dumps all input/output slot contents back to parent bag (via AcquireItems on parent)
+  2. Resets FacilityState (progress = 0, recipeId = new recipe)
+  3. Updates input slot ItemTypeFilters to match the new recipe's inputs
+- This keeps per-slot ItemTypeFilter (each slot accepts exactly one item type for the active recipe)
+- Explicit setup is important for future automation — an automator can target "set active recipe" as an action
+- FacilityState gains `ActiveRecipeId` (which recipe is selected, even before inputs are loaded) vs `CraftingRecipeId` (which recipe is actively crafting, set when inputs are sufficient)
 
 ### 3. Facility Crafting (The Meta-Facility)
 
