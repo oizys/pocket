@@ -13,6 +13,7 @@ public class GridPanel : FrameView
     private readonly ItemDescriptionView _descriptionView;
     private readonly Label _toolbar;
     private readonly Label _statusBar;
+    private readonly Label _inputStatus;
 
     public GridPanel(GameState state)
     {
@@ -47,7 +48,7 @@ public class GridPanel : FrameView
         _toolbar = new Label("[1/E/LClick:Action] [2/RClick:Half] [#:Modal] [4:Sort] [Q:Back] [^Z:Undo]")
         {
             X = 0,
-            Y = Pos.AnchorEnd(2),
+            Y = Pos.AnchorEnd(3),
             Width = Dim.Fill(),
             Height = 1
         };
@@ -55,15 +56,29 @@ public class GridPanel : FrameView
         _statusBar = new Label("")
         {
             X = 0,
+            Y = Pos.AnchorEnd(2),
+            Width = Dim.Fill(),
+            Height = 1
+        };
+
+        _inputStatus = new Label("Input: -")
+        {
+            X = 0,
             Y = Pos.AnchorEnd(1),
             Width = Dim.Fill(),
             Height = 1
         };
 
-        Add(_breadcrumbs, _gridView, _descriptionView, _toolbar, _statusBar);
+        Add(_breadcrumbs, _gridView, _descriptionView, _toolbar, _statusBar, _inputStatus);
     }
 
     public GridView GetGridView() => _gridView;
+
+    public void SetInputStatus(string status)
+    {
+        _inputStatus.Text = $"Input: {status}";
+        _inputStatus.SetNeedsDisplay();
+    }
 
     public void UpdateState(GameState state)
     {
