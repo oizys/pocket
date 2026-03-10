@@ -59,9 +59,11 @@ public class ItemDescriptionView : FrameView
         {
             if (lines.Count > 0) lines.Add("");
             lines.Add("[Input Slot]");
-            lines.Add(input.Filter is not null
-                ? $"Accepts: {input.Filter}"
-                : "Accepts: any");
+            lines.Add(input.ItemTypeFilter is not null
+                ? $"Accepts: {input.ItemTypeFilter.Name}"
+                : input.Filter is not null
+                    ? $"Accepts: {input.Filter}"
+                    : "Accepts: any");
         }
         else if (cell.Frame is OutputSlotFrame)
         {

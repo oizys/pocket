@@ -432,6 +432,10 @@ public record GameState(
         var cursorCell = grid.GetCell(Cursor.Position);
         var firstItem = handItems[0];
 
+        // Check if the cell accepts this item type (respects category and slot filters)
+        if (!cursorCell.Accepts(firstItem.ItemType))
+            return ToolResult.Fail(this, "Cannot drop: cell does not accept this item");
+
         var remainders = new List<ItemStack>();
 
         if (cursorCell.IsEmpty)

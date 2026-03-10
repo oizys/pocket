@@ -92,10 +92,16 @@ public static class GameInitializer
 
         var stacks = new List<ItemStack>();
 
-        // Facility bags
-        stacks.Add(new ItemStack(workbenchType, 1, ContainedBag: FacilityBuilder.CreateWorkbench()));
-        stacks.Add(new ItemStack(tannerType, 1, ContainedBag: FacilityBuilder.CreateTanner()));
-        stacks.Add(new ItemStack(seedlingPotType, 1, ContainedBag: FacilityBuilder.CreateSeedlingPot()));
+        // Build recipes so facility input slots can be filtered to specific item types
+        var recipes = RecipeRegistry.BuildRecipes(itemTypes);
+        var workbenchRecipe = recipes.FirstOrDefault(r => r.Id.StartsWith("workbench_"));
+        var tannerRecipe = recipes.FirstOrDefault(r => r.Id.StartsWith("tanner_"));
+        var seedlingRecipe = recipes.FirstOrDefault(r => r.Id.StartsWith("seedling_"));
+
+        // Facility bags with recipe-filtered input slots
+        stacks.Add(new ItemStack(workbenchType, 1, ContainedBag: FacilityBuilder.CreateWorkbench(workbenchRecipe)));
+        stacks.Add(new ItemStack(tannerType, 1, ContainedBag: FacilityBuilder.CreateTanner(tannerRecipe)));
+        stacks.Add(new ItemStack(seedlingPotType, 1, ContainedBag: FacilityBuilder.CreateSeedlingPot(seedlingRecipe)));
 
         // Forest wilderness bag
         var materials = itemTypes.Where(t => t.Category == Category.Material).ToImmutableArray();

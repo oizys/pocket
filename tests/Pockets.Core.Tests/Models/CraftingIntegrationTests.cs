@@ -27,7 +27,7 @@ public class CraftingIntegrationTests
     /// </summary>
     private static GameState CreateStateWithWorkbench()
     {
-        var workbench = FacilityBuilder.CreateWorkbench();
+        var workbench = FacilityBuilder.CreateWorkbench(AxeRecipe);
         var rootGrid = Grid.Create(8, 4);
 
         // Place workbench at cell 0

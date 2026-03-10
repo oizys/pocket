@@ -42,6 +42,26 @@ public class CellFrameTests
         Assert.False(frame.Accepts(Herbs));
     }
 
+    [Fact]
+    public void InputSlotFrame_WithItemTypeFilter_AcceptsOnlyExactType()
+    {
+        var frame = new InputSlotFrame("in1", ItemTypeFilter: Rock);
+        Assert.True(frame.Accepts(Rock));
+        Assert.False(frame.Accepts(Sword));
+        Assert.False(frame.Accepts(Herbs));
+    }
+
+    [Fact]
+    public void InputSlotFrame_ItemTypeFilter_OverridesCategoryFilter()
+    {
+        // Even though category filter would accept all Materials,
+        // ItemTypeFilter restricts to just Rock
+        var otherMaterial = new ItemType("Sand", Category.Material, IsStackable: true);
+        var frame = new InputSlotFrame("in1", Filter: Category.Material, ItemTypeFilter: Rock);
+        Assert.True(frame.Accepts(Rock));
+        Assert.False(frame.Accepts(otherMaterial));
+    }
+
     // ==================== Cell + Frame integration ====================
 
     [Fact]

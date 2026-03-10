@@ -8,18 +8,22 @@ namespace Pockets.Core.Models;
 public abstract record CellFrame(bool IsLocked = false);
 
 /// <summary>
-/// Marks a cell as an input slot for a facility. Optionally filters by category.
+/// Marks a cell as an input slot for a facility. Optionally filters by category or specific item type.
+/// ItemTypeFilter takes priority: if set, only that exact item type is accepted.
 /// </summary>
 public sealed record InputSlotFrame(
     string SlotId,
     Category? Filter = null,
-    bool IsLocked = true) : CellFrame(IsLocked)
+    bool IsLocked = true,
+    ItemType? ItemTypeFilter = null) : CellFrame(IsLocked)
 {
     /// <summary>
     /// Returns true if the given item type is accepted by this input slot.
     /// </summary>
     public bool Accepts(ItemType itemType) =>
-        Filter is null || Filter == itemType.Category;
+        ItemTypeFilter is not null
+            ? itemType == ItemTypeFilter
+            : Filter is null || Filter == itemType.Category;
 }
 
 /// <summary>
