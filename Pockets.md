@@ -267,59 +267,75 @@ Development should be done in stages, and should be fully functional at the end 
 #### UI/UX Improvements (done)
 - WASD + arrow keys for cursor movement
 - Unified Primary/Secondary input model (Factorio-style contextual grab/drop/swap/merge)
-- Mouse support: left-click = Primary, right-click = Secondary
-- Back button cell (clickable, left of grid)
-- Hand cell display (right of grid, category-colored border)
-- Category-colored cell borders, black background
-- Mouse state LED debug indicators
+- Mouse support: left-click = Primary, right-click = Secondary (click-only, no drag)
+- Back button cell (clickable, left of grid) — dims when at root
+- Hand cell display (right of grid, category-colored border, cyan text when holding)
+- Category-colored cell borders (Material=gray, Weapon=red, Structure=brown, Medicine=green, Tool=blue, Bag=magenta, Consumable=cyan), black background throughout
+- Mouse state LED debug indicators on input status bar
+- Border foreground reserved for CellFrame rendering
 
-#### CellFrame
+#### CellFrame (done)
 - See `/design/cell-frames.md` for full design
-- Stage 3 scope: `CellFrame` sealed abstract record with `InputSlotFrame` and `OutputSlotFrame` subtypes
-- `Cell` gets optional `CellFrame? Frame` field
-- Frames render via border foreground color (reserved from category background work)
-- InputSlotFrame has optional Category filter; OutputSlotFrame is read-only (player can only grab from it)
+- `CellFrame` sealed abstract record: `InputSlotFrame(SlotId, Filter?, IsLocked)` and `OutputSlotFrame(SlotId, IsLocked)`
+- `Cell` gains `CellFrame? Frame` field; `IsInputSlot`, `IsOutputSlot`, `HasFrame` convenience properties
+- `Cell.Accepts()` checks both `CategoryFilter` and `InputSlotFrame.Filter`
+- Rendering: frame-specific border foreground colors (yellow=input slots, green=output slots)
 - Empty cells with frames still render the frame border (visible slot affordance)
 
-#### BagRegistry
-- `ImmutableDictionary<Guid, Bag>` on GameState mapping Bag.Id → Bag reference
-- Rebuilt on any state mutation that changes bags (or maintained incrementally)
-- Enables O(1) bag lookup by Id for tick dispatch, facility tracking, future event systems
-- Foundation for subscription-based dispatch patterns (tick listeners, dirty tracking, etc.)
+#### BagRegistry (done)
+- `BagRegistry` class: BFS-built `ImmutableDictionary<Guid, Bag>` from root + hand bag
+- Accessible via `GameState.Registry` computed property (rebuilt each access; no caching due to `with` copy semantics)
+- `GetById(Guid)`, `Contains(Guid)`, `All`, `Facilities` (bags with non-null FacilityState), `Count`
+- Foundation for tick dispatch and future subscription-based patterns (event listeners, dirty tracking)
 
-#### Tick System (Minimal)
+#### FacilityState & Bag Updates (done)
+- `FacilityState` record: `RecipeId?`, `Progress`, `IsActive` — optional field on `Bag`
+- `GameState.ReplaceBagById(Guid, Bag)` — DFS find-and-replace anywhere in the bag tree, rebuilds parents on the way up
+
+#### Tick System (done — minimal)
 - See `/design/tick-system.md` for full design
-- Stage 3 scope: action-based ticks only (1 tick per undoable action, no wall-clock)
-- `int TickCount` on GameSession, incremented in ApplyResult
-- After each action, tick all facility bags found via BagRegistry
+- Action-based ticks only: 1 tick per undoable action (no wall-clock, no hierarchy)
+- `int TickCount` on `GameSession`, incremented in `ApplyResult` after each successful state change
+- `GameSession.TickFacilities()` iterates `Registry.Facilities`, calls `FacilityLogic.Tick()` per facility, propagates changes via `ReplaceBagById`
 - No hierarchical propagation or TimeTransform yet
 
-#### Crafting (Minimal)
+#### Crafting (done — minimal)
 - See `/design/crafting.md` and `/design/bag-crafting.md` for full designs
-- Stage 3 scope: 3 hardcoded facilities with 1 recipe each
-- `Recipe` record: Id, Name, Inputs (ItemType + count pairs), OutputFactory (Func), Duration (ticks)
-- `FacilityState` record on Bag: RecipeId?, Progress, IsActive
-- Facility bags have small grids (e.g. 1×3) with InputSlot and OutputSlot CellFrames
-- Production loop: player places materials in input slots → facility auto-detects recipe match → progress advances 1 per tick → on completion, inputs consumed, output placed in output slot
-- OutputSlot is grab-only (Primary on output slot grabs, doesn't drop)
+- `Recipe` record: `Id`, `Name`, `Inputs` (RecipeInput[]), `OutputFactory` (Func<IReadOnlyList<ItemStack>>), `Duration` (int ticks)
+- `OutputFactory` is a function so each invocation produces unique items (bags with fresh Ids, procedural content)
+- `FacilityLogic` static class: `FindMatchingRecipe`, `RecipeMatches`, `Tick`, `GetInputStacks`, `OutputSlotsEmpty`
+- Tick cycle: no inputs → idle; inputs match recipe → start (set RecipeId, Progress=1); each tick → Progress++; Progress >= Duration → consume inputs, call OutputFactory, place in output slot, reset
+- If inputs removed mid-craft → reset to idle
+- `RecipeRegistry`: hardcoded Stage 3 recipes, keyed by facility EnvironmentType prefix
+- `FacilityBuilder`: creates facility bags with InputSlot/OutputSlot CellFrames
+- `GameSession.New(state, recipes)` overload; recipes stored on session, dispatched per-tick
 
 ##### Facilities and Recipes
-1. **Workbench** (1×3 grid: 2 input, 1 output)
-   - Recipe: Rock ×5 + Wood ×3 → Stone Axe (duration: 3 ticks)
-2. **Tanner** (1×3 grid: 2 input, 1 output)
-   - Recipe: Leather ×3 + Fiber ×2 → Belt Pouch bag (2×3 grid, duration: 5 ticks)
-3. **Seedling Pot** (1×3 grid: 2 input, 1 output)
-   - Recipe: Seed ×5 + Soil ×3 → Forest Wilderness Bag (duration: 8 ticks)
+1. **Workbench** (1×3 grid: 2 input, 1 output, EnvironmentType="Workbench")
+   - Recipe `workbench_axe`: Plain Rock ×5 + Rough Wood ×3 → Stone Axe (duration: 3 ticks)
+2. **Tanner** (1×3 grid: 2 input, 1 output, EnvironmentType="Tanner")
+   - Recipe `tanner_pouch`: Tanned Leather ×3 + Woven Fiber ×2 → Belt Pouch bag (2×3 grid, duration: 5 ticks)
+3. **Seedling Pot** (1×3 grid: 2 input, 1 output, EnvironmentType="Seedling Pot")
+   - Recipe `seedling_forest`: Forest Seed ×5 + Rich Soil ×3 → Forest Wilderness Bag (6×4, duration: 8 ticks)
 
-##### New Item Types (add to `/data/`)
-- Wood (Material, stackable)
-- Leather (Material, stackable)
-- Fiber (Material, stackable)
-- Seed (Material, stackable)
-- Soil (Material, stackable)
+##### New Item Types (in `/data/`)
+- Tanned Leather (Material, stackable)
+- Forest Seed (Material, stackable)
+- Rich Soil (Material, stackable)
 - Stone Axe (Tool, unique)
 
-#### New/Changed Hotkeys
+##### Stage 3 Game Initialization
+- `GameInitializer.CreateRandomStage3Game`: 8×4 root bag with 3 facility items (Workbench, Tanner, Seedling Pot), 1 Forest Wilderness Bag, and starter crafting materials (8 Rock, 5 Wood, 4 Leather, 3 Fiber, 6 Seed, 4 Soil)
+- `Program.cs` builds recipes via `RecipeRegistry.BuildRecipes` and passes to `GameView`
+
+##### Test Coverage
+- 309 total tests (up from 263 at Stage 2 end)
+- `CellFrameTests` (15): frame types, Cell integration, pattern matching, structural equality
+- `BagRegistryTests` (10): BFS traversal, nested/deep nesting, facilities filter, GameState integration
+- `FacilityLogicTests` (18): recipe matching, tick start/progress/completion, excess inputs, mid-craft reset, output factory uniqueness
+- `CraftingIntegrationTests` (3): ReplaceBagById, tick counting, full end-to-end Workbench→Stone Axe cycle through GameSession
+
+#### Hotkeys
 
 | Key | Action |
 |-----|--------|
@@ -329,9 +345,17 @@ Development should be done in stages, and should be fully functional at the end 
 | Shift-3 | Modal Split (dialog) |
 | 4 | Sort |
 | 5 | Acquire Random (debug) |
-| Q | Go back up (pop breadcrumb) |
+| Q / Back button | Go back up (pop breadcrumb) |
 | Ctrl-Z | Undo |
 | Ctrl-Q | Quit |
+
+#### Known Limitations / Future Work
+- OutputSlot grab-only behavior not yet enforced (Primary still drops into output slots)
+- No crafting progress UI inside facility bags (player can't see "2/3 ticks done")
+- Recipes are hardcoded in `RecipeRegistry`, not loaded from data files
+- No hierarchical tick propagation or TimeTransform
+- `BagRegistry` rebuilt on every access (fine for current bag counts, may need caching later)
+- Mouse events don't work in WSL terminal — must run native Windows binary
 
 ### Stage 4
 
