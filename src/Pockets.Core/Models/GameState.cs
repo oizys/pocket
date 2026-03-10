@@ -13,6 +13,13 @@ public record GameState(
     ImmutableStack<BreadcrumbEntry>? Breadcrumbs = null)
 {
     /// <summary>
+    /// Registry of all bags reachable from root and hand.
+    /// Rebuilt on every access. Records copy fields via `with`, so caching
+    /// would require invalidation; BFS is fast enough for current bag counts.
+    /// </summary>
+    public BagRegistry Registry => BagRegistry.Build(RootBag, HandBag);
+
+    /// <summary>
     /// The breadcrumb stack, never null.
     /// </summary>
     public ImmutableStack<BreadcrumbEntry> BreadcrumbStack =>

@@ -3,11 +3,13 @@ namespace Pockets.Core.Models;
 /// <summary>
 /// An openable item containing a Grid of cells. Bags nest inside other bags.
 /// Each bag has a stable Id that persists through mutations (via `with` expressions).
+/// Facility bags have an optional FacilityState for crafting progress tracking.
 /// </summary>
 public record Bag(
     Grid Grid,
     string EnvironmentType = "Default",
-    string ColorScheme = "Default")
+    string ColorScheme = "Default",
+    FacilityState? FacilityState = null)
 {
     /// <summary>
     /// Stable identity for this bag. Auto-generated if not set.
