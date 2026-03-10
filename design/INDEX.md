@@ -11,4 +11,6 @@
 | 7 | Crafting (Recipes, Facilities, Timed Production) | Mid | Proposed | [crafting.md](crafting.md) |
 | 8 | Tick System (Hierarchical Fixed-Point Time) | Early-Mid | Proposed | [tick-system.md](tick-system.md) |
 | 9 | Bag Crafting (Building Better Bags) | Mid | Proposed | [bag-crafting.md](bag-crafting.md) |
+| 10 | Stage 4a: Gameplay Expansion & Data Architecture | Mid | Proposed | [stage-4a-gameplay.md](stage-4a-gameplay.md) |
+| 11 | Stage 4b: Godot C# App Target | Mid | Proposed | [stage-4b-godot.md](stage-4b-godot.md) |
 | -- | Inventory Controls Research (Cross-Game) | -- | Reference | [inventory-controls-research.md](inventory-controls-research.md) |
