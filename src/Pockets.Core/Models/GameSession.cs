@@ -28,14 +28,15 @@ public record GameSession(
     /// </summary>
     public static GameSession New(GameState initialState, int maxUndoDepth = 1000) =>
         new(initialState, ImmutableStack<GameState>.Empty, ImmutableList<string>.Empty,
-            ImmutableArray<Recipe>.Empty, null, TickMode.Rogue, 0, maxUndoDepth);
+            ImmutableArray<Recipe>.Empty, null, TickMode.Realtime, 0, maxUndoDepth);
 
     /// <summary>
     /// Creates a new session with recipes for facility crafting.
     /// </summary>
-    public static GameSession New(GameState initialState, ImmutableArray<Recipe> recipes, int maxUndoDepth = 1000) =>
+    public static GameSession New(GameState initialState, ImmutableArray<Recipe> recipes,
+        TickMode tickMode = TickMode.Realtime, int maxUndoDepth = 1000) =>
         new(initialState, ImmutableStack<GameState>.Empty, ImmutableList<string>.Empty,
-            recipes, null, TickMode.Rogue, 0, maxUndoDepth);
+            recipes, null, tickMode, 0, maxUndoDepth);
 
     /// <summary>
     /// Creates a new session with recipes and facility→recipe mapping from ContentRegistry.
@@ -44,7 +45,7 @@ public record GameSession(
         GameState initialState,
         ImmutableArray<Recipe> recipes,
         ImmutableDictionary<string, ImmutableArray<string>> facilityRecipeMap,
-        TickMode tickMode = TickMode.Rogue,
+        TickMode tickMode = TickMode.Realtime,
         int maxUndoDepth = 1000) =>
         new(initialState, ImmutableStack<GameState>.Empty, ImmutableList<string>.Empty,
             recipes, facilityRecipeMap, tickMode, 0, maxUndoDepth);
@@ -309,16 +310,23 @@ public record GameSession(
             return this;
 
         // In rogue mode, tick facilities after each action. In realtime, ticks are external.
-        var newState = TickMode == TickMode.Rogue
-            ? TickFacilities(result.State)
-            : result.State;
+        GameState newState;
+        ImmutableList<string> completionLogs;
+        if (TickMode == TickMode.Rogue)
+            (newState, completionLogs) = TickFacilities(result.State);
+        else
+            (newState, completionLogs) = (result.State, ImmutableList<string>.Empty);
 
         var newStack = PushWithLimit(UndoStack, Current);
+        var newLog = ActionLog.Add(formatLog());
+        foreach (var log in completionLogs)
+            newLog = newLog.Add(log);
+
         return this with
         {
             Current = newState,
             UndoStack = newStack,
-            ActionLog = ActionLog.Add(formatLog()),
+            ActionLog = newLog,
             TickCount = TickCount + 1
         };
     }
@@ -327,16 +335,19 @@ public record GameSession(
     /// Ticks all facility bags found via the BagRegistry.
     /// Updates each facility in-place within the bag tree.
     /// Uses FacilityRecipeMap when available, falls back to RecipeRegistry.
+    /// Returns the updated state and any craft completion log messages.
     /// </summary>
-    private GameState TickFacilities(GameState state)
+    private (GameState State, ImmutableList<string> CompletionLogs) TickFacilities(GameState state)
     {
+        var logs = ImmutableList<string>.Empty;
+
         if (Recipes.IsDefaultOrEmpty)
-            return state;
+            return (state, logs);
 
         var registry = state.Registry;
         var facilities = registry.Facilities.ToList();
         if (facilities.Count == 0)
-            return state;
+            return (state, logs);
 
         foreach (var facility in facilities)
         {
@@ -344,14 +355,23 @@ public record GameSession(
             if (facilityRecipes.Count == 0)
                 continue;
 
+            var wasCrafting = facility.FacilityState?.RecipeId;
             var ticked = FacilityLogic.Tick(facility, facilityRecipes);
             if (ticked == facility)
                 continue;
 
+            // Detect craft completion: was crafting, now reset to null
+            if (wasCrafting is not null && ticked.FacilityState?.RecipeId is null)
+            {
+                var recipe = facilityRecipes.FirstOrDefault(r => r.Id == wasCrafting);
+                var recipeName = recipe?.Name ?? wasCrafting;
+                logs = logs.Add($"✦ {facility.EnvironmentType} crafted: {recipeName}");
+            }
+
             state = state.ReplaceBagById(facility.Id, ticked);
         }
 
-        return state;
+        return (state, logs);
     }
 
     /// <summary>
@@ -363,16 +383,22 @@ public record GameSession(
         if (Recipes.IsDefaultOrEmpty)
             return this;
 
-        var tickedState = TickFacilities(Current);
+        var (tickedState, completionLogs) = TickFacilities(Current);
         if (tickedState == Current)
             return this;
 
         var newStack = PushWithLimit(UndoStack, Current);
+        var newLog = ActionLog;
+        foreach (var log in completionLogs)
+            newLog = newLog.Add(log);
+        if (completionLogs.Count == 0)
+            newLog = newLog.Add($"Tick #{TickCount + 1}");
+
         return this with
         {
             Current = tickedState,
             UndoStack = newStack,
-            ActionLog = ActionLog.Add($"Tick #{TickCount + 1}"),
+            ActionLog = newLog,
             TickCount = TickCount + 1
         };
     }

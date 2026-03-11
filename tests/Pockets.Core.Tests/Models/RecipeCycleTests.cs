@@ -312,6 +312,91 @@ public class RecipeCycleTests
         Assert.Equal("workbench-shield", updatedFacilityBag!.FacilityState!.ActiveRecipeId);
     }
 
+    // ==================== Craft Completion Logging ====================
+
+    [Fact]
+    public void Tick_LogsCraftCompletion_WhenRecipeFinishes()
+    {
+        var facility = CreateFacilityWithFilledInputs(AxeRecipe);
+
+        var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var rootGrid = Grid.Create(4, 2);
+        rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
+
+        var handBag = new Bag(Grid.Create(1, 1));
+        var state = new GameState(
+            new Bag(rootGrid),
+            new Cursor(new Position(0, 0)),
+            ImmutableArray<ItemType>.Empty,
+            handBag);
+
+        var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Realtime);
+
+        // AxeRecipe Duration=3: tick 1 starts (progress=1), tick 2 (progress=2), tick 3 completes
+        session = session.Tick();
+        session = session.Tick();
+        session = session.Tick();
+
+        // Should have a completion log entry
+        Assert.Contains(session.ActionLog, log => log.Contains("crafted") && log.Contains("Stone Axe"));
+    }
+
+    [Fact]
+    public void Tick_NoCompletionLog_WhenStillCrafting()
+    {
+        var facility = CreateFacilityWithFilledInputs(AxeRecipe);
+
+        var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var rootGrid = Grid.Create(4, 2);
+        rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
+
+        var handBag = new Bag(Grid.Create(1, 1));
+        var state = new GameState(
+            new Bag(rootGrid),
+            new Cursor(new Position(0, 0)),
+            ImmutableArray<ItemType>.Empty,
+            handBag);
+
+        var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Realtime);
+
+        // Only 1 tick — still in progress
+        session = session.Tick();
+
+        Assert.DoesNotContain(session.ActionLog, log => log.Contains("crafted"));
+    }
+
+    [Fact]
+    public void Rogue_LogsCraftCompletion_WhenRecipeFinishes()
+    {
+        var facility = CreateFacilityWithFilledInputs(AxeRecipe);
+
+        var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var rootGrid = Grid.Create(4, 2);
+        rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
+
+        var allTypes = ImmutableArray.Create(Rock, Wood, Fiber, Axe, Shield);
+        var handBag = new Bag(Grid.Create(1, 1));
+        var state = new GameState(
+            new Bag(rootGrid),
+            new Cursor(new Position(0, 0)),
+            allTypes,
+            handBag);
+
+        var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Rogue);
+
+        // Execute enough actions to complete the recipe (Duration=3)
+        var rng = new Random(42);
+        session = session.ExecuteAcquireRandom(rng);
+        session = session.ExecuteAcquireRandom(rng);
+        session = session.ExecuteAcquireRandom(rng);
+
+        // Should have a completion log entry from rogue-mode ticking
+        Assert.Contains(session.ActionLog, log => log.Contains("crafted") && log.Contains("Stone Axe"));
+    }
+
     // ==================== Helpers ====================
 
     private static Bag CreateFacilityWithRecipe(Recipe recipe)

@@ -60,7 +60,7 @@ public class CraftingIntegrationTests
     public void Session_TickIncrements_OnAction()
     {
         var state = CreateStateWithWorkbench();
-        var session = GameSession.New(state, Recipes);
+        var session = GameSession.New(state, Recipes, TickMode.Rogue);
 
         Assert.Equal(0, session.TickCount);
 
@@ -76,7 +76,7 @@ public class CraftingIntegrationTests
     public void FullCraftingCycle_WorkbenchMakesStoneAxe()
     {
         var state = CreateStateWithWorkbench();
-        var session = GameSession.New(state, Recipes);
+        var session = GameSession.New(state, Recipes, TickMode.Rogue);
 
         // Step 1: Grab Rock (cursor at cell 0 = workbench, move to cell 1 = rock)
         session = session.MoveCursor(Direction.Right); // → cell (0,1) = Rock

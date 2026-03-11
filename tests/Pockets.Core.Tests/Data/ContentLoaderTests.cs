@@ -269,6 +269,73 @@ public class ContentLoaderTests
     }
 
     [Fact]
+    public void LoadActualDataDirectory_GeneratorRecipes_ProduceOutput()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Pockets.sln")))
+            dir = dir.Parent;
+
+        Assert.NotNull(dir);
+        var dataPath = Path.Combine(dir!.FullName, "data");
+        var registry = ContentLoader.LoadFromDirectory(dataPath);
+
+        // Tanner recipe uses !attach-bag generator — should produce a Belt Pouch with a bag
+        var tannerRecipe = registry.Recipes["tanner-pouch"];
+        var tannerOutput = tannerRecipe.OutputFactory();
+        Assert.Single(tannerOutput);
+        Assert.Equal("Belt Pouch", tannerOutput[0].ItemType.Name);
+        Assert.NotNull(tannerOutput[0].ContainedBag);
+        Assert.Equal("Pouch", tannerOutput[0].ContainedBag!.EnvironmentType);
+
+        // Seedling recipe uses !wilderness generator — should produce a Forest Bag with a bag
+        var seedlingRecipe = registry.Recipes["seedling-forest"];
+        var seedlingOutput = seedlingRecipe.OutputFactory();
+        Assert.Single(seedlingOutput);
+        Assert.Equal("Forest Bag", seedlingOutput[0].ItemType.Name);
+        Assert.NotNull(seedlingOutput[0].ContainedBag);
+        Assert.Equal("Forest", seedlingOutput[0].ContainedBag!.EnvironmentType);
+    }
+
+    [Fact]
+    public void LoadFromMarkdown_PipelineRecipe_AttachBag_ProducesOutput()
+    {
+        var markdown = """
+            # Item: Belt Pouch
+            Category: Bag
+            Stackable: No
+
+            # Item: Tanned Leather
+            Category: Material
+            Stackable: Yes
+
+            # GridTemplate: pouch-3x2
+            Columns: 3
+            Rows: 2
+            Environment: Pouch
+            ColorScheme: Brown
+
+            # Recipe: tanner-pouch
+            Name: Belt Pouch
+            Duration: 5
+            Grid: 3x1
+            Input 1: Tanned Leather ×3
+            Output: 1 Belt Pouch -> !attach-bag(@pouch-3x2)
+            """;
+
+        var registry = ContentLoader.LoadFromMarkdown(markdown, "test.md");
+        var recipe = registry.Recipes["tanner-pouch"];
+        var output = recipe.OutputFactory();
+
+        Assert.Single(output);
+        Assert.Equal("Belt Pouch", output[0].ItemType.Name);
+        Assert.Equal(1, output[0].Count);
+        Assert.NotNull(output[0].ContainedBag);
+        Assert.Equal("Pouch", output[0].ContainedBag!.EnvironmentType);
+        Assert.Equal(3, output[0].ContainedBag!.Grid.Columns);
+        Assert.Equal(2, output[0].ContainedBag!.Grid.Rows);
+    }
+
+    [Fact]
     public void LoadFromDirectory_ScansRecursively()
     {
         // Create a temp directory structure with nested .md files

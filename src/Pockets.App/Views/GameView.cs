@@ -14,6 +14,12 @@ public class GameView : Window
     private readonly GridPanel _gridPanel;
     private readonly RightPanel _rightPanel;
     private readonly Random _rng = new();
+    private object? _tickTimer;
+
+    /// <summary>
+    /// Interval between realtime ticks (1 second per tick).
+    /// </summary>
+    private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(1);
 
     public GameView(
         GameState initialState,
@@ -42,6 +48,7 @@ public class GameView : Window
         _gridPanel = new GridPanel(_session.Current);
         if (!recipes.IsDefaultOrEmpty)
             _gridPanel.SetRecipes(recipes);
+        _gridPanel.SetFacilityRecipeMap(facilityRecipeMap);
         _rightPanel = new RightPanel();
 
         // Wire mouse events from GridView back to us
@@ -51,6 +58,31 @@ public class GameView : Window
         _gridPanel.GetBackButton().BackClicked += OnBackClicked;
 
         Add(_gridPanel, _rightPanel);
+
+        // Start realtime tick timer after the main loop is ready
+        Application.MainLoop.AddIdle(() =>
+        {
+            StartTickTimer();
+            return false; // Run once
+        });
+    }
+
+    /// <summary>
+    /// Starts the realtime tick timer. Called once after the main loop is initialized.
+    /// </summary>
+    private void StartTickTimer()
+    {
+        if (_session.TickMode != TickMode.Realtime || _tickTimer is not null)
+            return;
+
+        _tickTimer = Application.MainLoop.AddTimeout(TickInterval, _ =>
+        {
+            var before = _session;
+            _session = _session.Tick();
+            if (_session != before)
+                UpdateUI();
+            return true; // Keep repeating
+        });
     }
 
     public override bool ProcessKey(KeyEvent keyEvent)

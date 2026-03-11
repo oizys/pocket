@@ -76,8 +76,16 @@ public static class ContentLoader
     /// </summary>
     private static ContentRegistry Resolve(RawContent raw)
     {
+        // Build template lookup for pipeline execution (GridTemplates + LootTableTemplates)
+        var templates = raw.GridTemplates
+            .ToImmutableDictionary(kv => kv.Key, kv => (object)kv.Value)
+            .SetItems(raw.LootTableTemplates
+                .ToImmutableDictionary(kv => kv.Key, kv => (object)kv.Value));
+
+        var generators = GeneratorBuiltins.GetAll(raw.Items);
+
         var recipes = raw.RecipeDefs
-            .Select(kv => ResolveRecipe(kv.Value, raw.Items))
+            .Select(kv => ResolveRecipe(kv.Value, raw.Items, templates, generators))
             .ToImmutableDictionary(r => r.Id);
 
         return new ContentRegistry(raw.Items, recipes, raw.Facilities,
@@ -87,24 +95,27 @@ public static class ContentLoader
     /// <summary>
     /// Resolves a RecipeDefinition into a fully-resolved Recipe by looking up item names
     /// in the provided item dictionary. For static-only pipelines, builds an OutputFactory
-    /// that produces ItemStacks. For pipelines with generators or template refs, returns
-    /// a placeholder factory producing an empty list (generator execution wired up later).
+    /// that produces ItemStacks. For pipelines with generators, executes the pipeline via
+    /// PipelineExecutor to produce outputs (called fresh each invocation for unique instances).
     /// </summary>
     private static Recipe ResolveRecipe(
         RecipeDefinition def,
-        ImmutableDictionary<string, ItemType> itemsByName)
+        ImmutableDictionary<string, ItemType> itemsByName,
+        ImmutableDictionary<string, object> templates,
+        ImmutableDictionary<string, GeneratorFunc> generators)
     {
         var inputs = def.Inputs
             .Select(input => new RecipeInput(itemsByName[input.ItemName], input.Count))
             .ToList();
 
         var allStatic = def.OutputPipeline.All(step => step is StaticItemStep);
+        var pipeline = def.OutputPipeline;
 
         Func<IReadOnlyList<ItemStack>> outputFactory;
 
         if (allStatic)
         {
-            var outputStacks = def.OutputPipeline
+            var outputStacks = pipeline
                 .Cast<StaticItemStep>()
                 .Select(step => new ItemStack(itemsByName[step.ItemName], step.Count))
                 .ToList();
@@ -113,7 +124,26 @@ public static class ContentLoader
         }
         else
         {
-            outputFactory = () => Array.Empty<ItemStack>();
+            // Capture pipeline context for deferred execution
+            outputFactory = () =>
+            {
+                var result = PipelineExecutor.Execute(pipeline, itemsByName, templates, generators);
+                return result switch
+                {
+                    StacksValue sv => sv.Stacks,
+                    BagValue bv => new[]
+                    {
+                        // Find the static item step for the output item name/count
+                        pipeline.OfType<StaticItemStep>().Select(s =>
+                            new ItemStack(itemsByName[s.ItemName], s.Count, ContainedBag: bv.Bag))
+                            .FirstOrDefault()
+                        ?? new ItemStack(
+                            new ItemType("Unknown", Category.Bag, IsStackable: false),
+                            1, ContainedBag: bv.Bag)
+                    },
+                    _ => Array.Empty<ItemStack>()
+                };
+            };
         }
 
         return new Recipe(

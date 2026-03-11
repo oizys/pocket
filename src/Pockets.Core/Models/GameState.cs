@@ -332,9 +332,9 @@ public record GameState(
         var cellStack = CurrentCell.Stack!;
         var handStack = HandItems[0];
 
-        // Put hand item in cell, cell item in hand
+        // Put hand item in cell, cell item in hand (preserve cell frame)
         var activeBag = ActiveBag;
-        var grid = activeBag.Grid.SetCell(Cursor.Position, new Cell(handStack));
+        var grid = activeBag.Grid.SetCell(Cursor.Position, CurrentCell with { Stack = handStack });
 
         var emptyHand = CreateHandBag(HandBag.Grid.Columns);
         var (newHand, unplaced) = emptyHand.AcquireItems(new[] { cellStack });
@@ -375,7 +375,7 @@ public record GameState(
         }
 
         var activeBag = ActiveBag;
-        var grid = activeBag.Grid.SetCell(Cursor.Position, new Cell(newCellStack));
+        var grid = activeBag.Grid.SetCell(Cursor.Position, cell with { Stack = newCellStack });
 
         // Reduce hand by 1
         Bag updatedHand;
@@ -411,7 +411,7 @@ public record GameState(
             return ToolResult.Fail(this, "Hand is full");
 
         var activeBag = ActiveBag;
-        var grid = activeBag.Grid.SetCell(Cursor.Position, new Cell());
+        var grid = activeBag.Grid.SetCell(Cursor.Position, CurrentCell with { Stack = null });
         return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
         {
             HandBag = updatedHand
@@ -589,9 +589,9 @@ public record GameState(
 
         var item = cell.Stack!;
 
-        // 1. Clear cursor cell in active bag and propagate to root
+        // 1. Clear cursor cell in active bag and propagate to root (preserve frame)
         var activeBag = ActiveBag;
-        var clearedGrid = activeBag.Grid.SetCell(Cursor.Position, new Cell());
+        var clearedGrid = activeBag.Grid.SetCell(Cursor.Position, cell with { Stack = null });
         var state = WithActiveBag(activeBag with { Grid = clearedGrid });
 
         // 2. Find parent bag in the updated tree

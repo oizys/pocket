@@ -111,6 +111,12 @@ public class GridPanel : FrameView
     /// </summary>
     public void SetRecipes(ImmutableArray<Recipe> recipes) => _descriptionView.SetRecipes(recipes);
 
+    /// <summary>
+    /// Passes facility→recipe mapping for proper recipe lookup.
+    /// </summary>
+    public void SetFacilityRecipeMap(ImmutableDictionary<string, ImmutableArray<string>>? map) =>
+        _descriptionView.SetFacilityRecipeMap(map);
+
     public void SetInputStatus(string status)
     {
         _inputStatus.Text = $"Input: {status}";

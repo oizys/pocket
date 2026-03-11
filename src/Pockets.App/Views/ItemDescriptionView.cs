@@ -7,12 +7,14 @@ namespace Pockets.App.Views;
 
 /// <summary>
 /// Displays name, category, count, and description for the item at the cursor.
-/// Also shows cell frame type, filter, and facility recipe info for slot cells.
+/// Shows cell frame info (slot type, filter, expected quantity).
+/// Shows active recipe and recipe list when inside a facility bag.
 /// </summary>
 public class ItemDescriptionView : FrameView
 {
     private readonly Label _content;
     private ImmutableArray<Recipe> _recipes;
+    private ImmutableDictionary<string, ImmutableArray<string>>? _facilityRecipeMap;
 
     public ItemDescriptionView()
     {
@@ -36,9 +38,16 @@ public class ItemDescriptionView : FrameView
     /// </summary>
     public void SetRecipes(ImmutableArray<Recipe> recipes) => _recipes = recipes;
 
+    /// <summary>
+    /// Sets the facility→recipe mapping for proper recipe lookup.
+    /// </summary>
+    public void SetFacilityRecipeMap(ImmutableDictionary<string, ImmutableArray<string>>? map) =>
+        _facilityRecipeMap = map;
+
     public void UpdateState(GameState state)
     {
         var cell = state.CurrentCell;
+        var activeBag = state.ActiveBag;
         var lines = new List<string>();
 
         // Item stack info
@@ -54,16 +63,27 @@ public class ItemDescriptionView : FrameView
                 lines.Add($"\n{stack.ItemType.Description}");
         }
 
-        // Frame info
+        // Frame info with expected quantity from active recipe
         if (cell.Frame is InputSlotFrame input)
         {
             if (lines.Count > 0) lines.Add("");
             lines.Add("[Input Slot]");
-            lines.Add(input.ItemTypeFilter is not null
+            var acceptsLine = input.ItemTypeFilter is not null
                 ? $"Accepts: {input.ItemTypeFilter.Name}"
                 : input.Filter is not null
                     ? $"Accepts: {input.Filter}"
-                    : "Accepts: any");
+                    : "Accepts: any";
+
+            // Show expected quantity from the active recipe
+            var activeRecipe = GetActiveRecipe(activeBag);
+            if (activeRecipe is not null && input.ItemTypeFilter is not null)
+            {
+                var recipeInput = activeRecipe.Inputs
+                    .FirstOrDefault(i => i.ItemType == input.ItemTypeFilter);
+                if (recipeInput is not null)
+                    acceptsLine += $" (need {recipeInput.Count})";
+            }
+            lines.Add(acceptsLine);
         }
         else if (cell.Frame is OutputSlotFrame)
         {
@@ -79,21 +99,33 @@ public class ItemDescriptionView : FrameView
             lines.Add($"Filter: {cell.CategoryFilter}");
         }
 
-        // Recipe info when inside a facility bag
-        if (cell.HasFrame && !_recipes.IsDefaultOrEmpty)
+        // Facility info: show active recipe + recipe list when inside any facility
+        if (activeBag.FacilityState is not null && !_recipes.IsDefaultOrEmpty)
         {
-            var facilityType = state.ActiveBag.EnvironmentType;
-            var facilityRecipes = RecipeRegistry.GetRecipesForFacility(facilityType, _recipes);
+            var facilityRecipes = GetRecipesForFacility(activeBag.EnvironmentType);
             if (facilityRecipes.Count > 0)
             {
+                var facilityState = activeBag.FacilityState;
                 lines.Add("");
-                lines.Add("--- Recipes ---");
+                lines.Add($"--- {activeBag.EnvironmentType} ---");
+
+                // Show crafting progress if actively crafting
+                if (facilityState.RecipeId is not null)
+                {
+                    var craftingRecipe = facilityRecipes.FirstOrDefault(r => r.Id == facilityState.RecipeId);
+                    if (craftingRecipe is not null)
+                        lines.Add($"Crafting: {craftingRecipe.Name} [{facilityState.Progress}/{craftingRecipe.Duration}]");
+                }
+
+                lines.Add("");
+                lines.Add("Recipes (R to cycle):");
                 foreach (var recipe in facilityRecipes)
                 {
+                    var marker = recipe.Id == facilityState.ActiveRecipeId ? "> " : "  ";
                     var inputs = string.Join(" + ",
                         recipe.Inputs.Select(i => $"{i.Count} {i.ItemType.Name}"));
-                    lines.Add($"{recipe.Name}:");
-                    lines.Add($"  {inputs} → {recipe.Name}");
+                    lines.Add($"{marker}{recipe.Name}:");
+                    lines.Add($"    {inputs} -> {recipe.Name}");
                 }
             }
         }
@@ -103,5 +135,35 @@ public class ItemDescriptionView : FrameView
 
         _content.Text = string.Join("\n", lines);
         SetNeedsDisplay();
+    }
+
+    /// <summary>
+    /// Returns the active recipe for the given facility bag, or null.
+    /// </summary>
+    private Recipe? GetActiveRecipe(Bag facility)
+    {
+        if (facility.FacilityState?.ActiveRecipeId is null || _recipes.IsDefaultOrEmpty)
+            return null;
+
+        return _recipes.FirstOrDefault(r => r.Id == facility.FacilityState.ActiveRecipeId);
+    }
+
+    /// <summary>
+    /// Returns recipes for a facility type using FacilityRecipeMap if available,
+    /// falling back to RecipeRegistry.
+    /// </summary>
+    private IReadOnlyList<Recipe> GetRecipesForFacility(string environmentType)
+    {
+        if (_facilityRecipeMap is not null &&
+            _facilityRecipeMap.TryGetValue(environmentType, out var recipeIds))
+        {
+            var recipesById = _recipes.ToDictionary(r => r.Id);
+            return recipeIds
+                .Where(id => recipesById.ContainsKey(id))
+                .Select(id => recipesById[id])
+                .ToList();
+        }
+
+        return RecipeRegistry.GetRecipesForFacility(environmentType, _recipes);
     }
 }
