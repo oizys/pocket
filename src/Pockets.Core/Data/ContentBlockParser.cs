@@ -10,7 +10,7 @@ namespace Pockets.Core.Data;
 public static class ContentBlockParser
 {
     private static readonly Regex HeaderPattern = new(@"^#\s+(\w+):\s+(.+)$", RegexOptions.Compiled);
-    private static readonly Regex FieldPattern = new(@"^\*\*(.+?)\*\*:\s*(.*)$", RegexOptions.Compiled);
+    private static readonly Regex FieldPattern = new(@"^(?:\*\*)?(\w+(?:\s\w+){0,2})(?:\*\*)?:\s+(.+)$", RegexOptions.Compiled);
 
     /// <summary>
     /// Splits markdown content on "# Type: Id" headers and parses each block's fields and body.

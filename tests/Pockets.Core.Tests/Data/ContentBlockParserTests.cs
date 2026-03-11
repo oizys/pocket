@@ -140,6 +140,59 @@ public class ContentBlockParserTests
     }
 
     [Fact]
+    public void FieldsWithoutBoldAreParsed()
+    {
+        var markdown = """
+            # Item: Plain Rock
+            Category: Material
+            Stackable: Yes
+
+            A common grey stone.
+            """;
+
+        var blocks = ContentBlockParser.Parse(markdown, "test.md");
+        Assert.Single(blocks);
+        Assert.Equal("Material", blocks[0].Fields["Category"]);
+        Assert.Equal("Yes", blocks[0].Fields["Stackable"]);
+        Assert.Contains("common grey stone", blocks[0].Body);
+    }
+
+    [Fact]
+    public void MixedBoldAndNonBoldFields()
+    {
+        var markdown = """
+            # Recipe: test
+            **Name**: Stone Axe
+            Duration: 3
+            **Grid**: 3x1
+            Output: 1 Stone Axe
+            """;
+
+        var blocks = ContentBlockParser.Parse(markdown, "test.md");
+        var fields = blocks[0].Fields;
+        Assert.Equal("Stone Axe", fields["Name"]);
+        Assert.Equal("3", fields["Duration"]);
+        Assert.Equal("3x1", fields["Grid"]);
+        Assert.Equal("1 Stone Axe", fields["Output"]);
+    }
+
+    [Fact]
+    public void ProseWithColonsIsNotParsedAsField()
+    {
+        var markdown = """
+            # Item: Test Rock
+            Category: Material
+            Stackable: Yes
+
+            A stone often described as: the most common rock around.
+            """;
+
+        var blocks = ContentBlockParser.Parse(markdown, "test.md");
+        Assert.Contains("described as", blocks[0].Body);
+        Assert.DoesNotContain("described as", blocks[0].Fields.Values.First());
+    }
+
+    [Fact]
     public void TemplateTypesAreParsed()
     {
         var markdown = """
