@@ -15,7 +15,10 @@ public class GameView : Window
     private readonly RightPanel _rightPanel;
     private readonly Random _rng = new();
 
-    public GameView(GameState initialState, ImmutableArray<Recipe> recipes = default) : base("Pockets")
+    public GameView(
+        GameState initialState,
+        ImmutableArray<Recipe> recipes = default,
+        ImmutableDictionary<string, ImmutableArray<string>>? facilityRecipeMap = null) : base("Pockets")
     {
         X = 0;
         Y = 0;
@@ -30,9 +33,11 @@ public class GameView : Window
             HotFocus = Application.Driver.MakeAttribute(Color.White, Color.Black)
         };
 
-        _session = recipes.IsDefaultOrEmpty
-            ? GameSession.New(initialState)
-            : GameSession.New(initialState, recipes);
+        _session = facilityRecipeMap is not null
+            ? GameSession.New(initialState, recipes, facilityRecipeMap)
+            : recipes.IsDefaultOrEmpty
+                ? GameSession.New(initialState)
+                : GameSession.New(initialState, recipes);
 
         _gridPanel = new GridPanel(_session.Current);
         if (!recipes.IsDefaultOrEmpty)
@@ -93,6 +98,7 @@ public class GameView : Window
             (Key)'2' => _session.ExecuteSecondary(),
             (Key)'4' => _session.ExecuteSort(),
             (Key)'5' => _session.ExecuteAcquireRandom(_rng),
+            (Key)'r' or (Key)'R' => _session.ExecuteCycleRecipe(),
             (Key)'q' or (Key)'Q' => _session.ExecuteLeaveBag(),
             _ => null
         };

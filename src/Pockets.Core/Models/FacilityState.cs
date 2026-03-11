@@ -8,4 +8,5 @@ namespace Pockets.Core.Models;
 public record FacilityState(
     string? RecipeId = null,
     int Progress = 0,
-    bool IsActive = true);
+    bool IsActive = true,
+    string? ActiveRecipeId = null);

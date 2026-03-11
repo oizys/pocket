@@ -4,6 +4,11 @@ using Pockets.Core.Data;
 namespace Pockets.Core.Models;
 
 /// <summary>
+/// Controls when facility ticks fire: on player action (rogue-like) or via external timer (realtime).
+/// </summary>
+public enum TickMode { Rogue, Realtime }
+
+/// <summary>
 /// Wraps GameState with undo history and action log. GameState stays as pure domain state;
 /// GameSession manages history, dispatches tools, and records actions.
 /// MoveCursor is not undoable. Failed tools are not pushed to undo stack but errors are logged.
@@ -13,6 +18,8 @@ public record GameSession(
     ImmutableStack<GameState> UndoStack,
     ImmutableList<string> ActionLog,
     ImmutableArray<Recipe> Recipes = default,
+    ImmutableDictionary<string, ImmutableArray<string>>? FacilityRecipeMap = null,
+    TickMode TickMode = TickMode.Rogue,
     int TickCount = 0,
     int MaxUndoDepth = 1000)
 {
@@ -21,14 +28,26 @@ public record GameSession(
     /// </summary>
     public static GameSession New(GameState initialState, int maxUndoDepth = 1000) =>
         new(initialState, ImmutableStack<GameState>.Empty, ImmutableList<string>.Empty,
-            ImmutableArray<Recipe>.Empty, 0, maxUndoDepth);
+            ImmutableArray<Recipe>.Empty, null, TickMode.Rogue, 0, maxUndoDepth);
 
     /// <summary>
     /// Creates a new session with recipes for facility crafting.
     /// </summary>
     public static GameSession New(GameState initialState, ImmutableArray<Recipe> recipes, int maxUndoDepth = 1000) =>
         new(initialState, ImmutableStack<GameState>.Empty, ImmutableList<string>.Empty,
-            recipes, 0, maxUndoDepth);
+            recipes, null, TickMode.Rogue, 0, maxUndoDepth);
+
+    /// <summary>
+    /// Creates a new session with recipes and facility→recipe mapping from ContentRegistry.
+    /// </summary>
+    public static GameSession New(
+        GameState initialState,
+        ImmutableArray<Recipe> recipes,
+        ImmutableDictionary<string, ImmutableArray<string>> facilityRecipeMap,
+        TickMode tickMode = TickMode.Rogue,
+        int maxUndoDepth = 1000) =>
+        new(initialState, ImmutableStack<GameState>.Empty, ImmutableList<string>.Empty,
+            recipes, facilityRecipeMap, tickMode, 0, maxUndoDepth);
 
     /// <summary>
     /// True if there is at least one state to undo to.
@@ -215,6 +234,48 @@ public record GameSession(
     }
 
     /// <summary>
+    /// Cycles the active recipe on the facility at cursor. Dumps slot items to root bag.
+    /// </summary>
+    public GameSession ExecuteCycleRecipe()
+    {
+        var activeBag = Current.ActiveBag;
+        if (activeBag.FacilityState is null)
+            return this with { ActionLog = ActionLog.Add("FAILED: CycleRecipe — not in a facility") };
+
+        if (Recipes.IsDefaultOrEmpty)
+            return this with { ActionLog = ActionLog.Add("FAILED: CycleRecipe — no recipes loaded") };
+
+        var facilityRecipes = GetRecipesForFacility(activeBag.EnvironmentType);
+
+        if (facilityRecipes.Count == 0)
+            return this with { ActionLog = ActionLog.Add("FAILED: CycleRecipe — no recipes for this facility") };
+
+        var (updated, dumped) = FacilityLogic.CycleRecipe(activeBag, facilityRecipes);
+
+        var newState = Current.ReplaceBagById(activeBag.Id, updated);
+
+        // Acquire dumped items into root bag
+        if (dumped.Count > 0)
+        {
+            var rootGrid = newState.RootBag.Grid;
+            foreach (var stack in dumped)
+            {
+                var (newGrid, _) = rootGrid.AcquireItems(new[] { stack });
+                rootGrid = newGrid;
+            }
+            newState = newState with { RootBag = newState.RootBag with { Grid = rootGrid } };
+        }
+
+        var newStack = PushWithLimit(UndoStack, Current);
+        return this with
+        {
+            Current = newState,
+            UndoStack = newStack,
+            ActionLog = ActionLog.Add($"CycleRecipe: switched to {updated.FacilityState!.ActiveRecipeId}")
+        };
+    }
+
+    /// <summary>
     /// Execute AcquireRandom tool on current state.
     /// </summary>
     public GameSession ExecuteAcquireRandom(Random rng)
@@ -247,13 +308,15 @@ public record GameSession(
         if (result.State == Current)
             return this;
 
-        // Tick facilities after each successful action
-        var tickedState = TickFacilities(result.State);
+        // In rogue mode, tick facilities after each action. In realtime, ticks are external.
+        var newState = TickMode == TickMode.Rogue
+            ? TickFacilities(result.State)
+            : result.State;
 
         var newStack = PushWithLimit(UndoStack, Current);
         return this with
         {
-            Current = tickedState,
+            Current = newState,
             UndoStack = newStack,
             ActionLog = ActionLog.Add(formatLog()),
             TickCount = TickCount + 1
@@ -263,6 +326,7 @@ public record GameSession(
     /// <summary>
     /// Ticks all facility bags found via the BagRegistry.
     /// Updates each facility in-place within the bag tree.
+    /// Uses FacilityRecipeMap when available, falls back to RecipeRegistry.
     /// </summary>
     private GameState TickFacilities(GameState state)
     {
@@ -276,8 +340,7 @@ public record GameSession(
 
         foreach (var facility in facilities)
         {
-            var facilityRecipes = Data.RecipeRegistry.GetRecipesForFacility(
-                facility.EnvironmentType, Recipes);
+            var facilityRecipes = GetRecipesForFacility(facility.EnvironmentType);
             if (facilityRecipes.Count == 0)
                 continue;
 
@@ -285,11 +348,53 @@ public record GameSession(
             if (ticked == facility)
                 continue;
 
-            // Propagate the updated facility back into the bag tree
             state = state.ReplaceBagById(facility.Id, ticked);
         }
 
         return state;
+    }
+
+    /// <summary>
+    /// Public tick method for realtime mode. Advances all facilities by one tick.
+    /// Returns the updated session with new state and incremented tick count.
+    /// </summary>
+    public GameSession Tick()
+    {
+        if (Recipes.IsDefaultOrEmpty)
+            return this;
+
+        var tickedState = TickFacilities(Current);
+        if (tickedState == Current)
+            return this;
+
+        var newStack = PushWithLimit(UndoStack, Current);
+        return this with
+        {
+            Current = tickedState,
+            UndoStack = newStack,
+            ActionLog = ActionLog.Add($"Tick #{TickCount + 1}"),
+            TickCount = TickCount + 1
+        };
+    }
+
+    /// <summary>
+    /// Returns recipes applicable to a facility by environment type.
+    /// Uses FacilityRecipeMap when available, falls back to RecipeRegistry.
+    /// </summary>
+    private IReadOnlyList<Recipe> GetRecipesForFacility(string environmentType)
+    {
+        if (FacilityRecipeMap is not null &&
+            FacilityRecipeMap.TryGetValue(environmentType, out var recipeIds))
+        {
+            var recipesById = Recipes.ToDictionary(r => r.Id);
+            return recipeIds
+                .Where(id => recipesById.ContainsKey(id))
+                .Select(id => recipesById[id])
+                .ToList();
+        }
+
+        // Legacy fallback
+        return Data.RecipeRegistry.GetRecipesForFacility(environmentType, Recipes);
     }
 
     /// <summary>

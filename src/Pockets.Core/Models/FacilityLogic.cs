@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Pockets.Core.Models;
 
 /// <summary>
@@ -14,6 +16,67 @@ public static class FacilityLogic
     {
         var inputStacks = GetInputStacks(facility);
         return recipes.FirstOrDefault(r => RecipeMatches(r, inputStacks));
+    }
+
+    /// <summary>
+    /// Cycles the facility's active recipe to the next one in the list.
+    /// Dumps all items from input and output slots, rebuilds the grid for the new recipe,
+    /// and resets crafting progress. Returns the updated facility and dumped items.
+    /// </summary>
+    public static (Bag Updated, ImmutableList<ItemStack> Dumped) CycleRecipe(
+        Bag facility, IReadOnlyList<Recipe> recipes)
+    {
+        var state = facility.FacilityState!;
+        var currentId = state.ActiveRecipeId;
+
+        // Find next recipe (wrap around)
+        var currentIndex = -1;
+        for (int i = 0; i < recipes.Count; i++)
+        {
+            if (recipes[i].Id == currentId)
+            {
+                currentIndex = i;
+                break;
+            }
+        }
+        var nextIndex = (currentIndex + 1) % recipes.Count;
+        var nextRecipe = recipes[nextIndex];
+
+        // Collect all items from slots to dump
+        var dumped = ImmutableList.CreateBuilder<ItemStack>();
+        for (int i = 0; i < facility.Grid.Cells.Length; i++)
+        {
+            var cell = facility.Grid.GetCell(i);
+            if (!cell.IsEmpty)
+                dumped.Add(cell.Stack!);
+        }
+
+        // Rebuild grid for new recipe
+        var grid = Grid.Create(nextRecipe.GridColumns, nextRecipe.GridRows);
+        var builder = grid.Cells.ToBuilder();
+        for (int i = 0; i < nextRecipe.Inputs.Count; i++)
+        {
+            builder[i] = new Cell(Frame: new InputSlotFrame(
+                $"in{i + 1}", ItemTypeFilter: nextRecipe.Inputs[i].ItemType));
+        }
+        for (int i = nextRecipe.Inputs.Count; i < builder.Count; i++)
+        {
+            builder[i] = new Cell(Frame: new OutputSlotFrame($"out{i - nextRecipe.Inputs.Count + 1}"));
+        }
+        grid = grid with { Cells = builder.MoveToImmutable() };
+
+        var updated = facility with
+        {
+            Grid = grid,
+            FacilityState = state with
+            {
+                ActiveRecipeId = nextRecipe.Id,
+                RecipeId = null,
+                Progress = 0
+            }
+        };
+
+        return (updated, dumped.ToImmutable());
     }
 
     /// <summary>
@@ -67,8 +130,19 @@ public static class FacilityLogic
             return facility with { FacilityState = state with { Progress = newProgress } };
         }
 
-        // Not crafting: try to start
-        var match = FindMatchingRecipe(facility, recipes);
+        // Not crafting: try to start using ActiveRecipeId if set, otherwise scan
+        Recipe? match;
+        if (state.ActiveRecipeId is not null)
+        {
+            var activeRecipe = recipes.FirstOrDefault(r => r.Id == state.ActiveRecipeId);
+            match = activeRecipe is not null && RecipeMatches(activeRecipe, inputStacks)
+                ? activeRecipe : null;
+        }
+        else
+        {
+            match = FindMatchingRecipe(facility, recipes);
+        }
+
         if (match is null)
             return facility;
 

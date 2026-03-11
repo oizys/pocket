@@ -226,6 +226,6 @@ public static class GameInitializer
         }
 
         return new Bag(grid, facility.EnvironmentType, facility.ColorScheme,
-            FacilityState: new FacilityState());
+            FacilityState: new FacilityState(ActiveRecipeId: activeRecipe?.Id));
     }
 }

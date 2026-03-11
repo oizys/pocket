@@ -18,9 +18,10 @@ if (dir is null)
 var dataPath = Path.Combine(dir.FullName, "data");
 var registry = ContentLoader.LoadFromDirectory(dataPath);
 var (gameState, recipes) = GameInitializer.CreateFromRegistry(registry);
+var facilityRecipeMap = registry.BuildFacilityRecipeMap();
 
 Application.Init();
 var top = Application.Top;
-top.Add(new GameView(gameState, recipes));
+top.Add(new GameView(gameState, recipes, facilityRecipeMap));
 Application.Run();
 Application.Shutdown();

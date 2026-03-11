@@ -50,6 +50,6 @@ public static class FacilityBuilder
         grid = grid with { Cells = builder.MoveToImmutable() };
 
         return new Bag(grid, environment, colorScheme,
-            FacilityState: new FacilityState());
+            FacilityState: new FacilityState(ActiveRecipeId: recipe?.Id));
     }
 }

@@ -256,9 +256,10 @@ public class ContentLoaderTests
         Assert.True(registry.Facilities.ContainsKey("Tanner"));
         Assert.True(registry.Facilities.ContainsKey("Seedling Pot"));
 
-        // 3 recipes
-        Assert.Equal(3, registry.Recipes.Count);
+        // 4 recipes (workbench has 2)
+        Assert.Equal(4, registry.Recipes.Count);
         Assert.True(registry.Recipes.ContainsKey("workbench-axe"));
+        Assert.True(registry.Recipes.ContainsKey("workbench-hammer"));
         Assert.True(registry.Recipes.ContainsKey("tanner-pouch"));
         Assert.True(registry.Recipes.ContainsKey("seedling-forest"));
 

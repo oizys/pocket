@@ -31,4 +31,13 @@ public record ContentRegistry(
         Facilities.SetItems(b.Facilities),
         GridTemplates.SetItems(b.GridTemplates),
         LootTableTemplates.SetItems(b.LootTableTemplates));
+
+    /// <summary>
+    /// Builds a mapping from facility EnvironmentType to recipe IDs.
+    /// Used by GameSession to look up which recipes belong to which facility.
+    /// </summary>
+    public ImmutableDictionary<string, ImmutableArray<string>> BuildFacilityRecipeMap() =>
+        Facilities.Values.ToImmutableDictionary(
+            f => f.EnvironmentType,
+            f => f.RecipeIds);
 }
