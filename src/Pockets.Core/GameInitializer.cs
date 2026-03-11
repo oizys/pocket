@@ -69,7 +69,7 @@ public static class GameInitializer
 
     /// <summary>
     /// Creates a Stage 3 game: Stage 2 base plus 3 facility bags (Workbench, Tanner, Seedling Pot)
-    /// and starter crafting materials.
+    /// and starter crafting materials. Legacy method — uses hardcoded RecipeRegistry/FacilityBuilder.
     /// </summary>
     public static GameState CreateRandomStage3Game(ImmutableArray<ItemType> itemTypes, Random? random = null)
     {
@@ -128,5 +128,104 @@ public static class GameInitializer
             stacks.Add(new ItemStack(soil, 4));
 
         return GameState.CreateStage1(itemTypes, stacks);
+    }
+
+    /// <summary>
+    /// Creates a game from a ContentRegistry. Builds facility bags from facility/recipe definitions,
+    /// generates wilderness bags from templates, and places starter materials.
+    /// </summary>
+    public static (GameState State, ImmutableArray<Recipe> Recipes) CreateFromRegistry(
+        ContentRegistry registry, Random? random = null)
+    {
+        random ??= new Random();
+        var itemTypes = registry.Items.Values.ToImmutableArray();
+        var byName = registry.Items;
+        var stacks = new List<ItemStack>();
+
+        // Build facility bags from data-driven definitions
+        foreach (var (facilityId, facility) in registry.Facilities)
+        {
+            if (!byName.TryGetValue(facilityId, out var facilityItemType))
+                continue;
+
+            // Get the first recipe for this facility to set initial slot filters
+            var firstRecipeId = facility.RecipeIds.FirstOrDefault();
+            Recipe? firstRecipe = firstRecipeId is not null && registry.Recipes.TryGetValue(firstRecipeId, out var r) ? r : null;
+
+            var facilityBag = BuildFacilityBag(facility, firstRecipe);
+            stacks.Add(new ItemStack(facilityItemType, 1, ContainedBag: facilityBag));
+        }
+
+        // Build wilderness bags from grid + loot table templates
+        foreach (var (templateId, gridTemplate) in registry.GridTemplates)
+        {
+            // Find an item type matching the template's environment + " Bag"
+            var bagName = $"{gridTemplate.EnvironmentType} Bag";
+            if (!byName.TryGetValue(bagName, out var bagItemType))
+                continue;
+
+            // Find a matching loot table template (convention: same prefix)
+            var lootTemplate = registry.LootTableTemplates.Values
+                .FirstOrDefault();
+
+            if (lootTemplate is null)
+                continue;
+
+            var generators = GeneratorBuiltins.GetAll(byName);
+            var wildernessBag = GeneratorBuiltins.Wilderness(null,
+                new object[] { gridTemplate, lootTemplate, byName });
+
+            if (wildernessBag is BagValue bv)
+                stacks.Add(new ItemStack(bagItemType, 1, ContainedBag: bv.Bag));
+        }
+
+        // Starter crafting materials
+        var starterMaterials = new[]
+        {
+            ("Plain Rock", 8), ("Rough Wood", 5), ("Tanned Leather", 4),
+            ("Woven Fiber", 3), ("Forest Seed", 6), ("Rich Soil", 4)
+        };
+        foreach (var (name, count) in starterMaterials)
+        {
+            if (byName.TryGetValue(name, out var itemType))
+                stacks.Add(new ItemStack(itemType, count));
+        }
+
+        var allRecipes = registry.Recipes.Values.ToImmutableArray();
+        var state = GameState.CreateStage1(itemTypes, stacks);
+        return (state, allRecipes);
+    }
+
+    /// <summary>
+    /// Builds a facility bag from a FacilityDefinition and optional active recipe.
+    /// Grid layout comes from the recipe; if no recipe, creates a default 3x1 grid.
+    /// </summary>
+    private static Bag BuildFacilityBag(FacilityDefinition facility, Recipe? activeRecipe)
+    {
+        Grid grid;
+        if (activeRecipe is not null)
+        {
+            grid = Grid.Create(activeRecipe.GridColumns, activeRecipe.GridRows);
+            var builder = grid.Cells.ToBuilder();
+            for (int i = 0; i < activeRecipe.Inputs.Count; i++)
+            {
+                builder[i] = new Cell(Frame: new InputSlotFrame(
+                    $"in{i + 1}",
+                    ItemTypeFilter: activeRecipe.Inputs[i].ItemType));
+            }
+            // Output slots fill remaining cells
+            for (int i = activeRecipe.Inputs.Count; i < builder.Count; i++)
+            {
+                builder[i] = new Cell(Frame: new OutputSlotFrame($"out{i - activeRecipe.Inputs.Count + 1}"));
+            }
+            grid = grid with { Cells = builder.MoveToImmutable() };
+        }
+        else
+        {
+            grid = Grid.Create(3, 1);
+        }
+
+        return new Bag(grid, facility.EnvironmentType, facility.ColorScheme,
+            FacilityState: new FacilityState());
     }
 }

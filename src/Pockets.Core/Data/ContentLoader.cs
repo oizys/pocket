@@ -5,16 +5,39 @@ namespace Pockets.Core.Data;
 
 /// <summary>
 /// Orchestrates the parse → resolve pipeline for loading game content from markdown files.
-/// Parses ContentBlocks, routes them to typed parsers, and resolves cross-references
-/// (e.g. recipe inputs referencing item names) into fully-resolved domain objects.
+/// Phase 1 (parse): extract typed blocks from markdown, parse into raw definitions.
+/// Phase 2 (resolve): cross-reference item names, build recipe output factories.
 /// </summary>
 public static class ContentLoader
 {
     /// <summary>
-    /// Loads content from a single markdown string. Parses all blocks, routes each to
-    /// the appropriate parser, then resolves recipes using the parsed item set.
+    /// Loads and resolves content from a single markdown string.
+    /// For self-contained files where all cross-references exist within the file.
     /// </summary>
     public static ContentRegistry LoadFromMarkdown(string markdown, string sourceFile)
+    {
+        var raw = ParseRaw(markdown, sourceFile);
+        return Resolve(raw);
+    }
+
+    /// <summary>
+    /// Loads content from all .md files found recursively under directoryPath.
+    /// All files are parsed first, raw data merged, then cross-references resolved.
+    /// </summary>
+    public static ContentRegistry LoadFromDirectory(string directoryPath)
+    {
+        var raw = Directory.EnumerateFiles(directoryPath, "*.md", SearchOption.AllDirectories)
+            .Select(file => ParseRaw(File.ReadAllText(file), file))
+            .Aggregate(RawContent.Empty, (acc, r) => acc.Merge(r));
+
+        return Resolve(raw);
+    }
+
+    /// <summary>
+    /// Phase 1: parse a markdown string into raw (unresolved) content.
+    /// No cross-reference resolution — item names are still strings.
+    /// </summary>
+    private static RawContent ParseRaw(string markdown, string sourceFile)
     {
         var blocks = ContentBlockParser.Parse(markdown, sourceFile);
 
@@ -41,23 +64,25 @@ public static class ContentLoader
         var recipeDefs = blocks
             .Where(b => b.Type == "Recipe")
             .Select(ContentParsers.ParseRecipe)
-            .ToList();
-
-        var recipes = recipeDefs
-            .Select(def => ResolveRecipe(def, items))
             .ToImmutableDictionary(r => r.Id);
 
-        return new ContentRegistry(items, recipes, facilities, gridTemplates, lootTableTemplates);
+        return new RawContent(items, recipeDefs, facilities, gridTemplates, lootTableTemplates);
     }
 
     /// <summary>
-    /// Loads content from all .md files found recursively under directoryPath.
-    /// Merges all registries together; later files override earlier ones on key conflict.
+    /// Phase 2: resolve cross-references in raw content.
+    /// Builds Recipe objects from RecipeDefinitions by resolving item names to ItemTypes
+    /// and constructing output factories.
     /// </summary>
-    public static ContentRegistry LoadFromDirectory(string directoryPath) =>
-        Directory.EnumerateFiles(directoryPath, "*.md", SearchOption.AllDirectories)
-            .Select(file => LoadFromMarkdown(File.ReadAllText(file), file))
-            .Aggregate(ContentRegistry.Empty, (acc, reg) => acc.Merge(reg));
+    private static ContentRegistry Resolve(RawContent raw)
+    {
+        var recipes = raw.RecipeDefs
+            .Select(kv => ResolveRecipe(kv.Value, raw.Items))
+            .ToImmutableDictionary(r => r.Id);
+
+        return new ContentRegistry(raw.Items, recipes, raw.Facilities,
+            raw.GridTemplates, raw.LootTableTemplates);
+    }
 
     /// <summary>
     /// Resolves a RecipeDefinition into a fully-resolved Recipe by looking up item names
@@ -79,7 +104,6 @@ public static class ContentLoader
 
         if (allStatic)
         {
-            // Capture the resolved output stacks for the factory closure.
             var outputStacks = def.OutputPipeline
                 .Cast<StaticItemStep>()
                 .Select(step => new ItemStack(itemsByName[step.ItemName], step.Count))
@@ -89,7 +113,6 @@ public static class ContentLoader
         }
         else
         {
-            // Placeholder: generator/template execution will be wired up later.
             outputFactory = () => Array.Empty<ItemStack>();
         }
 
@@ -101,5 +124,30 @@ public static class ContentLoader
             def.Duration,
             def.GridColumns,
             def.GridRows);
+    }
+
+    /// <summary>
+    /// Intermediate container for parsed-but-unresolved content from one or more files.
+    /// </summary>
+    private record RawContent(
+        ImmutableDictionary<string, ItemType> Items,
+        ImmutableDictionary<string, RecipeDefinition> RecipeDefs,
+        ImmutableDictionary<string, FacilityDefinition> Facilities,
+        ImmutableDictionary<string, GridTemplate> GridTemplates,
+        ImmutableDictionary<string, LootTableTemplate> LootTableTemplates)
+    {
+        public static RawContent Empty { get; } = new(
+            ImmutableDictionary<string, ItemType>.Empty,
+            ImmutableDictionary<string, RecipeDefinition>.Empty,
+            ImmutableDictionary<string, FacilityDefinition>.Empty,
+            ImmutableDictionary<string, GridTemplate>.Empty,
+            ImmutableDictionary<string, LootTableTemplate>.Empty);
+
+        public RawContent Merge(RawContent other) => new(
+            Items.SetItems(other.Items),
+            RecipeDefs.SetItems(other.RecipeDefs),
+            Facilities.SetItems(other.Facilities),
+            GridTemplates.SetItems(other.GridTemplates),
+            LootTableTemplates.SetItems(other.LootTableTemplates));
     }
 }

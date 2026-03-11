@@ -166,6 +166,108 @@ public class ContentLoaderTests
     }
 
     [Fact]
+    public void LoadFromMarkdown_PackageFile_ParsesAllTypes()
+    {
+        var markdown = """
+            # Item: Workbench
+            Category: Structure
+            Stackable: No
+
+            A sturdy crafting station.
+
+            # Item: Plain Rock
+            Category: Material
+            Stackable: Yes
+
+            # Item: Rough Wood
+            Category: Material
+            Stackable: Yes
+
+            # Item: Stone Axe
+            Category: Tool
+            Stackable: No
+
+            # Facility: Workbench
+            Environment: Workbench
+            ColorScheme: Brown
+            Recipes: workbench-axe
+
+            # Recipe: workbench-axe
+            Name: Stone Axe
+            Duration: 3
+            Grid: 3x1
+            Input 1: Plain Rock ×5
+            Input 2: Rough Wood ×3
+            Output: 1 Stone Axe
+
+            # GridTemplate: test-grid
+            Columns: 4
+            Rows: 3
+            Environment: Test
+            ColorScheme: Blue
+
+            # LootTableTemplate: test-loot
+            Items: Plain Rock ×2.0, Rough Wood ×1.0
+            FillRatio: 0.7
+            """;
+
+        var registry = ContentLoader.LoadFromMarkdown(markdown, "package.md");
+
+        Assert.Equal(4, registry.Items.Count);
+        Assert.Single(registry.Facilities);
+        Assert.Equal("Workbench", registry.Facilities["Workbench"].EnvironmentType);
+        Assert.Contains("workbench-axe", registry.Facilities["Workbench"].RecipeIds);
+
+        Assert.Single(registry.Recipes);
+        var recipe = registry.Recipes["workbench-axe"];
+        Assert.Equal(3, recipe.GridColumns);
+        Assert.Equal(1, recipe.GridRows);
+        Assert.Equal("Plain Rock", recipe.Inputs[0].ItemType.Name);
+
+        Assert.Single(registry.GridTemplates);
+        Assert.Equal(4, registry.GridTemplates["test-grid"].Columns);
+
+        Assert.Single(registry.LootTableTemplates);
+        Assert.Equal(0.7, registry.LootTableTemplates["test-loot"].FillRatio);
+    }
+
+    [Fact]
+    public void LoadActualDataDirectory_LoadsAllContent()
+    {
+        // Test against the real data/ directory
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Pockets.sln")))
+            dir = dir.Parent;
+
+        Assert.NotNull(dir);
+        var dataPath = Path.Combine(dir!.FullName, "data");
+        var registry = ContentLoader.LoadFromDirectory(dataPath);
+
+        // 19 original items + 4 new (Workbench, Tanner, Seedling Pot, Belt Pouch, Forest Bag)
+        Assert.True(registry.Items.Count >= 22, $"Expected >= 22 items, got {registry.Items.Count}");
+        Assert.True(registry.Items.ContainsKey("Plain Rock"));
+        Assert.True(registry.Items.ContainsKey("Workbench"));
+        Assert.True(registry.Items.ContainsKey("Belt Pouch"));
+        Assert.True(registry.Items.ContainsKey("Forest Bag"));
+
+        // 3 facilities
+        Assert.Equal(3, registry.Facilities.Count);
+        Assert.True(registry.Facilities.ContainsKey("Workbench"));
+        Assert.True(registry.Facilities.ContainsKey("Tanner"));
+        Assert.True(registry.Facilities.ContainsKey("Seedling Pot"));
+
+        // 3 recipes
+        Assert.Equal(3, registry.Recipes.Count);
+        Assert.True(registry.Recipes.ContainsKey("workbench-axe"));
+        Assert.True(registry.Recipes.ContainsKey("tanner-pouch"));
+        Assert.True(registry.Recipes.ContainsKey("seedling-forest"));
+
+        // Templates
+        Assert.True(registry.GridTemplates.Count >= 2);
+        Assert.True(registry.LootTableTemplates.Count >= 1);
+    }
+
+    [Fact]
     public void LoadFromDirectory_ScansRecursively()
     {
         // Create a temp directory structure with nested .md files

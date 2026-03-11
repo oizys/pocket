@@ -20,11 +20,16 @@ public static class ItemTypeLoader
             .Select(l => l.Trim())
             .ToList();
 
-        var name = lines
+        var rawName = lines
             .Where(l => l.StartsWith("# "))
             .Select(l => l[2..].Trim())
             .FirstOrDefault()
             ?? throw new ItemTypeParseException(filename, "Missing item name (no # heading found)");
+
+        // Support both "# Name" and "# Item: Name" header formats
+        var name = rawName.StartsWith("Item: ", StringComparison.OrdinalIgnoreCase)
+            ? rawName[6..].Trim()
+            : rawName;
 
         var category = ExtractField(lines, "Category", filename);
         if (!Enum.TryParse<Category>(category, ignoreCase: true, out var parsedCategory))
@@ -38,7 +43,8 @@ public static class ItemTypeLoader
         if (maxStackField is not null && int.TryParse(maxStackField, out var parsed))
             maxStackSize = parsed;
 
-        var fieldPrefixes = new[] { "# ", "**Category**", "**Stackable**", "**Max Stack Size**" };
+        var fieldPrefixes = new[] { "# ", "**Category**", "**Stackable**", "**Max Stack Size**",
+            "Category:", "Stackable:", "Max Stack Size:" };
         var descriptionLines = lines
             .Where(l => l.Length > 0)
             .Where(l => !fieldPrefixes.Any(p => l.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
@@ -69,10 +75,14 @@ public static class ItemTypeLoader
 
     private static string? TryExtractField(List<string> lines, string fieldName)
     {
-        var prefix = $"**{fieldName}**:";
+        var boldPrefix = $"**{fieldName}**:";
+        var plainPrefix = $"{fieldName}:";
         return lines
-            .Where(l => l.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            .Select(l => l[prefix.Length..].Trim())
-            .FirstOrDefault();
+            .Select(l => l.StartsWith(boldPrefix, StringComparison.OrdinalIgnoreCase)
+                ? l[boldPrefix.Length..].Trim()
+                : l.StartsWith(plainPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? l[plainPrefix.Length..].Trim()
+                    : null)
+            .FirstOrDefault(v => v is not null);
     }
 }

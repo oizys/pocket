@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Terminal.Gui;
 using Pockets.Core;
 using Pockets.Core.Data;
@@ -15,9 +16,8 @@ if (dir is null)
 }
 
 var dataPath = Path.Combine(dir.FullName, "data");
-var itemTypes = ItemTypeLoader.LoadFromDirectory(dataPath);
-var gameState = GameInitializer.CreateRandomStage3Game(itemTypes);
-var recipes = RecipeRegistry.BuildRecipes(gameState.ItemTypes);
+var registry = ContentLoader.LoadFromDirectory(dataPath);
+var (gameState, recipes) = GameInitializer.CreateFromRegistry(registry);
 
 Application.Init();
 var top = Application.Top;
