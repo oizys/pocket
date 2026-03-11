@@ -193,6 +193,36 @@ public class ContentBlockParserTests
     }
 
     [Fact]
+    public void FieldLikeLineInBodyIsNotParsedAsField()
+    {
+        var markdown = """
+            # Item: Test Rock
+            Category: Material
+
+            Notes: this looks like a field but is body text after the blank line.
+            """;
+
+        var blocks = ContentBlockParser.Parse(markdown, "test.md");
+        Assert.Single(blocks[0].Fields); // only Category
+        Assert.Contains("Notes", blocks[0].Body);
+    }
+
+    [Fact]
+    public void BlockWithNoBodyHasEmptyBody()
+    {
+        var markdown = """
+            # Facility: Workbench
+            Environment: Workbench
+            ColorScheme: Brown
+            Recipes: stone-axe
+            """;
+
+        var blocks = ContentBlockParser.Parse(markdown, "test.md");
+        Assert.Equal("", blocks[0].Body);
+        Assert.Equal(3, blocks[0].Fields.Count);
+    }
+
+    [Fact]
     public void TemplateTypesAreParsed()
     {
         var markdown = """

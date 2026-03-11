@@ -6,6 +6,8 @@ namespace Pockets.Core.Data;
 /// <summary>
 /// Parses a markdown string into a list of ContentBlock records.
 /// Blocks are delimited by lines matching "# Type: Id" headers.
+/// Within each block, fields come first (key: value or **key**: value),
+/// then a blank line separator, then body text.
 /// </summary>
 public static class ContentBlockParser
 {
@@ -14,13 +16,12 @@ public static class ContentBlockParser
 
     /// <summary>
     /// Splits markdown content on "# Type: Id" headers and parses each block's fields and body.
-    /// Lines not matching the typed header pattern are ignored as block boundaries.
+    /// Fields are parsed from lines before the first blank line; body is everything after.
     /// </summary>
     public static IReadOnlyList<ContentBlock> Parse(string markdown, string sourceFile)
     {
         var lines = markdown.Split('\n').Select(l => l.TrimEnd()).ToList();
 
-        // Find indices of lines that are typed headers (# Word: id)
         var headerIndices = lines
             .Select((line, idx) => (line, idx))
             .Where(t => HeaderPattern.IsMatch(t.line))
@@ -41,15 +42,20 @@ public static class ContentBlockParser
                 var nextHeaderIdx = i + 1 < headerIndices.Count ? headerIndices[i + 1] : lines.Count;
                 var blockLines = lines.Skip(headerIdx + 1).Take(nextHeaderIdx - headerIdx - 1).ToList();
 
-                var fields = blockLines
+                // Split on first blank line: fields before, body after
+                var blankIndex = blockLines.FindIndex(l => string.IsNullOrWhiteSpace(l));
+                var fieldLines = blankIndex >= 0 ? blockLines.Take(blankIndex) : blockLines;
+                var bodyLines = blankIndex >= 0 ? blockLines.Skip(blankIndex + 1) : Enumerable.Empty<string>();
+
+                var fields = fieldLines
                     .Select(l => FieldPattern.Match(l))
                     .Where(m => m.Success)
                     .ToImmutableDictionary(
                         m => m.Groups[1].Value,
                         m => m.Groups[2].Value.Trim());
 
-                var body = string.Join('\n', blockLines
-                    .Where(l => !FieldPattern.IsMatch(l) && !string.IsNullOrWhiteSpace(l)))
+                var body = string.Join('\n', bodyLines
+                    .Where(l => !string.IsNullOrWhiteSpace(l)))
                     .Trim();
 
                 return new ContentBlock(type, id, fields, body, sourceFile);
