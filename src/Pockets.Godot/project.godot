@@ -1,0 +1,15 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; unless you know what you are doing.
+
+config_version=5
+
+[application]
+
+config/name="Pockets"
+config/features=PackedStringArray("4.6", "C#", "Forward Plus")
+run/main_scene="res://Scenes/Main.tscn"
+
+[dotnet]
+
+project/assembly_name="Pockets.Godot"

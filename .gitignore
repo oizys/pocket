@@ -482,3 +482,8 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Godot 4.x
+.godot/
+*.translation
+src/Pockets.Godot/*.sln
