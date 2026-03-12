@@ -142,10 +142,23 @@ public static class GameInitializer
         var byName = registry.Items;
         var stacks = new List<ItemStack>();
 
-        // Build facility bags from data-driven definitions
+        // Build facility bags from data-driven definitions.
+        // Only Workshop is placed directly — other facilities are crafted from Workshop.
+        var workshopFacilities = new HashSet<string> { "Workshop" };
+        var workshopCraftable = registry.Facilities
+            .Where(kv => workshopFacilities.Contains(kv.Key))
+            .SelectMany(kv => registry.Recipes
+                .Where(r => kv.Value.RecipeIds.Contains(r.Key))
+                .Select(r => r.Value.Name))
+            .ToHashSet();
+
         foreach (var (facilityId, facility) in registry.Facilities)
         {
             if (!byName.TryGetValue(facilityId, out var facilityItemType))
+                continue;
+
+            // Skip facilities that are crafted from Workshop (player builds them)
+            if (workshopCraftable.Contains(facilityId))
                 continue;
 
             // Get the first recipe for this facility to set initial slot filters
@@ -179,10 +192,10 @@ public static class GameInitializer
                 stacks.Add(new ItemStack(bagItemType, 1, ContainedBag: bv.Bag));
         }
 
-        // Starter crafting materials
+        // Starter crafting materials (enough to craft 1-2 facilities from Workshop)
         var starterMaterials = new[]
         {
-            ("Plain Rock", 8), ("Rough Wood", 5), ("Tanned Leather", 4),
+            ("Plain Rock", 10), ("Rough Wood", 6), ("Tanned Leather", 6),
             ("Woven Fiber", 3), ("Forest Seed", 6), ("Rich Soil", 4)
         };
         foreach (var (name, count) in starterMaterials)
@@ -200,7 +213,7 @@ public static class GameInitializer
     /// Builds a facility bag from a FacilityDefinition and optional active recipe.
     /// Grid layout comes from the recipe; if no recipe, creates a default 3x1 grid.
     /// </summary>
-    private static Bag BuildFacilityBag(FacilityDefinition facility, Recipe? activeRecipe)
+    internal static Bag BuildFacilityBag(FacilityDefinition facility, Recipe? activeRecipe)
     {
         Grid grid;
         if (activeRecipe is not null)

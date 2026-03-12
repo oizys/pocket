@@ -120,14 +120,48 @@ public static class GeneratorBuiltins
     }
 
     /// <summary>
+    /// Attaches a fully-configured facility bag to each ItemStack in the input StacksValue.
+    /// templateArgs[0] = FacilityDefinition, looked up via @FacilityId in the pipeline.
+    /// The resolved recipes dictionary is captured via closure at registration time (lazy).
+    /// </summary>
+    public static PipelineValue AttachFacility(
+        PipelineValue? input,
+        IReadOnlyList<object> templateArgs,
+        Func<ImmutableDictionary<string, Recipe>?> getRecipes)
+    {
+        var stacks = ((StacksValue)input!).Stacks;
+        var facilityDef = (FacilityDefinition)templateArgs[0];
+
+        var recipes = getRecipes();
+        var firstRecipeId = facilityDef.RecipeIds.FirstOrDefault();
+        Recipe? firstRecipe = firstRecipeId is not null
+            && recipes is not null
+            && recipes.TryGetValue(firstRecipeId, out var r)
+                ? r : null;
+
+        var facilityBag = GameInitializer.BuildFacilityBag(facilityDef, firstRecipe);
+
+        var updatedStacks = stacks
+            .Select(s => s with { ContainedBag = facilityBag })
+            .ToList();
+
+        return new StacksValue(updatedStacks);
+    }
+
+    /// <summary>
     /// Returns an ImmutableDictionary of all built-in generators keyed by name.
     /// The "wilderness" generator is wrapped to automatically append the items dictionary
     /// as the third template argument, so callers only need to supply grid and loot templates.
+    /// getRecipes is a lazy accessor for the resolved recipes dictionary (set after recipe resolution).
     /// </summary>
-    public static ImmutableDictionary<string, GeneratorFunc> GetAll(ImmutableDictionary<string, ItemType> items) =>
+    public static ImmutableDictionary<string, GeneratorFunc> GetAll(
+        ImmutableDictionary<string, ItemType> items,
+        Func<ImmutableDictionary<string, Recipe>?>? getRecipes = null) =>
         ImmutableDictionary<string, GeneratorFunc>.Empty
             .Add("bag", Bag)
             .Add("wilderness", (input, args) => Wilderness(input, args.Append(items).ToList()))
             .Add("attach-bag", AttachBag)
-            .Add("shuffle", Shuffle);
+            .Add("shuffle", Shuffle)
+            .Add("attach-facility", (input, args) =>
+                AttachFacility(input, args, getRecipes ?? (() => null)));
 }

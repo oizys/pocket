@@ -243,25 +243,30 @@ public class ContentLoaderTests
         var dataPath = Path.Combine(dir!.FullName, "data");
         var registry = ContentLoader.LoadFromDirectory(dataPath);
 
-        // 19 original items + 4 new (Workbench, Tanner, Seedling Pot, Belt Pouch, Forest Bag)
-        Assert.True(registry.Items.Count >= 22, $"Expected >= 22 items, got {registry.Items.Count}");
+        // 19 original items + 5 new (Workshop, Workbench, Tanner, Seedling Pot, Belt Pouch, Forest Bag)
+        Assert.True(registry.Items.Count >= 23, $"Expected >= 23 items, got {registry.Items.Count}");
         Assert.True(registry.Items.ContainsKey("Plain Rock"));
+        Assert.True(registry.Items.ContainsKey("Workshop"));
         Assert.True(registry.Items.ContainsKey("Workbench"));
         Assert.True(registry.Items.ContainsKey("Belt Pouch"));
         Assert.True(registry.Items.ContainsKey("Forest Bag"));
 
-        // 3 facilities
-        Assert.Equal(3, registry.Facilities.Count);
+        // 4 facilities (Workshop + 3 crafting stations)
+        Assert.Equal(4, registry.Facilities.Count);
+        Assert.True(registry.Facilities.ContainsKey("Workshop"));
         Assert.True(registry.Facilities.ContainsKey("Workbench"));
         Assert.True(registry.Facilities.ContainsKey("Tanner"));
         Assert.True(registry.Facilities.ContainsKey("Seedling Pot"));
 
-        // 4 recipes (workbench has 2)
-        Assert.Equal(4, registry.Recipes.Count);
+        // 7 recipes (workbench 2, tanner 1, seedling 1, workshop 3)
+        Assert.Equal(7, registry.Recipes.Count);
         Assert.True(registry.Recipes.ContainsKey("workbench-axe"));
         Assert.True(registry.Recipes.ContainsKey("workbench-hammer"));
         Assert.True(registry.Recipes.ContainsKey("tanner-pouch"));
         Assert.True(registry.Recipes.ContainsKey("seedling-forest"));
+        Assert.True(registry.Recipes.ContainsKey("workshop-workbench"));
+        Assert.True(registry.Recipes.ContainsKey("workshop-tanner"));
+        Assert.True(registry.Recipes.ContainsKey("workshop-seedling-pot"));
 
         // Templates
         Assert.True(registry.GridTemplates.Count >= 2);
@@ -333,6 +338,49 @@ public class ContentLoaderTests
         Assert.Equal("Pouch", output[0].ContainedBag!.EnvironmentType);
         Assert.Equal(3, output[0].ContainedBag!.Grid.Columns);
         Assert.Equal(2, output[0].ContainedBag!.Grid.Rows);
+    }
+
+    [Fact]
+    public void LoadActualDataDirectory_WorkshopRecipes_ProduceFacilityBags()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Pockets.sln")))
+            dir = dir.Parent;
+
+        Assert.NotNull(dir);
+        var dataPath = Path.Combine(dir!.FullName, "data");
+        var registry = ContentLoader.LoadFromDirectory(dataPath);
+
+        // Workshop-workbench recipe produces a Workbench with a facility bag
+        var workbenchRecipe = registry.Recipes["workshop-workbench"];
+        var workbenchOutput = workbenchRecipe.OutputFactory();
+        Assert.Single(workbenchOutput);
+        Assert.Equal("Workbench", workbenchOutput[0].ItemType.Name);
+        Assert.NotNull(workbenchOutput[0].ContainedBag);
+        var workbenchBag = workbenchOutput[0].ContainedBag!;
+        Assert.Equal("Workbench", workbenchBag.EnvironmentType);
+        Assert.NotNull(workbenchBag.FacilityState);
+        Assert.Equal("workbench-axe", workbenchBag.FacilityState!.ActiveRecipeId);
+        // Should have input slots with type filters and output slots
+        Assert.True(workbenchBag.Grid.GetCell(0).Frame is InputSlotFrame);
+        Assert.True(workbenchBag.Grid.GetCell(2).Frame is OutputSlotFrame);
+
+        // Workshop-tanner recipe produces a Tanner with a facility bag
+        var tannerRecipe = registry.Recipes["workshop-tanner"];
+        var tannerOutput = tannerRecipe.OutputFactory();
+        Assert.Single(tannerOutput);
+        Assert.Equal("Tanner", tannerOutput[0].ItemType.Name);
+        Assert.NotNull(tannerOutput[0].ContainedBag);
+        Assert.Equal("Tanner", tannerOutput[0].ContainedBag!.EnvironmentType);
+        Assert.NotNull(tannerOutput[0].ContainedBag!.FacilityState);
+
+        // Workshop-seedling-pot recipe produces a Seedling Pot with a facility bag
+        var seedlingRecipe = registry.Recipes["workshop-seedling-pot"];
+        var seedlingOutput = seedlingRecipe.OutputFactory();
+        Assert.Single(seedlingOutput);
+        Assert.Equal("Seedling Pot", seedlingOutput[0].ItemType.Name);
+        Assert.NotNull(seedlingOutput[0].ContainedBag);
+        Assert.Equal("Seedling Pot", seedlingOutput[0].ContainedBag!.EnvironmentType);
     }
 
     [Fact]

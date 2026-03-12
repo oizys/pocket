@@ -76,17 +76,23 @@ public static class ContentLoader
     /// </summary>
     private static ContentRegistry Resolve(RawContent raw)
     {
-        // Build template lookup for pipeline execution (GridTemplates + LootTableTemplates)
+        // Build template lookup for pipeline execution (GridTemplates + LootTableTemplates + FacilityDefinitions)
         var templates = raw.GridTemplates
             .ToImmutableDictionary(kv => kv.Key, kv => (object)kv.Value)
             .SetItems(raw.LootTableTemplates
+                .ToImmutableDictionary(kv => kv.Key, kv => (object)kv.Value))
+            .SetItems(raw.Facilities
                 .ToImmutableDictionary(kv => kv.Key, kv => (object)kv.Value));
 
-        var generators = GeneratorBuiltins.GetAll(raw.Items);
+        // Resolved recipes are set after the resolution loop; captured by closure for lazy access.
+        ImmutableDictionary<string, Recipe>? resolvedRecipes = null;
+        var generators = GeneratorBuiltins.GetAll(raw.Items, () => resolvedRecipes);
 
         var recipes = raw.RecipeDefs
             .Select(kv => ResolveRecipe(kv.Value, raw.Items, templates, generators))
             .ToImmutableDictionary(r => r.Id);
+
+        resolvedRecipes = recipes;
 
         return new ContentRegistry(raw.Items, recipes, raw.Facilities,
             raw.GridTemplates, raw.LootTableTemplates);
