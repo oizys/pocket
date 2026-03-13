@@ -14,4 +14,5 @@
 | 10 | Stage 4a: Gameplay Expansion & Data Architecture | Mid | Proposed | [stage-4a-gameplay.md](stage-4a-gameplay.md) |
 | 11 | Stage 4b: Godot C# App Target | Mid | Proposed | [stage-4b-godot.md](stage-4b-godot.md) |
 | 12 | Panels (Multi-Inventory Layout System) | Early-Mid | Proposed | [panels.md](panels.md) |
+| 13 | Agent-Driven Testing (Player + Visual) | Early | In Progress | [agent-testing.md](agent-testing.md) |
 | -- | Inventory Controls Research (Cross-Game) | -- | Reference | [inventory-controls-research.md](inventory-controls-research.md) |

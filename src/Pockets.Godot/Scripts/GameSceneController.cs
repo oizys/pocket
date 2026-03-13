@@ -8,13 +8,13 @@ using Pockets.Core.Rendering;
 namespace Pockets.Godot.Scripts;
 
 /// <summary>
-/// Main game controller. Builds the full UI layout in code (no .tscn),
-/// handles keyboard/mouse input, and refreshes all panels from GameSession state.
+/// Main Godot scene controller. Builds the full UI layout in code (no .tscn),
+/// maps Godot input events to GameKey/ClickType, and delegates to Core.GameController.
 /// Root is a Control so it participates in the Godot layout system and fills the viewport.
 /// </summary>
-public partial class GameController : Control
+public partial class GameSceneController : Control
 {
-    private GameSession _session = null!;
+    private Core.Models.GameController _controller = null!;
     private readonly Random _rng = new();
 
     // UI references
@@ -32,7 +32,20 @@ public partial class GameController : Control
         InitializeGame();
         BuildUI();
         RefreshUI();
+        StartDebugServer();
     }
+
+    private void StartDebugServer()
+    {
+        var server = new DebugWebSocketServer();
+        server.Controller = _controller;
+        AddChild(server);
+    }
+
+    /// <summary>
+    /// Called by DebugWebSocketServer (via CallDeferred) to refresh UI after a remote command.
+    /// </summary>
+    public void RequestRefreshUI() => RefreshUI();
 
     private void InitializeGame()
     {
@@ -66,11 +79,8 @@ public partial class GameController : Control
             recipes = ImmutableArray<Recipe>.Empty;
         }
 
-        _session = new GameSession(
-            gameState,
-            ImmutableStack<GameState>.Empty,
-            ImmutableList<string>.Empty,
-            recipes);
+        var session = GameSession.New(gameState, recipes);
+        _controller = new Core.Models.GameController(session);
 
         GD.Print($"Game initialized: {gameState.ActiveBag.Grid.Columns}x{gameState.ActiveBag.Grid.Rows} grid, " +
                  $"{gameState.ItemTypes.Length} item types");
@@ -185,71 +195,59 @@ public partial class GameController : Control
         bottomBar.AddChild(_toolbarLabel);
     }
 
+    /// <summary>
+    /// Maps Godot InputEventKey to abstract GameKey, or null if not a game key.
+    /// Arrow keys allow echo (held-key repeat); all others are single-press only.
+    /// </summary>
+    private static GameKey? MapKey(InputEventKey key)
+    {
+        // Arrow keys: always map (echo allowed for held movement)
+        var arrowKey = key.Keycode switch
+        {
+            Key.Up => (GameKey?)GameKey.Up,
+            Key.Down => (GameKey?)GameKey.Down,
+            Key.Left => (GameKey?)GameKey.Left,
+            Key.Right => (GameKey?)GameKey.Right,
+            _ => null
+        };
+        if (arrowKey is not null) return arrowKey;
+
+        // All other keys: single-press only (no echo)
+        if (key.Echo) return null;
+
+        return key.Keycode switch
+        {
+            Key.Key1 or Key.E => GameKey.Primary,
+            Key.Key2 => GameKey.Secondary,
+            Key.Key3 when !key.ShiftPressed => GameKey.QuickSplit,
+            Key.Key4 => GameKey.Sort,
+            Key.Key5 => GameKey.AcquireRandom,
+            Key.R => GameKey.CycleRecipe,
+            Key.Q => GameKey.LeaveBag,
+            Key.Z when key.CtrlPressed => GameKey.Undo,
+            _ => null
+        };
+    }
+
     public override void _UnhandledInput(InputEvent @event)
     {
         if (@event is not InputEventKey key || !key.Pressed)
             return;
 
-        bool handled = true;
+        var gameKey = MapKey(key);
+        if (gameKey is null) return;
 
-        // Arrow keys: allow echo for held-key movement
-        if (key.Keycode is Key.Up or Key.Down or Key.Left or Key.Right)
-        {
-            var dir = key.Keycode switch
-            {
-                Key.Up => Direction.Up,
-                Key.Down => Direction.Down,
-                Key.Left => Direction.Left,
-                Key.Right => Direction.Right,
-                _ => Direction.Up
-            };
-            _session = _session.MoveCursor(dir);
-        }
-        else if (key.Echo)
-        {
-            return; // single-press only for non-arrow keys
-        }
-        else
-        {
-            handled = key.Keycode switch
-            {
-                Key.Key1 => Execute(() => _session.ExecuteGrab()),
-                Key.Key2 => Execute(() => _session.ExecuteDrop()),
-                Key.Key3 when key.ShiftPressed => false, // TODO: modal split
-                Key.Key3 => Execute(() => _session.ExecuteQuickSplit()),
-                Key.Key4 => Execute(() => _session.ExecuteSort()),
-                Key.Key5 => Execute(() => _session = _session.ExecuteAcquireRandom(_rng)),
-                Key.E => Execute(() => _session.ExecuteEnterBag()),
-                Key.Q => Execute(() => _session.ExecuteLeaveBag()),
-                Key.Z when key.CtrlPressed => ExecuteUndo(),
-                _ => false
-            };
-        }
-
-        if (handled)
+        var result = _controller.HandleKey(gameKey.Value, _rng);
+        if (result.Handled)
         {
             RefreshUI();
             GetViewport().SetInputAsHandled();
         }
     }
 
-    private bool Execute(Func<GameSession> action)
-    {
-        _session = action();
-        return true;
-    }
-
-    private bool ExecuteUndo()
-    {
-        var undone = _session.Undo();
-        if (undone is not null)
-            _session = undone;
-        return true;
-    }
-
     private void RefreshUI()
     {
-        var state = _session.Current;
+        var state = _controller.Session.Current;
 
         // Grid
         _gridPanel.SetState(state.ActiveBag.Grid, state.Cursor.Position);
@@ -272,29 +270,21 @@ public partial class GameController : Control
             : "[1]Grab [2]Drop [3]Split [4]Sort [5]Acquire  |  [E]Enter [Q]Leave [Ctrl-Z]Undo";
 
         // Action log (last 8 entries)
-        var logEntries = _session.ActionLog.TakeLast(8);
+        var logEntries = _controller.Session.ActionLog.TakeLast(8);
         _statusLabel.Text = string.Join("\n", logEntries);
     }
 
     private void OnBackButtonPressed()
     {
-        _session = _session.ExecuteLeaveBag();
+        _controller.HandleBackClick();
         RefreshUI();
     }
 
     private void OnGridCellClicked(int index, int button)
     {
-        // Move cursor to clicked cell
-        var pos = Pockets.Core.Models.Position.FromIndex(index, _session.Current.ActiveBag.Grid.Columns);
-        var state = _session.Current;
-        _session = _session with { Current = state with { Cursor = new Cursor(pos) } };
-
-        // Left click = primary tool, right click = secondary
-        if (button == (int)MouseButton.Left)
-            _session = _session.ExecutePrimary();
-        else if (button == (int)MouseButton.Right)
-            _session = _session.ExecuteSecondary();
-
+        var pos = Pockets.Core.Models.Position.FromIndex(index, _controller.Session.Current.ActiveBag.Grid.Columns);
+        var clickType = button == (int)MouseButton.Left ? ClickType.Primary : ClickType.Secondary;
+        _controller.HandleGridClick(pos, clickType);
         RefreshUI();
     }
 
@@ -302,7 +292,7 @@ public partial class GameController : Control
     {
         if (index < 0) return;
         // Update description for hovered cell
-        var grid = _session.Current.ActiveBag.Grid;
+        var grid = _controller.Session.Current.ActiveBag.Grid;
         if (index < grid.Cells.Length)
         {
             var cell = grid.Cells[index];
