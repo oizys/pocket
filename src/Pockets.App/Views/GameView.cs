@@ -6,15 +6,17 @@ using Pockets.App.Rendering;
 namespace Pockets.App.Views;
 
 /// <summary>
-/// Main game window. Holds GameSession (state + undo + log), handles input, manages child panels.
+/// Main game window. Delegates input handling to GameController, manages child panels and UI.
+/// Modal split dialog stays here (it's UI-specific).
 /// </summary>
 public class GameView : Window
 {
-    private GameSession _session;
+    private readonly GameController _controller;
     private readonly GridPanel _gridPanel;
     private readonly RightPanel _rightPanel;
     private readonly Random _rng = new();
     private object? _tickTimer;
+    private readonly bool _enableTickTimer;
 
     /// <summary>
     /// Interval between realtime ticks (1 second per tick).
@@ -24,8 +26,10 @@ public class GameView : Window
     public GameView(
         GameState initialState,
         ImmutableArray<Recipe> recipes = default,
-        ImmutableDictionary<string, ImmutableArray<string>>? facilityRecipeMap = null) : base("Pockets")
+        ImmutableDictionary<string, ImmutableArray<string>>? facilityRecipeMap = null,
+        bool enableTickTimer = true) : base("Pockets")
     {
+        _enableTickTimer = enableTickTimer;
         X = 0;
         Y = 0;
         Width = Dim.Fill();
@@ -39,13 +43,15 @@ public class GameView : Window
             HotFocus = Application.Driver.MakeAttribute(Color.White, Color.Black)
         };
 
-        _session = facilityRecipeMap is not null
+        var session = facilityRecipeMap is not null
             ? GameSession.New(initialState, recipes, facilityRecipeMap)
             : recipes.IsDefaultOrEmpty
                 ? GameSession.New(initialState)
                 : GameSession.New(initialState, recipes);
 
-        _gridPanel = new GridPanel(_session.Current);
+        _controller = new GameController(session);
+
+        _gridPanel = new GridPanel(_controller.Session.Current);
         if (!recipes.IsDefaultOrEmpty)
             _gridPanel.SetRecipes(recipes);
         _gridPanel.SetFacilityRecipeMap(facilityRecipeMap);
@@ -60,11 +66,14 @@ public class GameView : Window
         Add(_gridPanel, _rightPanel);
 
         // Start realtime tick timer after the main loop is ready
-        Application.MainLoop.AddIdle(() =>
+        if (_enableTickTimer)
         {
-            StartTickTimer();
-            return false; // Run once
-        });
+            Application.MainLoop.AddIdle(() =>
+            {
+                StartTickTimer();
+                return false; // Run once
+            });
+        }
     }
 
     /// <summary>
@@ -72,101 +81,81 @@ public class GameView : Window
     /// </summary>
     private void StartTickTimer()
     {
-        if (_session.TickMode != TickMode.Realtime || _tickTimer is not null)
+        if (_controller.Session.TickMode != TickMode.Realtime || _tickTimer is not null)
             return;
 
         _tickTimer = Application.MainLoop.AddTimeout(TickInterval, _ =>
         {
-            var before = _session;
-            _session = _session.Tick();
-            if (_session != before)
+            var result = _controller.Tick();
+            if (result.Handled)
                 UpdateUI();
             return true; // Keep repeating
         });
     }
 
-    public override bool ProcessKey(KeyEvent keyEvent)
+    /// <summary>
+    /// Maps Terminal.Gui KeyEvent to abstract GameKey, or null if not a game key.
+    /// </summary>
+    private static GameKey? MapKey(KeyEvent keyEvent)
     {
-        Direction? direction = keyEvent.Key switch
+        return keyEvent.Key switch
         {
-            Key.CursorUp or (Key)'w' or (Key)'W' => Direction.Up,
-            Key.CursorDown or (Key)'s' or (Key)'S' => Direction.Down,
-            Key.CursorLeft or (Key)'a' or (Key)'A' => Direction.Left,
-            Key.CursorRight or (Key)'d' or (Key)'D' => Direction.Right,
+            Key.CursorUp or (Key)'w' or (Key)'W' => GameKey.Up,
+            Key.CursorDown or (Key)'s' or (Key)'S' => GameKey.Down,
+            Key.CursorLeft or (Key)'a' or (Key)'A' => GameKey.Left,
+            Key.CursorRight or (Key)'d' or (Key)'D' => GameKey.Right,
+            Key.Z | Key.CtrlMask => GameKey.Undo,
+            (Key)'1' or (Key)'e' or (Key)'E' => GameKey.Primary,
+            (Key)'2' => GameKey.Secondary,
+            (Key)'3' => GameKey.QuickSplit,
+            (Key)'4' => GameKey.Sort,
+            (Key)'5' => GameKey.AcquireRandom,
+            (Key)'r' or (Key)'R' => GameKey.CycleRecipe,
+            (Key)'q' or (Key)'Q' => GameKey.LeaveBag,
             _ => null
         };
+    }
 
-        if (direction is not null)
-        {
-            _session = _session.MoveCursor(direction.Value);
-            _gridPanel.SetInputStatus($"Key: {keyEvent.Key}");
-            UpdateUI();
-            return true;
-        }
-
-        // Ctrl-Z = Undo
-        if (keyEvent.Key == (Key.Z | Key.CtrlMask))
-        {
-            var undone = _session.Undo();
-            if (undone is not null)
-            {
-                _session = undone;
-                _gridPanel.SetInputStatus("Undo");
-                UpdateUI();
-            }
-            return true;
-        }
-
-        // Shift-3 (#) = Modal Split dialog
+    public override bool ProcessKey(KeyEvent keyEvent)
+    {
+        // Shift-3 (#) = Modal Split dialog (UI-specific, not in GameController)
         if (keyEvent.Key == (Key)'#')
         {
             ShowModalSplitDialog();
             return true;
         }
 
-        GameSession? newSession = keyEvent.Key switch
-        {
-            (Key)'1' or (Key)'e' or (Key)'E' => _session.ExecutePrimary(),
-            (Key)'2' => _session.ExecuteSecondary(),
-            (Key)'4' => _session.ExecuteSort(),
-            (Key)'5' => _session.ExecuteAcquireRandom(_rng),
-            (Key)'r' or (Key)'R' => _session.ExecuteCycleRecipe(),
-            (Key)'q' or (Key)'Q' => _session.ExecuteLeaveBag(),
-            _ => null
-        };
+        var gameKey = MapKey(keyEvent);
+        if (gameKey is null)
+            return base.ProcessKey(keyEvent);
 
-        if (newSession is not null)
+        var result = _controller.HandleKey(gameKey.Value, _rng);
+        if (result.Handled)
         {
-            _session = newSession;
-            _gridPanel.SetInputStatus($"Key: {keyEvent.Key}");
+            _gridPanel.SetInputStatus(result.StatusMessage ?? $"Key: {keyEvent.Key}");
             UpdateUI();
-            return true;
         }
-
-        return base.ProcessKey(keyEvent);
+        return result.Handled || base.ProcessKey(keyEvent);
     }
 
     private void OnGridCellClicked(Position pos)
     {
-        _session = _session.MoveCursor(_session.Current, pos);
-        _session = _session.ExecutePrimary();
-        _gridPanel.SetInputStatus($"LClick: ({pos.Row},{pos.Col})");
+        var result = _controller.HandleGridClick(pos, ClickType.Primary);
+        _gridPanel.SetInputStatus(result.StatusMessage ?? $"LClick: ({pos.Row},{pos.Col})");
         UpdateUI();
     }
 
     private void OnGridCellRightClicked(Position pos)
     {
-        _session = _session.MoveCursor(_session.Current, pos);
-        _session = _session.ExecuteSecondary();
-        _gridPanel.SetInputStatus($"RClick: ({pos.Row},{pos.Col})");
+        var result = _controller.HandleGridClick(pos, ClickType.Secondary);
+        _gridPanel.SetInputStatus(result.StatusMessage ?? $"RClick: ({pos.Row},{pos.Col})");
         UpdateUI();
     }
 
     private void OnBackClicked()
     {
-        var newSession = _session.ExecuteLeaveBag();
-        _session = newSession;
-        _gridPanel.SetInputStatus("Back (click)");
+        var result = _controller.HandleBackClick();
+        _gridPanel.SetInputStatus(result.StatusMessage ?? "Back (click)");
         UpdateUI();
     }
 
@@ -179,8 +168,8 @@ public class GameView : Window
 
     private void UpdateUI()
     {
-        _gridPanel.UpdateState(_session.Current);
-        _rightPanel.UpdateLog(_session.ActionLog);
+        _gridPanel.UpdateState(_controller.Session.Current);
+        _rightPanel.UpdateLog(_controller.Session.ActionLog);
     }
 
     /// <summary>
@@ -188,7 +177,7 @@ public class GameView : Window
     /// </summary>
     private void ShowModalSplitDialog()
     {
-        var cell = _session.Current.CurrentCell;
+        var cell = _controller.Session.Current.CurrentCell;
         if (cell.IsEmpty || cell.Stack!.Count <= 1)
             return;
 
@@ -210,12 +199,9 @@ public class GameView : Window
             if (int.TryParse(input.Text.ToString(), out var grabCount))
             {
                 var leftCount = stack.Count - grabCount;
-                var newSession = _session.ExecuteModalSplit(leftCount);
-                if (newSession is not null)
-                {
-                    _session = newSession;
-                    UpdateUI();
-                }
+                var newSession = _controller.Session.ExecuteModalSplit(leftCount);
+                _controller.SetSession(newSession);
+                UpdateUI();
             }
             Application.RequestStop();
         };
