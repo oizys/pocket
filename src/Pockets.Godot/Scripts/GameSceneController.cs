@@ -57,12 +57,14 @@ public partial class GameSceneController : Control
 
         GameState gameState;
         ImmutableArray<Recipe> recipes;
+        ImmutableDictionary<string, ImmutableArray<string>>? facilityRecipeMap = null;
 
         if (dir is not null)
         {
             var dataPath = System.IO.Path.Combine(dir.FullName, "data");
             var registry = ContentLoader.LoadFromDirectory(dataPath);
             (gameState, recipes) = GameInitializer.CreateFromRegistry(registry, _rng);
+            facilityRecipeMap = registry.BuildFacilityRecipeMap();
         }
         else
         {
@@ -79,7 +81,9 @@ public partial class GameSceneController : Control
             recipes = ImmutableArray<Recipe>.Empty;
         }
 
-        var session = GameSession.New(gameState, recipes);
+        var session = facilityRecipeMap is not null
+            ? GameSession.New(gameState, recipes, facilityRecipeMap, TickMode.Rogue)
+            : GameSession.New(gameState, recipes, TickMode.Rogue);
         _controller = new Core.Models.GameController(session);
 
         GD.Print($"Game initialized: {gameState.ActiveBag.Grid.Columns}x{gameState.ActiveBag.Grid.Rows} grid, " +

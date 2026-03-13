@@ -277,6 +277,10 @@ public record GameState(
     {
         var cell = CurrentCell;
 
+        // Output slots always grab — never enter/interact with the crafted item
+        if (cell.Frame is OutputSlotFrame && !cell.IsEmpty && !HasItemsInHand)
+            return ToolGrab();
+
         // Interact first: enter bags (always), harvest when nested
         if (cell.HasBag)
             return EnterBag();
