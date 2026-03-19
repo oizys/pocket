@@ -17,5 +17,6 @@
 | 13 | Agent-Driven Testing (Player + Visual) | Early | In Progress | [agent-testing.md](agent-testing.md) |
 | 14 | Credits Bag (Interactive Letter-Item Credits) | Late | Proposed | [credits-bag.md](credits-bag.md) |
 | 15 | Farming (Seed → Plant → Produce Lifecycle) | Mid | Proposed | [farming.md](farming.md) |
+| 16 | Item Properties (Per-Instance Data on Unique Items) | Mid | Proposed | [item-properties.md](item-properties.md) |
 | -- | Inventory Controls Research (Cross-Game) | -- | Reference | [inventory-controls-research.md](inventory-controls-research.md) |
 | -- | Godot Quirks (WSL2 / Dev Issues) | -- | Reference | [godot-quirks.md](godot-quirks.md) |
