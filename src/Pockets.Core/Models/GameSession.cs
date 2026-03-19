@@ -253,7 +253,9 @@ public record GameSession(
 
         var (updated, dumped) = FacilityLogic.CycleRecipe(activeBag, facilityRecipes);
 
-        var newState = Current.ReplaceBagById(activeBag.Id, updated);
+        // Reset progress on the owning stack when cycling recipes
+        var newState = Current.ReplaceBagById(activeBag.Id, updated,
+            stack => stack.WithProperty("Progress", new IntValue(0)));
 
         // Acquire dumped items into root bag
         if (dumped.Count > 0)
@@ -355,9 +357,19 @@ public record GameSession(
             if (facilityRecipes.Count == 0)
                 continue;
 
+            // Read current progress from owning ItemStack's properties
+            var ownerInfo = registry.GetOwnerOf(facility.Id);
+            int currentProgress = 0;
+            if (ownerInfo is not null)
+            {
+                var parentBag = registry.GetById(ownerInfo.ParentBagId);
+                var ownerStack = parentBag?.Grid.GetCell(ownerInfo.CellIndex).Stack;
+                currentProgress = ownerStack?.GetInt("Progress") ?? 0;
+            }
+
             var wasCrafting = facility.FacilityState?.RecipeId;
-            var ticked = FacilityLogic.Tick(facility, facilityRecipes);
-            if (ticked == facility)
+            var (ticked, newProgress) = FacilityLogic.Tick(facility, currentProgress, facilityRecipes);
+            if (ticked == facility && newProgress == currentProgress)
                 continue;
 
             // Detect craft completion: was crafting, now reset to null
@@ -368,7 +380,10 @@ public record GameSession(
                 logs = logs.Add($"✦ {facility.EnvironmentType} crafted: {recipeName}");
             }
 
-            state = state.ReplaceBagById(facility.Id, ticked);
+            // Update both the facility bag and the owning stack's progress property
+            var progressValue = newProgress;
+            state = state.ReplaceBagById(facility.Id, ticked,
+                stack => stack.WithProperty("Progress", new IntValue(progressValue)));
         }
 
         return (state, logs);

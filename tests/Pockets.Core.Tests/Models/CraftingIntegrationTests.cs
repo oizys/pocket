@@ -47,13 +47,15 @@ public class CraftingIntegrationTests
         var state = CreateStateWithWorkbench();
         var workbench = state.RootBag.Grid.GetCell(0).Stack!.ContainedBag!;
 
-        // Modify the workbench
-        var modified = workbench with { FacilityState = new FacilityState(RecipeId: "test", Progress: 42) };
-        var updated = state.ReplaceBagById(workbench.Id, modified);
+        // Modify the workbench facility state and use ownerTransform to set Progress on the owning ItemStack
+        var modified = workbench with { FacilityState = new FacilityState(RecipeId: "test") };
+        var updated = state.ReplaceBagById(workbench.Id, modified,
+            ownerTransform: stack => stack.WithProperty("Progress", new IntValue(42)));
 
-        var found = updated.RootBag.Grid.GetCell(0).Stack!.ContainedBag!;
+        var foundStack = updated.RootBag.Grid.GetCell(0).Stack!;
+        var found = foundStack.ContainedBag!;
         Assert.Equal("test", found.FacilityState!.RecipeId);
-        Assert.Equal(42, found.FacilityState.Progress);
+        Assert.Equal(42, foundStack.GetInt("Progress"));
     }
 
     [Fact]

@@ -22,24 +22,21 @@ Unlocks multiple planned features:
 
 ## Architecture
 
-### ItemProperty
+### PropertyValue (Value-Only DU)
 
-A property is a named value. The value type is a variant that starts with Int and String, but is guaranteed to grow.
+A property value is a variant type. The name lives in the dictionary key, not on the value — this avoids redundancy and desync risk. Starts with Int and String, guaranteed to be extended.
 
-**Option A — Variant record with subtypes:**
 ```csharp
-public abstract record ItemProperty(string Name);
-public record IntProperty(string Name, int Value) : ItemProperty(Name);
-public record StringProperty(string Name, string Value) : ItemProperty(Name);
-// Future: FloatProperty, BoolProperty, etc.
+public abstract record PropertyValue;
+public record IntValue(int Value) : PropertyValue;
+public record StringValue(string Value) : PropertyValue;
+// Future: FloatValue, BoolValue, etc.
 ```
 
-**Option B — Single record with object value:**
+Pattern matching is clean and type-safe:
 ```csharp
-public record ItemProperty(string Name, object Value);
+if (stack.Properties?["Durability"] is IntValue(var d)) { /* use d */ }
 ```
-
-Option A is preferred — pattern matching on subtypes is idiomatic C# and catches type errors at compile time. Option B is simpler but loses type safety.
 
 ### ItemStack Extension
 
@@ -48,13 +45,13 @@ public record ItemStack(
     ItemType ItemType,
     int Count,
     Bag? ContainedBag = null,
-    ImmutableDictionary<string, ItemProperty>? Properties = null);
+    ImmutableDictionary<string, PropertyValue>? Properties = null);
 ```
 
 - `Properties` is nullable — null means no properties (most items, all stackable items)
 - Dictionary keyed by property name for O(1) lookup
 - Immutable — modifications return new ItemStack via `with`
-- Convenience methods: `GetProperty<T>(name)`, `WithProperty(prop)`, `WithoutProperty(name)`
+- Convenience methods: `GetInt(name)`, `GetString(name)`, `WithProperty(name, value)`
 
 ### Enforcement
 

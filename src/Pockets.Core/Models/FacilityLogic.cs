@@ -71,8 +71,7 @@ public static class FacilityLogic
             FacilityState = state with
             {
                 ActiveRecipeId = nextRecipe.Id,
-                RecipeId = null,
-                Progress = 0
+                RecipeId = null
             }
         };
 
@@ -96,16 +95,17 @@ public static class FacilityLogic
     }
 
     /// <summary>
-    /// Advances a facility by one tick. If inputs match a recipe:
+    /// Advances a facility by one tick. Progress is passed in from the owning ItemStack's
+    /// properties and returned as part of the result. If inputs match a recipe:
     /// - Sets RecipeId and increments Progress if not already crafting
     /// - Increments Progress if already crafting the same recipe
     /// - On completion: consumes inputs, places output in output slot, resets state
-    /// Returns the updated facility bag (unchanged if nothing to do).
+    /// Returns the updated facility bag and new progress value.
     /// </summary>
-    public static Bag Tick(Bag facility, IReadOnlyList<Recipe> recipes)
+    public static (Bag Facility, int Progress) Tick(Bag facility, int currentProgress, IReadOnlyList<Recipe> recipes)
     {
         if (facility.FacilityState is null || !facility.FacilityState.IsActive)
-            return facility;
+            return (facility, currentProgress);
 
         var state = facility.FacilityState;
         var inputStacks = GetInputStacks(facility);
@@ -117,17 +117,17 @@ public static class FacilityLogic
             if (activeRecipe is null || !RecipeMatches(activeRecipe, inputStacks))
             {
                 // Recipe no longer valid (inputs removed?), reset
-                return facility with { FacilityState = state with { RecipeId = null, Progress = 0 } };
+                return (facility with { FacilityState = state with { RecipeId = null } }, 0);
             }
 
-            var newProgress = state.Progress + 1;
+            var newProgress = currentProgress + 1;
             if (newProgress >= activeRecipe.Duration)
             {
                 // Complete: consume inputs, produce output
-                return CompleteCraft(facility, activeRecipe);
+                return (CompleteCraft(facility, activeRecipe), 0);
             }
 
-            return facility with { FacilityState = state with { Progress = newProgress } };
+            return (facility, newProgress);
         }
 
         // Not crafting: try to start using ActiveRecipeId if set, otherwise scan
@@ -144,13 +144,13 @@ public static class FacilityLogic
         }
 
         if (match is null)
-            return facility;
+            return (facility, currentProgress);
 
         // Start crafting (progress 1 since this tick counts)
-        return facility with
+        return (facility with
         {
-            FacilityState = state with { RecipeId = match.Id, Progress = 1 }
-        };
+            FacilityState = state with { RecipeId = match.Id }
+        }, 1);
     }
 
     /// <summary>
@@ -196,7 +196,7 @@ public static class FacilityLogic
         return facility with
         {
             Grid = grid,
-            FacilityState = facility.FacilityState! with { RecipeId = null, Progress = 0 }
+            FacilityState = facility.FacilityState! with { RecipeId = null }
         };
     }
 

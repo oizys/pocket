@@ -222,12 +222,12 @@ public record GameState(
     /// Uses DFS to find and replace, rebuilding parent bags on the way back up.
     /// Returns unchanged state if the bag Id is not found.
     /// </summary>
-    public GameState ReplaceBagById(Guid bagId, Bag replacement)
+    public GameState ReplaceBagById(Guid bagId, Bag replacement, Func<ItemStack, ItemStack>? ownerTransform = null)
     {
         if (RootBag.Id == bagId)
             return this with { RootBag = replacement };
 
-        var updatedRoot = ReplaceBagInTree(RootBag, bagId, replacement);
+        var updatedRoot = ReplaceBagInTree(RootBag, bagId, replacement, ownerTransform);
         if (updatedRoot is null)
             return this; // not found
 
@@ -236,9 +236,10 @@ public record GameState(
 
     /// <summary>
     /// Recursively searches for and replaces a bag by Id within a bag tree.
+    /// Optionally transforms the owning ItemStack (e.g. to update progress properties).
     /// Returns the updated parent bag, or null if not found.
     /// </summary>
-    private static Bag? ReplaceBagInTree(Bag parent, Guid targetId, Bag replacement)
+    private static Bag? ReplaceBagInTree(Bag parent, Guid targetId, Bag replacement, Func<ItemStack, ItemStack>? ownerTransform)
     {
         for (int i = 0; i < parent.Grid.Cells.Length; i++)
         {
@@ -248,11 +249,14 @@ public record GameState(
 
             if (inner.Id == targetId)
             {
-                var updatedCell = cell with { Stack = cell.Stack! with { ContainedBag = replacement } };
+                var updatedStack = cell.Stack! with { ContainedBag = replacement };
+                if (ownerTransform is not null)
+                    updatedStack = ownerTransform(updatedStack);
+                var updatedCell = cell with { Stack = updatedStack };
                 return parent with { Grid = parent.Grid.SetCell(i, updatedCell) };
             }
 
-            var updatedInner = ReplaceBagInTree(inner, targetId, replacement);
+            var updatedInner = ReplaceBagInTree(inner, targetId, replacement, ownerTransform);
             if (updatedInner is not null)
             {
                 var updatedCell = cell with { Stack = cell.Stack! with { ContainedBag = updatedInner } };

@@ -115,18 +115,17 @@ public class RecipeCycleTests
     }
 
     [Fact]
-    public void CycleRecipe_ResetsProgress()
+    public void CycleRecipe_ResetsRecipeId()
     {
         var facility = CreateFacilityWithRecipe(AxeRecipe);
         facility = facility with
         {
-            FacilityState = facility.FacilityState! with { RecipeId = "workbench-axe", Progress = 2 }
+            FacilityState = facility.FacilityState! with { RecipeId = "workbench-axe" }
         };
 
         var (updated, _) = FacilityLogic.CycleRecipe(facility, Recipes);
 
-        Assert.Equal(0, updated.FacilityState!.Progress);
-        Assert.Null(updated.FacilityState.RecipeId);
+        Assert.Null(updated.FacilityState!.RecipeId);
     }
 
     [Fact]
@@ -167,11 +166,11 @@ public class RecipeCycleTests
         grid = grid.SetCell(1, grid.GetCell(1) with { Stack = new ItemStack(Wood, 3) });
         facility = facility with { Grid = grid };
 
-        var ticked = FacilityLogic.Tick(facility, Recipes);
+        var (ticked, progress) = FacilityLogic.Tick(facility, 0, Recipes);
 
         // Should start crafting the active recipe
         Assert.Equal("workbench-axe", ticked.FacilityState!.RecipeId);
-        Assert.Equal(1, ticked.FacilityState.Progress);
+        Assert.Equal(1, progress);
     }
 
     // ==================== TickMode ====================
@@ -206,9 +205,10 @@ public class RecipeCycleTests
         var updatedFacilityBag = FindFacilityBag(afterAction.Current);
         Assert.NotNull(updatedFacilityBag);
         // In Rogue mode, facility should have progressed (progress > 0 or recipe started)
+        var facilityProgress = FindFacilityOwnerProgress(afterAction.Current);
         Assert.True(
-            updatedFacilityBag!.FacilityState!.Progress > 0 ||
-            updatedFacilityBag.FacilityState.RecipeId != null,
+            facilityProgress > 0 ||
+            updatedFacilityBag!.FacilityState!.RecipeId != null,
             "Expected facility to have ticked (progress > 0 or RecipeId set) in Rogue mode");
     }
 
@@ -238,8 +238,9 @@ public class RecipeCycleTests
         // In Realtime mode, facility should NOT have ticked after an action
         var updatedFacilityBag = FindFacilityBag(afterAction.Current);
         Assert.NotNull(updatedFacilityBag);
-        Assert.Equal(0, updatedFacilityBag!.FacilityState!.Progress);
-        Assert.Null(updatedFacilityBag.FacilityState.RecipeId);
+        var facilityProgress = FindFacilityOwnerProgress(afterAction.Current);
+        Assert.Equal(0, facilityProgress);
+        Assert.Null(updatedFacilityBag!.FacilityState!.RecipeId);
     }
 
     [Fact]
@@ -266,9 +267,10 @@ public class RecipeCycleTests
 
         var updatedFacilityBag = FindFacilityBag(afterTick.Current);
         Assert.NotNull(updatedFacilityBag);
+        var facilityProgress = FindFacilityOwnerProgress(afterTick.Current);
         Assert.True(
-            updatedFacilityBag!.FacilityState!.Progress > 0 ||
-            updatedFacilityBag.FacilityState.RecipeId != null,
+            facilityProgress > 0 ||
+            updatedFacilityBag!.FacilityState!.RecipeId != null,
             "Expected facility to have ticked (progress > 0 or RecipeId set) after explicit Tick()");
         Assert.Equal(1, afterTick.TickCount);
     }
@@ -439,6 +441,30 @@ public class RecipeCycleTests
     private static Bag? FindFacilityBag(GameState state)
     {
         return FindFacilityInGrid(state.RootBag.Grid);
+    }
+
+    /// <summary>
+    /// Finds the progress value stored on the ItemStack that owns the facility bag.
+    /// </summary>
+    private static int FindFacilityOwnerProgress(GameState state)
+    {
+        return FindFacilityOwnerProgressInGrid(state.RootBag.Grid);
+    }
+
+    private static int FindFacilityOwnerProgressInGrid(Grid grid)
+    {
+        foreach (var cell in grid.Cells)
+        {
+            if (cell.Stack?.ContainedBag is { } bag)
+            {
+                if (bag.FacilityState is not null)
+                    return cell.Stack.GetInt("Progress") ?? 0;
+                var nested = FindFacilityOwnerProgressInGrid(bag.Grid);
+                if (nested > 0)
+                    return nested;
+            }
+        }
+        return 0;
     }
 
     private static Bag? FindFacilityInGrid(Grid grid)

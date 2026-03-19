@@ -114,7 +114,11 @@ public class ItemDescriptionView : FrameView
                 {
                     var craftingRecipe = facilityRecipes.FirstOrDefault(r => r.Id == facilityState.RecipeId);
                     if (craftingRecipe is not null)
-                        lines.Add($"Crafting: {craftingRecipe.Name} [{facilityState.Progress}/{craftingRecipe.Duration}]");
+                    {
+                        // Read progress from the owning ItemStack via breadcrumbs
+                        var progress = GetFacilityProgress(state, activeBag);
+                        lines.Add($"Crafting: {craftingRecipe.Name} [{progress}/{craftingRecipe.Duration}]");
+                    }
                 }
 
                 lines.Add("");
@@ -135,6 +139,19 @@ public class ItemDescriptionView : FrameView
 
         _content.Text = string.Join("\n", lines);
         SetNeedsDisplay();
+    }
+
+    /// <summary>
+    /// Reads crafting progress from the owning ItemStack via BagRegistry.
+    /// </summary>
+    private static int GetFacilityProgress(GameState state, Bag facilityBag)
+    {
+        var registry = state.Registry;
+        var ownerInfo = registry.GetOwnerOf(facilityBag.Id);
+        if (ownerInfo is null) return 0;
+        var parentBag = registry.GetById(ownerInfo.ParentBagId);
+        var ownerStack = parentBag?.Grid.GetCell(ownerInfo.CellIndex).Stack;
+        return ownerStack?.GetInt("Progress") ?? 0;
     }
 
     /// <summary>
