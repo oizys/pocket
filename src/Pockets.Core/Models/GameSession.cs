@@ -311,13 +311,18 @@ public record GameSession(
         if (result.State == Current)
             return this;
 
-        // In rogue mode, tick facilities after each action. In realtime, ticks are external.
+        // In rogue mode, tick facilities and plants after each action. In realtime, ticks are external.
         GameState newState;
         ImmutableList<string> completionLogs;
         if (TickMode == TickMode.Rogue)
+        {
             (newState, completionLogs) = TickFacilities(result.State);
+            newState = PlantLogic.TickPlants(newState);
+        }
         else
+        {
             (newState, completionLogs) = (result.State, ImmutableList<string>.Empty);
+        }
 
         var newStack = PushWithLimit(UndoStack, Current);
         var newLog = ActionLog.Add(formatLog());
@@ -395,10 +400,11 @@ public record GameSession(
     /// </summary>
     public GameSession Tick()
     {
-        if (Recipes.IsDefaultOrEmpty)
-            return this;
-
-        var (tickedState, completionLogs) = TickFacilities(Current);
+        var tickedState = Current;
+        var completionLogs = ImmutableList<string>.Empty;
+        if (!Recipes.IsDefaultOrEmpty)
+            (tickedState, completionLogs) = TickFacilities(Current);
+        tickedState = PlantLogic.TickPlants(tickedState);
         if (tickedState == Current)
             return this;
 

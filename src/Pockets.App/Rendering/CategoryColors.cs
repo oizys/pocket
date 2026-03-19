@@ -41,6 +41,7 @@ public static class CategoryColors
     {
         InputSlotFrame  => Color.BrightYellow,
         OutputSlotFrame => Color.BrightGreen,
+        PlanterFrame    => Color.BrightCyan,
         _               => Color.White
     };
 }

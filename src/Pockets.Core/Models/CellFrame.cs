@@ -32,3 +32,9 @@ public sealed record InputSlotFrame(
 public sealed record OutputSlotFrame(
     string SlotId,
     bool IsLocked = true) : CellFrame(IsLocked);
+
+/// <summary>
+/// Marks a cell as a planter slot for growing plants. Plants with Duration properties
+/// grow over ticks and can be harvested when fully grown.
+/// </summary>
+public sealed record PlanterFrame(bool IsLocked = false) : CellFrame(IsLocked);

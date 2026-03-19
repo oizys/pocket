@@ -406,9 +406,13 @@ public record GameState(
 
     /// <summary>
     /// Grab: remove item from cursor cell and acquire it into the hand bag.
+    /// If cursor cell is a planter with a fully grown plant, harvest produce instead.
     /// </summary>
     public ToolResult ToolGrab()
     {
+        if (CurrentCell.Frame is PlanterFrame && !CurrentCell.IsEmpty && PlantLogic.IsGrown(CurrentCell.Stack!))
+            return ToolHarvestPlant();
+
         if (CurrentCell.IsEmpty)
             return ToolResult.Ok(this);
 
@@ -420,6 +424,40 @@ public record GameState(
 
         var activeBag = ActiveBag;
         var grid = activeBag.Grid.SetCell(Cursor.Position, CurrentCell with { Stack = null });
+        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
+        {
+            HandBag = updatedHand
+        });
+    }
+
+    /// <summary>
+    /// Harvests produce from a fully grown plant. Looks up the produce item type by the plant's
+    /// "Produce" property, creates a stack with "Yield" count, acquires into hand.
+    /// Plant stays in cell with Progress reset to 0.
+    /// </summary>
+    private ToolResult ToolHarvestPlant()
+    {
+        var plant = CurrentCell.Stack!;
+        var produceName = plant.GetString("Produce");
+        if (produceName is null)
+            return ToolResult.Fail(this, "Plant has no Produce property");
+
+        var produceType = ItemTypes.FirstOrDefault(t => t.Name == produceName);
+        if (produceType is null)
+            return ToolResult.Fail(this, $"Unknown produce type: {produceName}");
+
+        var yield = plant.GetInt("Yield") ?? 3;
+        var produceStack = new ItemStack(produceType, yield);
+
+        var (updatedHand, unplaced) = HandBag.AcquireItems(new[] { produceStack });
+        if (unplaced.Count > 0)
+            return ToolResult.Fail(this, "Hand is full");
+
+        // Reset plant progress to 0
+        var resetPlant = plant.WithProperty("Progress", new IntValue(0));
+        var activeBag = ActiveBag;
+        var grid = activeBag.Grid.SetCell(Cursor.Position, CurrentCell with { Stack = resetPlant });
+
         return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
         {
             HandBag = updatedHand

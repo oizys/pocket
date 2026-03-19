@@ -206,6 +206,32 @@ public static class GameInitializer
 
         var allRecipes = registry.Recipes.Values.ToImmutableArray();
         var state = GameState.CreateStage1(itemTypes, stacks);
+
+        // Set up planter frames in bottom-right 4 cells (indices 28-31 of 8×4 grid)
+        // and pre-plant Green Bean Plants in cells 28-29
+        var rootGrid = state.RootBag.Grid;
+        for (int i = 28; i <= 31; i++)
+        {
+            var cell = rootGrid.GetCell(i);
+            rootGrid = rootGrid.SetCell(i, cell with { Frame = new PlanterFrame() });
+        }
+
+        if (byName.TryGetValue("Green Bean Plant", out var beanPlantType))
+        {
+            for (int i = 28; i <= 29; i++)
+            {
+                var plant = new ItemStack(beanPlantType, 1)
+                    .WithProperty("Progress", new IntValue(0))
+                    .WithProperty("Duration", new IntValue(6))
+                    .WithProperty("Yield", new IntValue(3))
+                    .WithProperty("Produce", new StringValue("Green Bean"));
+                var cell = rootGrid.GetCell(i);
+                rootGrid = rootGrid.SetCell(i, cell with { Stack = plant });
+            }
+        }
+
+        state = state with { RootBag = state.RootBag with { Grid = rootGrid } };
+
         return (state, allRecipes);
     }
 
