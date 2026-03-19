@@ -85,16 +85,12 @@ The `# Plant:` block is a new content type linking the three items together with
 
 ### Cell-Level Tick
 
-Currently ticks operate at the bag level (FacilityState on Bag). Farming needs per-cell tick tracking. Two approaches:
+Currently ticks operate at the bag level (FacilityState on Bag). Farming needs per-cell tick tracking.
 
-**Option A — Plant item carries progress (unique item instance data):**
-Plant items store progress as instance data on the unique ItemStack. Tick logic scans cells for plant items and advances their progress. This requires per-instance data on unique items (not yet implemented).
+**Decided approach — Item Properties (Design #16):**
+Plant progress is stored as per-instance ItemProperty data on the unique Plant item (`Progress: Int`, `Duration: Int`). Tick logic scans cells for plant items and advances their progress. This aligns with a broader goal of unifying facility progress under item properties too — FacilityState.Progress could eventually migrate to the owning ItemStack's properties, making facilities and plants use the same tick mechanism.
 
-**Option B — PlantFrame on the cell:**
-A `PlantFrame` CellFrame tracks growth state (species, progress, duration). The plant item is just a marker; the frame does the work. This keeps instance data out of items and uses the existing CellFrame extension point.
-
-**Option C — Staged item types (no instance data):**
-Define separate ItemTypes per growth stage: "Tomato Sprout", "Tomato Plant (Growing)", "Tomato Plant (Grown)". Tick logic swaps the item type at each threshold. Simple to render (each stage can have distinct visuals) but more verbose data definitions.
+See [item-properties.md](item-properties.md) for the infrastructure design and [Bag-to-Owner Resolution](#bag-to-owner-resolution) below for how facility bags would access their owning item's properties.
 
 ### Grab Override for Harvest
 
@@ -117,7 +113,7 @@ A dedicated tool or special action to uproot a plant:
 - **Planting tool**: Is Drop sufficient to plant, or does a dedicated "Plant" tool make the seed→plant conversion more explicit? Drop might be cleaner since it already handles cell filter checks.
 - **Planter crafting**: How are Planter frames created? A recipe in Workshop/Workbench that produces a planter item with a PlanterFrame? Or a tool that converts empty cells?
 - **Transplant tool**: Dedicated tool key, or a modifier on Grab (e.g. Shift+Grab to uproot)?
-- **Growth stages vs instance data**: Staged items (Option C) are simplest for rendering but verbose. Instance data (Option A) is most flexible but requires new infrastructure. PlantFrame (Option B) reuses CellFrame but conflates cell state with item state. Need to decide before implementation.
+- **Growth stages for visuals**: Even with instance data tracking progress internally, staged visual representations (sprout/growing/grown) could be driven by progress thresholds without needing separate ItemTypes.
 - **Watering/fertilizing**: Future complication — could modify tick rate or produce quality. Not needed for v1.
 - **Cross-pollination (Moore neighborhood)**: Future complication — adjacent plants could modify each other's loot tables (Animal Crossing flower genetics). Not needed for v1.
 - **Visual stages**: Even if using instance data internally, how many visual stages? Minimum 2 (growing/grown), maximum 4 (seed/sprout/growing/grown) like Pokopia.
@@ -129,6 +125,10 @@ A dedicated tool or special action to uproot a plant:
 - **Data-driven**: `# Plant:` content blocks fit the existing typed-header markdown system. New content type in ContentParsers + ContentRegistry.
 - **Reuses existing systems**: Cell Frames, ticks, grab tool, loot tables, content loader.
 
+### Bag-to-Owner Resolution
+
+If facility progress migrates from `FacilityState` on `Bag` to item properties on the owning `ItemStack`, facility bags need a way to look "up" at their owner's properties. This is relevant to farming because plants and facilities would share the same tick mechanism. See detailed analysis in [item-properties.md](item-properties.md#bag-to-owner-resolution).
+
 ## Status
 
-Proposed. Depends on deciding the growth state tracking approach (Options A/B/C) before implementation can begin. V1 should be minimal: one plant species, fixed produce, simple Planter frame, no watering/fertilizing/cross-pollination.
+Proposed. Growth state tracking decided: Item Properties (Design #16). V1 should be minimal: one plant species, fixed produce, simple Planter frame, no watering/fertilizing/cross-pollination. Depends on item properties infrastructure being implemented first.
