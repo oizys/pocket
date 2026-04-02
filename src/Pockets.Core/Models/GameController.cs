@@ -106,6 +106,16 @@ public class GameController
     }
 
     /// <summary>
+    /// Executes a DSL expression string. The expression is parsed, run through the
+    /// interpreter, and applied as a single undoable action.
+    /// </summary>
+    public ControllerResult HandleDsl(string dslExpression)
+    {
+        _session = _session.Execute(dslExpression);
+        return ControllerResult.Handle(_session, dslExpression);
+    }
+
+    /// <summary>
     /// Replaces the session directly. Used for UI-specific operations like modal split
     /// where the dialog result feeds back into the session outside the normal HandleKey flow.
     /// </summary>

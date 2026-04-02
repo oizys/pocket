@@ -475,35 +475,52 @@ The UI layer translates focus and selection into explicit DSL before dispatch:
 
 ---
 
-## Phase 6: Cleanup
+## Phase 6: Cleanup (completed)
 
-- Delete `BagRegistry` class
-- Delete `WithActiveBag` zipper logic
-- Delete individual tool methods from GameState (all logic now in Opcodes)
-- Delete `ToolResult` (replaced by `DslResult`)
-- GameState shrinks to pure data: `BagStore`, `RegisterFile`, `ItemTypes`
-- Consider renaming `GameState` → `World` or `State` since it's now just data
+Done during Phases 1-2:
+- Deleted `BagRegistry` class (replaced by `BagStore`)
+- Deleted `WithActiveBag` zipper logic (flat store makes it a one-liner)
+- Deleted `Bag.FindBagById` (use `Store.GetById`)
+- Deleted `GetBagAtDepth`, `ReplaceBagInTree` (zipper infrastructure)
+
+Kept intentionally:
+- Tool methods on `GameState` — these are the implementation layer that opcodes delegate to. Keeping both the direct API and DSL paths allows gradual migration.
+- `ToolResult` — still used by the direct API path (GameSession.ExecutePrimary etc.)
+- GameState has both `(BagStore, LocationMap, ItemTypes)` constructor fields and backward-compatible computed properties (`Cursor`, `RootBagId`, `HandBagId`, etc.)
+
+Future cleanup (when direct API callers are fully migrated to DSL):
+- Delete `ExecutePrimary`, `ExecuteSecondary`, etc. from `GameSession`
+- Delete `ToolResult` (opcodes use `DslResult`)
+- Remove backward-compatible computed properties from `GameState`
+- Consider renaming `GameState` → `World` or `State`
 
 ---
 
-## Execution Order and Dependencies
+## Implementation Status
+
+All phases complete. Architecture:
 
 ```
-Phase 1 (Flat Bag Store)
-  └─ Phase 2 (RegisterFile)
-       └─ Phase 3 (Coercion)
-            └─ Phase 4 (Opcodes + Interpreter)
-                 └─ Phase 5 (Rewire UI)
-                      └─ Phase 6 (Cleanup)
+GameState(BagStore, LocationMap, ItemTypes)
+  ├── BagStore: flat ImmutableDictionary<Guid, Bag>
+  ├── LocationMap: variadic ImmutableDictionary<LocationId, Location>
+  │     └── Location(BagId, Cursor, Breadcrumbs)
+  └── DSL layer (src/Pockets.Core/Dsl/):
+        ├── Coercion: LocationId → Location → Bag → Cell → Stack
+        ├── [Opcode] attributes + reflection-driven dispatch
+        ├── Parser: whitespace-separated tokens, [ ] quotations, :def macros
+        ├── Interpreter: fold over ProgramNodes
+        └── GameSession.Execute(string) + GameController.HandleDsl(string)
 ```
 
-Each phase produces a compiling, fully-tested codebase. Phases 1-2 are refactors of existing behavior (no new features). Phases 3-4 add the DSL alongside existing code. Phase 5 switches over. Phase 6 removes the old code.
+Both paths coexist:
+- **Direct API**: GameSession.ExecutePrimary() → GameState.ToolPrimary() → ToolResult
+- **DSL**: GameSession.Execute("grab right drop") → DslInterpreter → Opcodes → DslResult
 
 ---
 
 ## Risk Notes
 
-- **Phase 1 is the hardest.** Every test that constructs a Bag with nested bags needs updating. The Bag record itself changes shape (cells hold Guid refs, not Bag instances). Plan for a broad test update pass.
-- **Nested bag operations** (enter, leave, harvest-from-nested) currently rely on the zipper. The flat store equivalent is simpler but different — careful test coverage needed.
-- **Facility ticking** currently walks the registry. With BagStore this becomes `Store.Facilities` — simpler, but verify tick order doesn't matter (it shouldn't, facilities are independent).
-- **Undo granularity** — currently per-tool-action. With DSL, a multi-opcode expression could be one undo unit or many. Decision: **one undo snapshot per DSL expression** (the string the UI emits), not per opcode. This matches user intent.
+- **Undo granularity** — one undo snapshot per `GameSession.Execute()` call (the DSL expression string the UI emits), not per opcode. This matches user intent.
+- **split-at** opcode currently falls back to half-split. Full modal split (arbitrary left count from data stack) needs interpreter support for mixed int/LocationId stack popping.
+- **Opcode write-back** — currently opcodes handle their own state updates internally (delegating to GameState tool methods). The `[Param(Source/Target)]` attributes are metadata for future generic write-back when opcodes are decoupled from GameState methods.

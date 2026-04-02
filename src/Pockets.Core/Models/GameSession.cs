@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Pockets.Core.Data;
+using Pockets.Core.Dsl;
 
 namespace Pockets.Core.Models;
 
@@ -295,6 +296,36 @@ public record GameSession(
             .FirstOrDefault();
         return ApplyResult(result, () =>
             newItem != null ? $"Acquire: +1 {newItem.ItemType.Name}" : "Acquire: added random item");
+    }
+
+    // --- DSL dispatch ---
+
+    /// <summary>
+    /// Executes a DSL expression string. The expression is parsed, run through the
+    /// interpreter, and the resulting state change is applied with undo/logging/ticking.
+    /// One undo snapshot per Execute call (matches user intent).
+    /// </summary>
+    public GameSession Execute(string dslExpression)
+    {
+        var dslState = DslState.From(Current);
+        DslState result;
+        try
+        {
+            result = DslInterpreter.Run(dslState, dslExpression);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return this with { ActionLog = ActionLog.Add($"FAILED: {dslExpression} — {ex.Message}") };
+        }
+
+        var newGameState = result.Game;
+
+        // Convert to ToolResult-style flow for ApplyResult
+        var toolResult = newGameState == Current
+            ? ToolResult.Ok(Current) // no-op
+            : ToolResult.Ok(newGameState);
+
+        return ApplyResult(toolResult, () => dslExpression);
     }
 
     // --- Private helpers ---
