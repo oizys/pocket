@@ -29,7 +29,7 @@ public static class RecipeRegistry
             recipes.Add(new Recipe(
                 "workbench_axe", "Stone Axe",
                 new[] { new RecipeInput(rock, 5), new RecipeInput(wood, 3) },
-                () => new[] { new ItemStack(stoneAxe, 1) },
+                () => RecipeOutput.FromStacks(new[] { new ItemStack(stoneAxe, 1) }),
                 Duration: 3));
         }
 
@@ -47,7 +47,9 @@ public static class RecipeRegistry
                 () =>
                 {
                     var bag = new Bag(Grid.Create(3, 2), "Pouch", "Brown");
-                    return new[] { new ItemStack(pouchType, 1, ContainedBag: bag) };
+                    return RecipeOutput.WithBags(
+                        new[] { new ItemStack(pouchType, 1, ContainedBagId: bag.Id) },
+                        new[] { bag });
                 },
                 Duration: 5));
         }
@@ -72,7 +74,9 @@ public static class RecipeRegistry
                 {
                     var rng = new Random();
                     var bag = WildernessGenerator.Generate(template, rng);
-                    return new[] { new ItemStack(forestBagType, 1, ContainedBag: bag) };
+                    return RecipeOutput.WithBags(
+                        new[] { new ItemStack(forestBagType, 1, ContainedBagId: bag.Id) },
+                        new[] { bag });
                 },
                 Duration: 8));
         }

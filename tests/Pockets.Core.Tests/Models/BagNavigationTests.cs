@@ -32,7 +32,7 @@ public class BagNavigationTests
 
         // Create root bag with the inner bag at cell 0
         var rootGrid = Grid.Create(4, 3);
-        var bagCell = new Cell(new ItemStack(SmallBag, 1, ContainedBag: innerBag));
+        var bagCell = new Cell(new ItemStack(SmallBag, 1, ContainedBagId: innerBag.Id));
         rootGrid = rootGrid.SetCell(0, bagCell);
 
         if (rootContents != null)
@@ -44,7 +44,9 @@ public class BagNavigationTests
         }
 
         var rootBag = new Bag(rootGrid);
-        return new GameState(rootBag, new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(innerBag);
+        return new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
     }
 
     // ==================== EnterBag ====================
@@ -206,7 +208,8 @@ public class BagNavigationTests
         Assert.Equal(SmallBag, left.RootBag.Grid.GetCell(0).Stack!.ItemType);
 
         // But the inner bag should now have an empty cell 0
-        var innerBag = left.RootBag.Grid.GetCell(0).Stack!.ContainedBag!;
+        var innerBagId = left.RootBag.Grid.GetCell(0).Stack!.ContainedBagId!.Value;
+        var innerBag = left.Store.GetById(innerBagId)!;
         Assert.True(innerBag.Grid.GetCell(0).IsEmpty);
     }
 
@@ -258,11 +261,14 @@ public class BagNavigationTests
         var bagCell = sorted.State.RootBag.Grid.Cells
             .FirstOrDefault(c => c.Stack?.ItemType == SmallBag);
         Assert.NotNull(bagCell);
-        Assert.NotNull(bagCell!.Stack!.ContainedBag);
-        Assert.Equal(3, bagCell.Stack.ContainedBag!.Grid.Columns);
+        Assert.NotNull(bagCell!.Stack!.ContainedBagId);
+
+        // Look up the inner bag from the store
+        var innerBag = sorted.State.Store.GetById(bagCell.Stack.ContainedBagId!.Value)!;
+        Assert.Equal(3, innerBag.Grid.Columns);
 
         // Contents should still be there
-        Assert.Equal(Rck, bagCell.Stack.ContainedBag.Grid.GetCell(0).Stack!.ItemType);
+        Assert.Equal(Rck, innerBag.Grid.GetCell(0).Stack!.ItemType);
     }
 
     [Fact]
@@ -288,7 +294,8 @@ public class BagNavigationTests
         Assert.NotNull(bagPos);
 
         // Move cursor to bag position
-        sorted = sorted with { Cursor = new Cursor(bagPos!.Value) };
+        var bLoc = sorted.Locations.Get(LocationId.B);
+        sorted = sorted with { Locations = sorted.Locations.Set(LocationId.B, bLoc with { Cursor = new Cursor(bagPos!.Value) }) };
         var entered = sorted.EnterBag();
         Assert.True(entered.Success);
         Assert.True(entered.State.IsNested);
@@ -307,14 +314,16 @@ public class BagNavigationTests
         var grabbed = state.ToolGrab();
         Assert.True(grabbed.Success);
 
-        // The bag item is now in hand — verify it still has its ContainedBag
+        // The bag item is now in hand — verify it still has its ContainedBagId
         var handItem = grabbed.State.HandItems[0];
         Assert.Equal(SmallBag, handItem.ItemType);
-        Assert.NotNull(handItem.ContainedBag);
-        Assert.Equal(3, handItem.ContainedBag!.Grid.Columns);
+        Assert.NotNull(handItem.ContainedBagId);
+
+        // Look up the inner bag from the store
+        var innerBag = grabbed.State.Store.GetById(handItem.ContainedBagId!.Value)!;
+        Assert.Equal(3, innerBag.Grid.Columns);
 
         // Contents should still be there
-        var innerBag = handItem.ContainedBag;
         Assert.Equal(Rck, innerBag.Grid.GetCell(0).Stack!.ItemType);
         Assert.Equal(5, innerBag.Grid.GetCell(0).Stack!.Count);
     }
@@ -335,7 +344,7 @@ public class BagNavigationTests
         // Bag should now be at cell (0,1)
         var cell = dropped.State.RootBag.Grid.GetCell(new Position(0, 1));
         Assert.Equal(SmallBag, cell.Stack!.ItemType);
-        Assert.NotNull(cell.Stack.ContainedBag);
+        Assert.NotNull(cell.Stack.ContainedBagId);
 
         // Enter the bag and verify contents survived the move
         var movedState = dropped.State;

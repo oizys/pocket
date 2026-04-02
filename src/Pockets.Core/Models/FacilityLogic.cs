@@ -100,12 +100,14 @@ public static class FacilityLogic
     /// - Sets RecipeId and increments Progress if not already crafting
     /// - Increments Progress if already crafting the same recipe
     /// - On completion: consumes inputs, places output in output slot, resets state
-    /// Returns the updated facility bag and new progress value.
+    /// Returns the updated facility bag, new progress value, and any newly created bags
+    /// (produced by recipe OutputFactory, e.g. crafted bag items).
     /// </summary>
-    public static (Bag Facility, int Progress) Tick(Bag facility, int currentProgress, IReadOnlyList<Recipe> recipes)
+    public static (Bag Facility, int Progress, IReadOnlyList<Bag> NewBags) Tick(
+        Bag facility, int currentProgress, IReadOnlyList<Recipe> recipes)
     {
         if (facility.FacilityState is null || !facility.FacilityState.IsActive)
-            return (facility, currentProgress);
+            return (facility, currentProgress, Array.Empty<Bag>());
 
         var state = facility.FacilityState;
         var inputStacks = GetInputStacks(facility);
@@ -117,17 +119,18 @@ public static class FacilityLogic
             if (activeRecipe is null || !RecipeMatches(activeRecipe, inputStacks))
             {
                 // Recipe no longer valid (inputs removed?), reset
-                return (facility with { FacilityState = state with { RecipeId = null } }, 0);
+                return (facility with { FacilityState = state with { RecipeId = null } }, 0, Array.Empty<Bag>());
             }
 
             var newProgress = currentProgress + 1;
             if (newProgress >= activeRecipe.Duration)
             {
                 // Complete: consume inputs, produce output
-                return (CompleteCraft(facility, activeRecipe), 0);
+                var (completed, newBags) = CompleteCraft(facility, activeRecipe);
+                return (completed, 0, newBags);
             }
 
-            return (facility, newProgress);
+            return (facility, newProgress, Array.Empty<Bag>());
         }
 
         // Not crafting: try to start using ActiveRecipeId if set, otherwise scan
@@ -144,21 +147,23 @@ public static class FacilityLogic
         }
 
         if (match is null)
-            return (facility, currentProgress);
+            return (facility, currentProgress, Array.Empty<Bag>());
 
         // Start crafting (progress 1 since this tick counts)
         return (facility with
         {
             FacilityState = state with { RecipeId = match.Id }
-        }, 1);
+        }, 1, Array.Empty<Bag>());
     }
 
     /// <summary>
     /// Completes a craft: consumes input items, places output in output slots, resets state.
+    /// Returns the updated facility and any newly created bags from the output factory.
     /// </summary>
-    private static Bag CompleteCraft(Bag facility, Recipe recipe)
+    private static (Bag Facility, IReadOnlyList<Bag> NewBags) CompleteCraft(Bag facility, Recipe recipe)
     {
         var grid = facility.Grid;
+        var newBags = new List<Bag>();
 
         // Consume inputs
         var remaining = recipe.Inputs.ToDictionary(i => i.ItemType, i => i.Count);
@@ -181,7 +186,10 @@ public static class FacilityLogic
         }
 
         // Produce outputs into output slots
-        var outputs = recipe.OutputFactory();
+        var recipeOutput = recipe.OutputFactory();
+        var outputs = recipeOutput.Stacks;
+        newBags.AddRange(recipeOutput.NewBags);
+
         var outputIndex = 0;
         for (int i = 0; i < grid.Cells.Length && outputIndex < outputs.Count; i++)
         {
@@ -193,11 +201,11 @@ public static class FacilityLogic
             outputIndex++;
         }
 
-        return facility with
+        return (facility with
         {
             Grid = grid,
             FacilityState = facility.FacilityState! with { RecipeId = null }
-        };
+        }, newBags);
     }
 
     /// <summary>

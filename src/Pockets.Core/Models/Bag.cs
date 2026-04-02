@@ -28,28 +28,4 @@ public record Bag(
         return (this with { Grid = updatedGrid }, unplaced);
     }
 
-    /// <summary>
-    /// Breadth-first search for a bag with the given Id, starting from this bag.
-    /// Searches all ContainedBags in the grid. Returns null if not found.
-    /// </summary>
-    public Bag? FindBagById(Guid id)
-    {
-        if (Id == id) return this;
-
-        var queue = new Queue<Bag>();
-        queue.Enqueue(this);
-
-        while (queue.Count > 0)
-        {
-            var current = queue.Dequeue();
-            foreach (var cell in current.Grid.Cells)
-            {
-                if (cell.Stack?.ContainedBag is not { } inner) continue;
-                if (inner.Id == id) return inner;
-                queue.Enqueue(inner);
-            }
-        }
-
-        return null;
-    }
 }

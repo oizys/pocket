@@ -34,11 +34,12 @@ public class GameStateTests
         var handBag = parsed.Hand.Length > 0
             ? new Bag(Grid.Create(handSize, 1)).AcquireItems(parsed.Hand).UpdatedBag
             : GameState.CreateHandBag(handSize);
+        var rootBag = new Bag(parsed.Grid);
+        var store = BagStore.Empty.Add(rootBag).Add(handBag);
         return new GameState(
-            new Bag(parsed.Grid),
-            new Cursor(parsed.Cursor ?? new Position(0, 0)),
-            allTypes,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id, new Cursor(parsed.Cursor ?? new Position(0, 0))),
+            allTypes);
     }
 
     // ==================== CreateStage1 ====================
@@ -417,7 +418,9 @@ public class GameStateTests
         grid = grid.SetCell(1, new Cell(new ItemStack(Gem, 5)));
         grid = grid.SetCell(2, new Cell(new ItemStack(Ore, 10)));
         var bag = new Bag(grid);
-        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(bag).Add(handBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, bag.Id), SampleTypes);
 
         var result = state.ToolSort();
 
@@ -436,7 +439,9 @@ public class GameStateTests
         grid = grid.SetCell(0, new Cell(new ItemStack(Ore, 10)));
         grid = grid.SetCell(1, new Cell(new ItemStack(Ore, 10)));
         var bag = new Bag(grid);
-        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(bag).Add(handBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, bag.Id), SampleTypes);
 
         var result = state.ToolSort();
         Assert.Equal(20, result.State.RootBag.Grid.GetCell(0).Stack!.Count);
@@ -450,7 +455,9 @@ public class GameStateTests
         grid = grid.SetCell(0, new Cell(new ItemStack(Ore, 15)));
         grid = grid.SetCell(1, new Cell(new ItemStack(Ore, 15)));
         var bag = new Bag(grid);
-        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(bag).Add(handBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, bag.Id), SampleTypes);
 
         var result = state.ToolSort();
         Assert.Equal(20, result.State.RootBag.Grid.GetCell(0).Stack!.Count);
@@ -494,7 +501,9 @@ public class GameStateTests
         grid = grid.SetCell(0, new Cell(new ItemStack(Ore, 20)));
         grid = grid.SetCell(1, new Cell(new ItemStack(Gem, 20)));
         var bag = new Bag(grid);
-        var state = new GameState(bag, new Cursor(new Position(0, 0)), SampleTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(bag).Add(handBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, bag.Id), SampleTypes);
 
         var rng = new Random(42);
         var exception = Record.Exception(() => state.ToolAcquireRandom(rng));
@@ -510,10 +519,11 @@ public class GameStateTests
         var handBag = parsed.Hand.Length > 0
             ? new Bag(Grid.Create(2, 1)).AcquireItems(parsed.Hand).UpdatedBag
             : GameState.CreateHandBag(2);
+        var rootBag = new Bag(parsed.Grid);
+        var store = BagStore.Empty.Add(rootBag).Add(handBag);
         return new GameState(
-            new Bag(parsed.Grid),
-            new Cursor(parsed.Cursor ?? new Position(0, 0)),
-            allTypes,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id, new Cursor(parsed.Cursor ?? new Position(0, 0))),
+            allTypes);
     }
 }

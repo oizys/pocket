@@ -25,11 +25,12 @@ public class GameControllerTests
         var handBag = parsed.Hand.Length > 0
             ? new Bag(Grid.Create(1, 1)).AcquireItems(parsed.Hand).UpdatedBag
             : GameState.CreateHandBag();
+        var rootBag = new Bag(parsed.Grid);
+        var store = BagStore.Empty.Add(rootBag).Add(handBag);
         return new GameState(
-            new Bag(parsed.Grid),
-            new Cursor(parsed.Cursor ?? new Position(0, 0)),
-            AllTypes,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id, new Cursor(parsed.Cursor ?? new Position(0, 0))),
+            AllTypes);
     }
 
     private static GameController ControllerFor(string diagram)
@@ -236,13 +237,15 @@ public class GameControllerTests
     {
         // Create a bag-type item at cursor
         var innerBag = new Bag(Grid.Create(3, 2));
-        var bagStack = new ItemStack(SmallBag, 1, ContainedBag: innerBag);
+        var bagStack = new ItemStack(SmallBag, 1, ContainedBagId: innerBag.Id);
         var rootGrid = Grid.Create(4, 3).SetCell(0, new Cell(bagStack));
+        var rootBag = new Bag(rootGrid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(innerBag);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            AllTypes,
-            GameState.CreateHandBag());
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            AllTypes);
         var ctrl = new GameController(GameSession.New(state));
 
         var result = ctrl.HandleKey(GameKey.Primary);
@@ -262,13 +265,15 @@ public class GameControllerTests
     {
         // Enter a bag, then leave
         var innerBag = new Bag(Grid.Create(3, 2));
-        var bagStack = new ItemStack(SmallBag, 1, ContainedBag: innerBag);
+        var bagStack = new ItemStack(SmallBag, 1, ContainedBagId: innerBag.Id);
         var rootGrid = Grid.Create(4, 3).SetCell(0, new Cell(bagStack));
+        var rootBag = new Bag(rootGrid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(innerBag);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            AllTypes,
-            GameState.CreateHandBag());
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            AllTypes);
         var ctrl = new GameController(GameSession.New(state));
 
         // Enter
@@ -338,13 +343,15 @@ public class GameControllerTests
     public void HandleBackClick_LeavesNestedBag()
     {
         var innerBag = new Bag(Grid.Create(3, 2));
-        var bagStack = new ItemStack(SmallBag, 1, ContainedBag: innerBag);
+        var bagStack = new ItemStack(SmallBag, 1, ContainedBagId: innerBag.Id);
         var rootGrid = Grid.Create(4, 3).SetCell(0, new Cell(bagStack));
+        var rootBag = new Bag(rootGrid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(innerBag);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            AllTypes,
-            GameState.CreateHandBag());
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            AllTypes);
         var ctrl = new GameController(GameSession.New(state));
 
         // Enter

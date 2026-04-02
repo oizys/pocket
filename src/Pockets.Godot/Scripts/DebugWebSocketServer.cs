@@ -235,7 +235,7 @@ public partial class DebugWebSocketServer : Node
                 cellObj["category"] = stack.ItemType.Category.ToString();
                 cellObj["count"] = stack.Count;
                 cellObj["maxStack"] = stack.ItemType.EffectiveMaxStackSize;
-                cellObj["hasBag"] = stack.ContainedBag is not null;
+                cellObj["hasBag"] = stack.ContainedBagId is not null;
             }
 
             if (cell.CategoryFilter is not null)

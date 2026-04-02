@@ -15,13 +15,13 @@ public class RecipeCycleTests
     private static readonly Recipe AxeRecipe = new(
         "workbench-axe", "Stone Axe",
         new[] { new RecipeInput(Rock, 5), new RecipeInput(Wood, 3) },
-        () => new[] { new ItemStack(Axe, 1) },
+        () => RecipeOutput.FromStacks(new[] { new ItemStack(Axe, 1) }),
         Duration: 3, GridColumns: 3, GridRows: 1);
 
     private static readonly Recipe ShieldRecipe = new(
         "workbench-shield", "Wooden Shield",
         new[] { new RecipeInput(Wood, 6), new RecipeInput(Fiber, 2) },
-        () => new[] { new ItemStack(Shield, 1) },
+        () => RecipeOutput.FromStacks(new[] { new ItemStack(Shield, 1) }),
         Duration: 4, GridColumns: 3, GridRows: 1);
 
     private static readonly ImmutableArray<Recipe> Recipes =
@@ -166,7 +166,7 @@ public class RecipeCycleTests
         grid = grid.SetCell(1, grid.GetCell(1) with { Stack = new ItemStack(Wood, 3) });
         facility = facility with { Grid = grid };
 
-        var (ticked, progress) = FacilityLogic.Tick(facility, 0, Recipes);
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 0, Recipes);
 
         // Should start crafting the active recipe
         Assert.Equal("workbench-axe", ticked.FacilityState!.RecipeId);
@@ -183,20 +183,21 @@ public class RecipeCycleTests
 
         // Place the facility inside the root bag as a contained bag
         var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
-        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBagId: facility.Id);
         var rootGrid = Grid.Create(4, 2);
         rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
 
+        var rootBag = new Bag(rootGrid);
         var handBag = new Bag(Grid.Create(1, 1));
+        var allTypes = ImmutableArray.Create(Rock, Wood, Fiber, Axe, Shield);
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(facility);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            ImmutableArray<ItemType>.Empty,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            ImmutableArray<ItemType>.Empty);
 
         // Execute an action (AcquireRandom always changes state, triggering a tick in Rogue mode)
         var rng = new Random(42);
-        var allTypes = ImmutableArray.Create(Rock, Wood, Fiber, Axe, Shield);
         var stateWithTypes = state with { ItemTypes = allTypes };
         var sessionWithTypes = GameSession.New(stateWithTypes, Recipes, WorkbenchRecipeMap, TickMode.Rogue);
         var afterAction = sessionWithTypes.ExecuteAcquireRandom(rng);
@@ -218,17 +219,18 @@ public class RecipeCycleTests
         var facility = CreateFacilityWithFilledInputs(AxeRecipe);
 
         var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
-        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBagId: facility.Id);
         var rootGrid = Grid.Create(4, 2);
         rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
 
         var allTypes = ImmutableArray.Create(Rock, Wood, Fiber, Axe, Shield);
+        var rootBag = new Bag(rootGrid);
         var handBag = new Bag(Grid.Create(1, 1));
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(facility);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            allTypes,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            allTypes);
 
         var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Realtime);
 
@@ -249,16 +251,17 @@ public class RecipeCycleTests
         var facility = CreateFacilityWithFilledInputs(AxeRecipe);
 
         var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
-        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBagId: facility.Id);
         var rootGrid = Grid.Create(4, 2);
         rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
 
+        var rootBag = new Bag(rootGrid);
         var handBag = new Bag(Grid.Create(1, 1));
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(facility);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            ImmutableArray<ItemType>.Empty,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            ImmutableArray<ItemType>.Empty);
 
         var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Realtime);
 
@@ -282,16 +285,17 @@ public class RecipeCycleTests
         var facility = CreateFacilityWithRecipe(AxeRecipe);
 
         var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
-        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBagId: facility.Id);
         var rootGrid = Grid.Create(4, 2);
         rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
 
+        var rootBag = new Bag(rootGrid);
         var handBag = new Bag(Grid.Create(1, 1));
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(facility);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            ImmutableArray<ItemType>.Empty,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            ImmutableArray<ItemType>.Empty);
 
         // FacilityRecipeMap maps "Workbench" to ["workbench-axe", "workbench-shield"]
         // (using the test recipe IDs defined in this class)
@@ -322,16 +326,17 @@ public class RecipeCycleTests
         var facility = CreateFacilityWithFilledInputs(AxeRecipe);
 
         var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
-        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBagId: facility.Id);
         var rootGrid = Grid.Create(4, 2);
         rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
 
+        var rootBag = new Bag(rootGrid);
         var handBag = new Bag(Grid.Create(1, 1));
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(facility);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            ImmutableArray<ItemType>.Empty,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            ImmutableArray<ItemType>.Empty);
 
         var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Realtime);
 
@@ -350,16 +355,17 @@ public class RecipeCycleTests
         var facility = CreateFacilityWithFilledInputs(AxeRecipe);
 
         var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
-        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBagId: facility.Id);
         var rootGrid = Grid.Create(4, 2);
         rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
 
+        var rootBag = new Bag(rootGrid);
         var handBag = new Bag(Grid.Create(1, 1));
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(facility);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            ImmutableArray<ItemType>.Empty,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            ImmutableArray<ItemType>.Empty);
 
         var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Realtime);
 
@@ -375,17 +381,18 @@ public class RecipeCycleTests
         var facility = CreateFacilityWithFilledInputs(AxeRecipe);
 
         var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
-        var facilityStack = new ItemStack(bagItemType, 1, ContainedBag: facility);
+        var facilityStack = new ItemStack(bagItemType, 1, ContainedBagId: facility.Id);
         var rootGrid = Grid.Create(4, 2);
         rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = facilityStack });
 
         var allTypes = ImmutableArray.Create(Rock, Wood, Fiber, Axe, Shield);
+        var rootBag = new Bag(rootGrid);
         var handBag = new Bag(Grid.Create(1, 1));
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(facility);
         var state = new GameState(
-            new Bag(rootGrid),
-            new Cursor(new Position(0, 0)),
-            allTypes,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            allTypes);
 
         var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Rogue);
 
@@ -436,11 +443,11 @@ public class RecipeCycleTests
     }
 
     /// <summary>
-    /// Finds the first facility bag reachable from root via contained bags.
+    /// Finds the first facility bag reachable from the store via contained bag references.
     /// </summary>
     private static Bag? FindFacilityBag(GameState state)
     {
-        return FindFacilityInGrid(state.RootBag.Grid);
+        return FindFacilityInGrid(state, state.RootBag.Grid);
     }
 
     /// <summary>
@@ -448,18 +455,20 @@ public class RecipeCycleTests
     /// </summary>
     private static int FindFacilityOwnerProgress(GameState state)
     {
-        return FindFacilityOwnerProgressInGrid(state.RootBag.Grid);
+        return FindFacilityOwnerProgressInGrid(state, state.RootBag.Grid);
     }
 
-    private static int FindFacilityOwnerProgressInGrid(Grid grid)
+    private static int FindFacilityOwnerProgressInGrid(GameState state, Grid grid)
     {
         foreach (var cell in grid.Cells)
         {
-            if (cell.Stack?.ContainedBag is { } bag)
+            if (cell.Stack?.ContainedBagId is { } bagId)
             {
+                var bag = state.Store.GetById(bagId);
+                if (bag is null) continue;
                 if (bag.FacilityState is not null)
                     return cell.Stack.GetInt("Progress") ?? 0;
-                var nested = FindFacilityOwnerProgressInGrid(bag.Grid);
+                var nested = FindFacilityOwnerProgressInGrid(state, bag.Grid);
                 if (nested > 0)
                     return nested;
             }
@@ -467,15 +476,17 @@ public class RecipeCycleTests
         return 0;
     }
 
-    private static Bag? FindFacilityInGrid(Grid grid)
+    private static Bag? FindFacilityInGrid(GameState state, Grid grid)
     {
         foreach (var cell in grid.Cells)
         {
-            if (cell.Stack?.ContainedBag is { } bag)
+            if (cell.Stack?.ContainedBagId is { } bagId)
             {
+                var bag = state.Store.GetById(bagId);
+                if (bag is null) continue;
                 if (bag.FacilityState is not null)
                     return bag;
-                var nested = FindFacilityInGrid(bag.Grid);
+                var nested = FindFacilityInGrid(state, bag.Grid);
                 if (nested is not null)
                     return nested;
             }

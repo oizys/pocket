@@ -25,11 +25,12 @@ public class PrimarySecondaryTests
         var handBag = parsed.Hand.Length > 0
             ? new Bag(Grid.Create(1, 1)).AcquireItems(parsed.Hand).UpdatedBag
             : GameState.CreateHandBag();
+        var rootBag = new Bag(parsed.Grid);
+        var store = BagStore.Empty.Add(rootBag).Add(handBag);
         return new GameState(
-            new Bag(parsed.Grid),
-            new Cursor(parsed.Cursor ?? new Position(0, 0)),
-            AllTypes,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id, new Cursor(parsed.Cursor ?? new Position(0, 0))),
+            AllTypes);
     }
 
     // ==================== Primary: Grab ====================
@@ -118,8 +119,11 @@ public class PrimarySecondaryTests
     {
         var innerBag = new Bag(Grid.Create(3, 2), "Cave");
         var rootGrid = Grid.Create(4, 3);
-        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBag: innerBag)));
-        var state = new GameState(new Bag(rootGrid), new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBagId: innerBag.Id)));
+        var rootBag = new Bag(rootGrid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(innerBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
 
         var result = state.ToolPrimary();
 
@@ -133,10 +137,11 @@ public class PrimarySecondaryTests
     {
         var innerBag = new Bag(Grid.Create(3, 2), "Cave");
         var rootGrid = Grid.Create(4, 3);
-        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBag: innerBag)));
+        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBagId: innerBag.Id)));
         var rootBag = new Bag(rootGrid);
         var handBag = new Bag(Grid.Create(1, 1)).AcquireItems(new[] { new ItemStack(Rck, 3) }).UpdatedBag;
-        var state = new GameState(rootBag, new Cursor(new Position(0, 0)), AllTypes, handBag);
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(innerBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
 
         var result = state.ToolPrimary();
 
@@ -155,8 +160,11 @@ public class PrimarySecondaryTests
         var innerBag = new Bag(Grid.Create(3, 2), "Cave");
         var (filledInner, _) = innerBag.AcquireItems(innerItems);
         var rootGrid = Grid.Create(4, 3);
-        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBag: filledInner)));
-        var state = new GameState(new Bag(rootGrid), new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBagId: filledInner.Id)));
+        var rootBag = new Bag(rootGrid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(filledInner);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
 
         // Enter bag
         var entered = state.ToolPrimary().State;

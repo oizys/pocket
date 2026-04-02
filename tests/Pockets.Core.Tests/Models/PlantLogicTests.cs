@@ -28,7 +28,9 @@ public class PlantLogicTests
         grid = grid.SetCell(0, new Cell(Stack: plant, Frame: new PlanterFrame()));
         var bag = new Bag(grid);
         var itemTypes = ImmutableArray.Create(BeanPlant, GreenBean, Rock);
-        return new GameState(bag, new Cursor(new Position(0, 0)), itemTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(bag).Add(handBag);
+        return new GameState(store, LocationMap.Create(handBag.Id, bag.Id), itemTypes);
     }
 
     // ==================== IsPlant ====================
@@ -149,8 +151,10 @@ public class PlantLogicTests
         var grid = Grid.Create(4, 1);
         grid = grid.SetCell(0, new Cell(Stack: new ItemStack(Rock, 5)));
         var bag = new Bag(grid);
-        var state = new GameState(bag, new Cursor(new Position(0, 0)),
-            ImmutableArray.Create(Rock), GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(bag).Add(handBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, bag.Id),
+            ImmutableArray.Create(Rock));
 
         var ticked = PlantLogic.TickPlants(state);
         Assert.Equal(5, ticked.RootBag.Grid.GetCell(0).Stack!.Count);
@@ -201,7 +205,7 @@ public class PlantLogicTests
         var state = MakePlantState(MakePlant(progress: 6, duration: 6));
         // Fill hand first
         var (filledHand, _) = state.HandBag.AcquireItems(new[] { new ItemStack(Rock, 1) });
-        state = state with { HandBag = filledHand };
+        state = state with { Store = state.Store.Set(state.HandBagId, filledHand) };
 
         var result = state.ToolGrab();
         Assert.False(result.Success);

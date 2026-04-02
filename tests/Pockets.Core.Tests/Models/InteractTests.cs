@@ -25,7 +25,7 @@ public class InteractTests
         }
 
         var rootGrid = Grid.Create(4, 3);
-        var bagCell = new Cell(new ItemStack(SmallBag, 1, ContainedBag: innerBag));
+        var bagCell = new Cell(new ItemStack(SmallBag, 1, ContainedBagId: innerBag.Id));
         rootGrid = rootGrid.SetCell(0, bagCell);
 
         if (rootContents != null)
@@ -36,7 +36,9 @@ public class InteractTests
         }
 
         var rootBag = new Bag(rootGrid);
-        return new GameState(rootBag, new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(innerBag);
+        return new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
     }
 
     [Fact]
@@ -104,13 +106,15 @@ public class InteractTests
         // Create a bag inside a bag inside the root
         var deepBag = new Bag(Grid.Create(2, 2), "Deep");
         var midGrid = Grid.Create(3, 2);
-        midGrid = midGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBag: deepBag)));
+        midGrid = midGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBagId: deepBag.Id)));
         var midBag = new Bag(midGrid, "Mid");
 
         var rootGrid = Grid.Create(4, 3);
-        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBag: midBag)));
+        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(SmallBag, 1, ContainedBagId: midBag.Id)));
         var rootBag = new Bag(rootGrid);
-        var state = new GameState(rootBag, new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(midBag).Add(deepBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
 
         // Interact enters mid bag
         var entered1 = state.Interact().State;

@@ -117,7 +117,7 @@ public static class ContentLoader
         var allStatic = def.OutputPipeline.All(step => step is StaticItemStep);
         var pipeline = def.OutputPipeline;
 
-        Func<IReadOnlyList<ItemStack>> outputFactory;
+        Func<RecipeOutput> outputFactory;
 
         if (allStatic)
         {
@@ -126,7 +126,7 @@ public static class ContentLoader
                 .Select(step => new ItemStack(itemsByName[step.ItemName], step.Count))
                 .ToList();
 
-            outputFactory = () => outputStacks;
+            outputFactory = () => RecipeOutput.FromStacks(outputStacks);
         }
         else
         {
@@ -136,18 +136,21 @@ public static class ContentLoader
                 var result = PipelineExecutor.Execute(pipeline, itemsByName, templates, generators);
                 return result switch
                 {
-                    StacksValue sv => sv.Stacks,
-                    BagValue bv => new[]
-                    {
-                        // Find the static item step for the output item name/count
-                        pipeline.OfType<StaticItemStep>().Select(s =>
-                            new ItemStack(itemsByName[s.ItemName], s.Count, ContainedBag: bv.Bag))
-                            .FirstOrDefault()
-                        ?? new ItemStack(
-                            new ItemType("Unknown", Category.Bag, IsStackable: false),
-                            1, ContainedBag: bv.Bag)
-                    },
-                    _ => Array.Empty<ItemStack>()
+                    StacksValue sv => RecipeOutput.WithBags(
+                        sv.Stacks,
+                        sv.NewBags ?? (IReadOnlyList<Bag>)Array.Empty<Bag>()),
+                    BagValue bv => RecipeOutput.WithBags(
+                        new[]
+                        {
+                            pipeline.OfType<StaticItemStep>().Select(s =>
+                                    new ItemStack(itemsByName[s.ItemName], s.Count, ContainedBagId: bv.Bag.Id))
+                                    .FirstOrDefault()
+                                ?? new ItemStack(
+                                    new ItemType("Unknown", Category.Bag, IsStackable: false),
+                                    1, ContainedBagId: bv.Bag.Id)
+                        },
+                        new[] { bv.Bag }),
+                    _ => RecipeOutput.FromStacks(Array.Empty<ItemStack>())
                 };
             };
         }

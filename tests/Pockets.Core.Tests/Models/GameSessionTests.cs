@@ -22,11 +22,12 @@ public class GameSessionTests
         var handBag = parsed.Hand.Length > 0
             ? new Bag(Grid.Create(handSize, 1)).AcquireItems(parsed.Hand).UpdatedBag
             : GameState.CreateHandBag(handSize);
+        var rootBag = new Bag(parsed.Grid);
+        var store = BagStore.Empty.Add(rootBag).Add(handBag);
         var state = new GameState(
-            new Bag(parsed.Grid),
-            new Cursor(parsed.Cursor ?? new Position(0, 0)),
-            allTypes,
-            handBag);
+            store,
+            LocationMap.Create(handBag.Id, rootBag.Id, new Cursor(parsed.Cursor ?? new Position(0, 0))),
+            allTypes);
         return GameSession.New(state);
     }
 

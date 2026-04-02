@@ -107,8 +107,8 @@ public class PipelineExecutorTests
             var stacks = ((StacksValue)input!).Stacks;
             var gt = (GridTemplate)args[0];
             var bag = new Bag(Grid.Create(gt.Columns, gt.Rows), gt.EnvironmentType, gt.ColorScheme);
-            var withBag = stacks.Select(s => s with { ContainedBag = bag }).ToList();
-            return new StacksValue(withBag);
+            var withBag = stacks.Select(s => s with { ContainedBagId = bag.Id }).ToList();
+            return new StacksValue(withBag, new[] { bag });
         };
         var generators = ImmutableDictionary<string, GeneratorFunc>.Empty.Add("attach-bag", attachBag);
 
@@ -118,8 +118,10 @@ public class PipelineExecutorTests
         var sv = Assert.IsType<StacksValue>(result);
         Assert.Single(sv.Stacks);
         Assert.Equal(Axe, sv.Stacks[0].ItemType);
-        Assert.NotNull(sv.Stacks[0].ContainedBag);
-        Assert.Equal(2, sv.Stacks[0].ContainedBag!.Grid.Columns);
+        Assert.NotNull(sv.Stacks[0].ContainedBagId);
+        Assert.NotNull(sv.NewBags);
+        var attachedBag = sv.NewBags!.First(b => b.Id == sv.Stacks[0].ContainedBagId);
+        Assert.Equal(2, attachedBag.Grid.Columns);
     }
 
     [Fact]

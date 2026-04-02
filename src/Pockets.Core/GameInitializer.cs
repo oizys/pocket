@@ -6,6 +6,7 @@ namespace Pockets.Core;
 
 /// <summary>
 /// Creates initial game states with random item placement.
+/// All created bags are registered in the BagStore.
 /// </summary>
 public static class GameInitializer
 {
@@ -52,19 +53,24 @@ public static class GameInitializer
 
         // Create forest wilderness bag from material-category items
         var materials = itemTypes.Where(t => t.Category == Category.Material).ToImmutableArray();
+        var extraBags = new List<Bag>();
         if (materials.Length > 0)
         {
             var lootTable = materials.Select(m => (m, 1.0)).ToImmutableArray();
             var template = new WildernessTemplate("Forest", "Forest", "Green", 6, 4, 0.6, lootTable);
             var wildernessBag = WildernessGenerator.Generate(template, random);
+            extraBags.Add(wildernessBag);
 
             var forestBagType = new ItemType("Forest Bag", Category.Bag, IsStackable: false);
             itemTypes = itemTypes.Add(forestBagType);
-            var forestStack = new ItemStack(forestBagType, 1, ContainedBag: wildernessBag);
+            var forestStack = new ItemStack(forestBagType, 1, ContainedBagId: wildernessBag.Id);
             stacks.Add(forestStack);
         }
 
-        return GameState.CreateStage1(itemTypes, stacks);
+        var state = GameState.CreateStage1(itemTypes, stacks);
+        if (extraBags.Count > 0)
+            state = state with { Store = state.Store.AddRange(extraBags) };
+        return state;
     }
 
     /// <summary>
@@ -91,6 +97,7 @@ public static class GameInitializer
             .Add(beltPouchType);
 
         var stacks = new List<ItemStack>();
+        var extraBags = new List<Bag>();
 
         // Build recipes so facility input slots can be filtered to specific item types
         var recipes = RecipeRegistry.BuildRecipes(itemTypes);
@@ -99,9 +106,14 @@ public static class GameInitializer
         var seedlingRecipe = recipes.FirstOrDefault(r => r.Id.StartsWith("seedling_"));
 
         // Facility bags with recipe-filtered input slots
-        stacks.Add(new ItemStack(workbenchType, 1, ContainedBag: FacilityBuilder.CreateWorkbench(workbenchRecipe)));
-        stacks.Add(new ItemStack(tannerType, 1, ContainedBag: FacilityBuilder.CreateTanner(tannerRecipe)));
-        stacks.Add(new ItemStack(seedlingPotType, 1, ContainedBag: FacilityBuilder.CreateSeedlingPot(seedlingRecipe)));
+        var workbenchBag = FacilityBuilder.CreateWorkbench(workbenchRecipe);
+        var tannerBag = FacilityBuilder.CreateTanner(tannerRecipe);
+        var seedlingBag = FacilityBuilder.CreateSeedlingPot(seedlingRecipe);
+        extraBags.AddRange(new[] { workbenchBag, tannerBag, seedlingBag });
+
+        stacks.Add(new ItemStack(workbenchType, 1, ContainedBagId: workbenchBag.Id));
+        stacks.Add(new ItemStack(tannerType, 1, ContainedBagId: tannerBag.Id));
+        stacks.Add(new ItemStack(seedlingPotType, 1, ContainedBagId: seedlingBag.Id));
 
         // Forest wilderness bag
         var materials = itemTypes.Where(t => t.Category == Category.Material).ToImmutableArray();
@@ -110,7 +122,8 @@ public static class GameInitializer
             var lootTable = materials.Select(m => (m, 1.0)).ToImmutableArray();
             var template = new WildernessTemplate("Forest", "Forest", "Green", 6, 4, 0.6, lootTable);
             var wildernessBag = WildernessGenerator.Generate(template, random);
-            stacks.Add(new ItemStack(forestBagType, 1, ContainedBag: wildernessBag));
+            extraBags.Add(wildernessBag);
+            stacks.Add(new ItemStack(forestBagType, 1, ContainedBagId: wildernessBag.Id));
         }
 
         // Starter crafting materials (enough for 1-2 recipes)
@@ -127,7 +140,9 @@ public static class GameInitializer
         if (byName.TryGetValue("Rich Soil", out var soil))
             stacks.Add(new ItemStack(soil, 4));
 
-        return GameState.CreateStage1(itemTypes, stacks);
+        var state = GameState.CreateStage1(itemTypes, stacks);
+        state = state with { Store = state.Store.AddRange(extraBags) };
+        return state;
     }
 
     /// <summary>
@@ -141,6 +156,7 @@ public static class GameInitializer
         var itemTypes = registry.Items.Values.ToImmutableArray();
         var byName = registry.Items;
         var stacks = new List<ItemStack>();
+        var extraBags = new List<Bag>();
 
         // Build facility bags from data-driven definitions.
         // Only Workshop is placed directly — other facilities are crafted from Workshop.
@@ -166,7 +182,8 @@ public static class GameInitializer
             Recipe? firstRecipe = firstRecipeId is not null && registry.Recipes.TryGetValue(firstRecipeId, out var r) ? r : null;
 
             var facilityBag = BuildFacilityBag(facility, firstRecipe);
-            stacks.Add(new ItemStack(facilityItemType, 1, ContainedBag: facilityBag));
+            extraBags.Add(facilityBag);
+            stacks.Add(new ItemStack(facilityItemType, 1, ContainedBagId: facilityBag.Id));
         }
 
         // Build wilderness bags from grid + loot table templates
@@ -189,7 +206,10 @@ public static class GameInitializer
                 new object[] { gridTemplate, lootTemplate, byName });
 
             if (wildernessBag is BagValue bv)
-                stacks.Add(new ItemStack(bagItemType, 1, ContainedBag: bv.Bag));
+            {
+                extraBags.Add(bv.Bag);
+                stacks.Add(new ItemStack(bagItemType, 1, ContainedBagId: bv.Bag.Id));
+            }
         }
 
         // Starter crafting materials (enough to craft 1-2 facilities from Workshop)
@@ -206,10 +226,12 @@ public static class GameInitializer
 
         var allRecipes = registry.Recipes.Values.ToImmutableArray();
         var state = GameState.CreateStage1(itemTypes, stacks);
+        state = state with { Store = state.Store.AddRange(extraBags) };
 
         // Set up planter frames in bottom-right 4 cells (indices 28-31 of 8×4 grid)
         // and pre-plant Green Bean Plants in cells 28-29
-        var rootGrid = state.RootBag.Grid;
+        var rootBag = state.RootBag;
+        var rootGrid = rootBag.Grid;
         for (int i = 28; i <= 31; i++)
         {
             var cell = rootGrid.GetCell(i);
@@ -230,7 +252,7 @@ public static class GameInitializer
             }
         }
 
-        state = state with { RootBag = state.RootBag with { Grid = rootGrid } };
+        state = state with { Store = state.Store.Set(state.RootBagId, rootBag with { Grid = rootGrid }) };
 
         return (state, allRecipes);
     }

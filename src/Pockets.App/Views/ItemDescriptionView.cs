@@ -142,14 +142,13 @@ public class ItemDescriptionView : FrameView
     }
 
     /// <summary>
-    /// Reads crafting progress from the owning ItemStack via BagRegistry.
+    /// Reads crafting progress from the owning ItemStack via BagStore.
     /// </summary>
     private static int GetFacilityProgress(GameState state, Bag facilityBag)
     {
-        var registry = state.Registry;
-        var ownerInfo = registry.GetOwnerOf(facilityBag.Id);
+        var ownerInfo = state.Store.GetOwnerOf(facilityBag.Id);
         if (ownerInfo is null) return 0;
-        var parentBag = registry.GetById(ownerInfo.ParentBagId);
+        var parentBag = state.Store.GetById(ownerInfo.ParentBagId);
         var ownerStack = parentBag?.Grid.GetCell(ownerInfo.CellIndex).Stack;
         return ownerStack?.GetInt("Progress") ?? 0;
     }

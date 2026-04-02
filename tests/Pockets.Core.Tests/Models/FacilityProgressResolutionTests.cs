@@ -19,7 +19,7 @@ public class FacilityProgressResolutionTests
     private static readonly Recipe AxeRecipe = new(
         "axe", "Stone Axe",
         new[] { new RecipeInput(Rock, 5), new RecipeInput(Wood, 3) },
-        () => new List<ItemStack> { new(Axe, 1) },
+        () => RecipeOutput.FromStacks(new List<ItemStack> { new(Axe, 1) }),
         Duration: 3);
 
     private static readonly ImmutableDictionary<string, ImmutableArray<string>> FacilityRecipeMap =
@@ -44,12 +44,14 @@ public class FacilityProgressResolutionTests
 
         // Build root bag (4x2) with the workbench item at cell 0
         var rootGrid = Grid.Create(4, 2);
-        var workbenchStack = new ItemStack(WorkbenchItem, 1, ContainedBag: facilityBag);
+        var workbenchStack = new ItemStack(WorkbenchItem, 1, ContainedBagId: facilityBag.Id);
         rootGrid = rootGrid.SetCell(0, new Cell(workbenchStack));
 
+        var rootBag = new Bag(rootGrid);
         var handBag = new Bag(Grid.Create(1, 1));
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(facilityBag);
         var itemTypes = ImmutableArray.Create(Rock, Wood, Axe, WorkbenchItem);
-        var state = new GameState(new Bag(rootGrid), new Cursor(new Position(0, 0)), itemTypes, handBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), itemTypes);
 
         return (state, 0);
     }
@@ -70,7 +72,7 @@ public class FacilityProgressResolutionTests
         {
             Grid = state.RootBag.Grid.SetCell(facilityCellIndex, new Cell(updatedStack))
         };
-        state = state with { RootBag = updatedRoot };
+        state = state with { Store = state.Store.Set(state.RootBagId, updatedRoot) };
 
         // Enter the facility bag (creates a breadcrumb)
         var enterResult = state.EnterBag();
@@ -127,7 +129,7 @@ public class FacilityProgressResolutionTests
         Assert.Equal(1, facilityStack.GetInt("Progress"));
 
         // Also verify the facility bag's state was updated
-        var facilityBag = facilityStack.ContainedBag!;
+        var facilityBag = ticked.Current.Store.GetById(facilityStack.ContainedBagId!.Value)!;
         Assert.Equal("axe", facilityBag.FacilityState!.RecipeId);
     }
 
@@ -147,7 +149,7 @@ public class FacilityProgressResolutionTests
         Assert.Equal(0, facilityStack.GetInt("Progress"));
 
         // Output should be produced
-        var facilityBag = facilityStack.ContainedBag!;
+        var facilityBag = session.Current.Store.GetById(facilityStack.ContainedBagId!.Value)!;
         Assert.Null(facilityBag.FacilityState!.RecipeId); // Reset after completion
         var outputCell = facilityBag.Grid.GetCell(2);
         Assert.False(outputCell.IsEmpty);
@@ -185,7 +187,7 @@ public class FacilityProgressResolutionTests
         var ownerStack = state.RootBag.Grid.GetCell(facilityCellIndex).Stack!;
         var updated = ownerStack.WithProperty("Progress", new IntValue(5));
         var rootGrid = state.RootBag.Grid.SetCell(facilityCellIndex, new Cell(updated));
-        state = state with { RootBag = state.RootBag with { Grid = rootGrid } };
+        state = state with { Store = state.Store.Set(state.RootBagId, state.RootBag with { Grid = rootGrid }) };
 
         // Read progress directly from the cell — the rendering use case
         var cell = state.RootBag.Grid.GetCell(facilityCellIndex);
@@ -218,36 +220,36 @@ public class FacilityProgressResolutionTests
     }
 
     // ============================================
-    // BagRegistry owner info
+    // BagStore owner info (replaces BagRegistry)
     // ============================================
 
     [Fact]
-    public void BagRegistry_TracksOwnerInfo()
+    public void BagStore_TracksOwnerInfo()
     {
         var (state, facilityCellIndex) = CreateStateWithFacility();
 
-        var registry = state.Registry;
-        var facility = registry.Facilities.First();
-        var ownerInfo = registry.GetOwnerOf(facility.Id);
+        var store = state.Store;
+        var facility = store.Facilities.First();
+        var ownerInfo = store.GetOwnerOf(facility.Id);
 
         Assert.NotNull(ownerInfo);
-        Assert.Equal(state.RootBag.Id, ownerInfo.ParentBagId);
+        Assert.Equal(state.RootBagId, ownerInfo.ParentBagId);
         Assert.Equal(facilityCellIndex, ownerInfo.CellIndex);
     }
 
     [Fact]
-    public void BagRegistry_RootBag_HasNoOwner()
+    public void BagStore_RootBag_HasNoOwner()
     {
         var (state, _) = CreateStateWithFacility();
 
-        var registry = state.Registry;
-        var ownerInfo = registry.GetOwnerOf(state.RootBag.Id);
+        var store = state.Store;
+        var ownerInfo = store.GetOwnerOf(state.RootBagId);
 
         Assert.Null(ownerInfo);
     }
 
     [Fact]
-    public void BagRegistry_OwnerStackProgressReadable()
+    public void BagStore_OwnerStackProgressReadable()
     {
         var (state, facilityCellIndex) = CreateStateWithFacility();
 
@@ -255,13 +257,13 @@ public class FacilityProgressResolutionTests
         var ownerStack = state.RootBag.Grid.GetCell(facilityCellIndex).Stack!;
         var updated = ownerStack.WithProperty("Progress", new IntValue(7));
         var rootGrid = state.RootBag.Grid.SetCell(facilityCellIndex, new Cell(updated));
-        state = state with { RootBag = state.RootBag with { Grid = rootGrid } };
+        state = state with { Store = state.Store.Set(state.RootBagId, state.RootBag with { Grid = rootGrid }) };
 
-        // Read via registry
-        var registry = state.Registry;
-        var facility = registry.Facilities.First();
-        var ownerInfo = registry.GetOwnerOf(facility.Id)!;
-        var parentBag = registry.GetById(ownerInfo.ParentBagId)!;
+        // Read via store
+        var store = state.Store;
+        var facility = store.Facilities.First();
+        var ownerInfo = store.GetOwnerOf(facility.Id)!;
+        var parentBag = store.GetById(ownerInfo.ParentBagId)!;
         var resolvedStack = parentBag.Grid.GetCell(ownerInfo.CellIndex).Stack!;
 
         Assert.Equal(7, resolvedStack.GetInt("Progress"));

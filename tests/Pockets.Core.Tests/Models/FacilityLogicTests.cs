@@ -11,7 +11,7 @@ public class FacilityLogicTests
     private static readonly Recipe AxeRecipe = new(
         "axe", "Stone Axe",
         new[] { new RecipeInput(Rock, 5), new RecipeInput(Wood, 3) },
-        () => new[] { new ItemStack(StoneAxe, 1) },
+        () => RecipeOutput.FromStacks(new[] { new ItemStack(StoneAxe, 1) }),
         Duration: 3);
 
     /// <summary>
@@ -79,7 +79,7 @@ public class FacilityLogicTests
     public void Tick_MatchingInputs_StartsCrafting()
     {
         var facility = CreateFacility((Rock, 5), (Wood, 3));
-        var (ticked, progress) = FacilityLogic.Tick(facility, 0, new[] { AxeRecipe });
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 0, new[] { AxeRecipe });
 
         Assert.Equal("axe", ticked.FacilityState!.RecipeId);
         Assert.Equal(1, progress);
@@ -89,7 +89,7 @@ public class FacilityLogicTests
     public void Tick_NoMatchingInputs_NoChange()
     {
         var facility = CreateFacility((Rock, 2));
-        var (ticked, progress) = FacilityLogic.Tick(facility, 0, new[] { AxeRecipe });
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 0, new[] { AxeRecipe });
 
         Assert.Null(ticked.FacilityState!.RecipeId);
         Assert.Equal(0, progress);
@@ -100,7 +100,7 @@ public class FacilityLogicTests
     {
         var facility = CreateFacility((Rock, 5), (Wood, 3));
         facility = facility with { FacilityState = new FacilityState(IsActive: false) };
-        var (ticked, progress) = FacilityLogic.Tick(facility, 0, new[] { AxeRecipe });
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 0, new[] { AxeRecipe });
 
         Assert.Null(ticked.FacilityState!.RecipeId);
     }
@@ -113,7 +113,7 @@ public class FacilityLogicTests
         var facility = CreateFacility((Rock, 5), (Wood, 3));
         facility = facility with { FacilityState = new FacilityState(RecipeId: "axe") };
 
-        var (ticked, progress) = FacilityLogic.Tick(facility, 1, new[] { AxeRecipe });
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 1, new[] { AxeRecipe });
 
         Assert.Equal("axe", ticked.FacilityState!.RecipeId);
         Assert.Equal(2, progress);
@@ -128,7 +128,7 @@ public class FacilityLogicTests
         // Duration is 3, so at progress 2, one more tick completes it
         facility = facility with { FacilityState = new FacilityState(RecipeId: "axe") };
 
-        var (ticked, progress) = FacilityLogic.Tick(facility, 2, new[] { AxeRecipe });
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 2, new[] { AxeRecipe });
 
         // Recipe complete: state reset
         Assert.Null(ticked.FacilityState!.RecipeId);
@@ -154,7 +154,7 @@ public class FacilityLogicTests
         var facility = CreateFacility((Rock, 8), (Wood, 3));
         facility = facility with { FacilityState = new FacilityState(RecipeId: "axe") };
 
-        var (ticked, progress) = FacilityLogic.Tick(facility, 2, new[] { AxeRecipe });
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 2, new[] { AxeRecipe });
 
         // 8 - 5 = 3 Rock remain
         var input0 = ticked.Grid.GetCell(0);
@@ -186,7 +186,7 @@ public class FacilityLogicTests
             FacilityState = new FacilityState(RecipeId: "axe")
         };
 
-        var (ticked, progress) = FacilityLogic.Tick(facility, 2, new[] { AxeRecipe });
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 2, new[] { AxeRecipe });
 
         // Inputs consumed but output couldn't be placed (slot occupied)
         // The output is lost — player should grab output before next craft completes
@@ -202,7 +202,7 @@ public class FacilityLogicTests
         var facility = CreateFacility(); // empty inputs
         facility = facility with { FacilityState = new FacilityState(RecipeId: "axe") };
 
-        var (ticked, progress) = FacilityLogic.Tick(facility, 1, new[] { AxeRecipe });
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 1, new[] { AxeRecipe });
 
         Assert.Null(ticked.FacilityState!.RecipeId);
         Assert.Equal(0, progress);
@@ -255,16 +255,16 @@ public class FacilityLogicTests
         int progress = 0;
 
         // Tick 1: starts crafting
-        (facility, progress) = FacilityLogic.Tick(facility, progress, recipes);
+        (facility, progress, _) = FacilityLogic.Tick(facility, progress, recipes);
         Assert.Equal("axe", facility.FacilityState!.RecipeId);
         Assert.Equal(1, progress);
 
         // Tick 2: progress
-        (facility, progress) = FacilityLogic.Tick(facility, progress, recipes);
+        (facility, progress, _) = FacilityLogic.Tick(facility, progress, recipes);
         Assert.Equal(2, progress);
 
         // Tick 3: completes (duration = 3)
-        (facility, progress) = FacilityLogic.Tick(facility, progress, recipes);
+        (facility, progress, _) = FacilityLogic.Tick(facility, progress, recipes);
         Assert.Null(facility.FacilityState.RecipeId);
         Assert.Equal(0, progress);
 
@@ -288,17 +288,20 @@ public class FacilityLogicTests
             {
                 callCount++;
                 var bag = new Bag(Grid.Create(2, 2));
-                return new[] { new ItemStack(bagType, 1, ContainedBag: bag) };
+                return RecipeOutput.WithBags(
+                    new[] { new ItemStack(bagType, 1, ContainedBagId: bag.Id) },
+                    new[] { bag });
             },
             Duration: 1);
 
         var facility = CreateFacility((Rock, 1));
         facility = facility with { FacilityState = new FacilityState(RecipeId: "bag") };
 
-        var (ticked, progress) = FacilityLogic.Tick(facility, 0, new[] { bagRecipe });
+        var (ticked, progress, newBags) = FacilityLogic.Tick(facility, 0, new[] { bagRecipe });
 
         Assert.Equal(1, callCount);
         var output = ticked.Grid.GetCell(2).Stack!;
-        Assert.NotNull(output.ContainedBag);
+        Assert.NotNull(output.ContainedBagId);
+        Assert.Single(newBags);
     }
 }

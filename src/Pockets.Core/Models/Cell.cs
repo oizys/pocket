@@ -12,9 +12,9 @@ public record Cell(ItemStack? Stack = null, Category? CategoryFilter = null, Cel
     public bool IsEmpty => Stack is null;
 
     /// <summary>
-    /// True when this cell contains a bag-type item with contents.
+    /// True when this cell contains a bag-type item with a bag reference.
     /// </summary>
-    public bool HasBag => Stack?.ContainedBag is not null;
+    public bool HasBag => Stack?.ContainedBagId is not null;
 
     /// <summary>
     /// True when this cell has a CellFrame attached.

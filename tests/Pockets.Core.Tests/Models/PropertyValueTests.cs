@@ -177,7 +177,7 @@ public class PropertyValueTests
         var stack = new ItemStack(Sword, 1)
             .WithProperty("Durability", new IntValue(100));
 
-        var copy = stack with { ContainedBag = null };
+        var copy = stack with { ContainedBagId = null };
 
         Assert.Equal(100, copy.GetInt("Durability"));
     }

@@ -31,7 +31,10 @@ public class GamePlaythroughTests : IDisposable
             cells[i] = new Cell();
 
         var grid = new Grid(4, 2, cells.ToImmutableArray());
-        return new GameState(new Bag(grid), new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        var rootBag = new Bag(grid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag);
+        return new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
     }
 
     private GameView SetupGame(GameState state)

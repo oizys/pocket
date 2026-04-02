@@ -25,16 +25,15 @@ public static class PlantLogic
         && progress >= duration;
 
     /// <summary>
-    /// Scans all bags via Registry and advances Progress on plants where Progress &lt; Duration.
+    /// Scans all bags in the store and advances Progress on plants where Progress &lt; Duration.
     /// Does not advance past Duration (plants cap at "grown" until harvested).
     /// Returns the updated GameState.
     /// </summary>
     public static GameState TickPlants(GameState state)
     {
-        var registry = state.Registry;
-        var updatedState = state;
+        var updatedStore = state.Store;
 
-        foreach (var bag in registry.All)
+        foreach (var bag in state.Store.All)
         {
             var grid = bag.Grid;
             var changed = false;
@@ -61,13 +60,10 @@ public static class PlantLogic
             if (changed)
             {
                 var updatedBag = bag with { Grid = grid };
-                if (bag.Id == updatedState.RootBag.Id)
-                    updatedState = updatedState with { RootBag = updatedBag };
-                else
-                    updatedState = updatedState.ReplaceBagById(bag.Id, updatedBag);
+                updatedStore = updatedStore.Set(bag.Id, updatedBag);
             }
         }
 
-        return updatedState;
+        return state with { Store = updatedStore };
     }
 }

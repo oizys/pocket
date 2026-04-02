@@ -17,7 +17,7 @@ public class CraftingIntegrationTests
     private static readonly Recipe AxeRecipe = new(
         "workbench_axe", "Stone Axe",
         new[] { new RecipeInput(Rock, 5), new RecipeInput(Wood, 3) },
-        () => new[] { new ItemStack(StoneAxe, 1) },
+        () => RecipeOutput.FromStacks(new[] { new ItemStack(StoneAxe, 1) }),
         Duration: 3);
 
     private static readonly ImmutableArray<Recipe> Recipes = ImmutableArray.Create(AxeRecipe);
@@ -31,21 +31,24 @@ public class CraftingIntegrationTests
         var rootGrid = Grid.Create(8, 4);
 
         // Place workbench at cell 0
-        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(WorkbenchType, 1, ContainedBag: workbench)));
+        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(WorkbenchType, 1, ContainedBagId: workbench.Id)));
         // Place 5 Rock at cell 1
         rootGrid = rootGrid.SetCell(1, new Cell(new ItemStack(Rock, 5)));
         // Place 3 Wood at cell 2
         rootGrid = rootGrid.SetCell(2, new Cell(new ItemStack(Wood, 3)));
 
         var root = new Bag(rootGrid);
-        return new GameState(root, new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(root).Add(handBag).Add(workbench);
+        return new GameState(store, LocationMap.Create(handBag.Id, root.Id), AllTypes);
     }
 
     [Fact]
     public void ReplaceBagById_UpdatesFacilityInTree()
     {
         var state = CreateStateWithWorkbench();
-        var workbench = state.RootBag.Grid.GetCell(0).Stack!.ContainedBag!;
+        var workbenchStack = state.RootBag.Grid.GetCell(0).Stack!;
+        var workbench = state.Store.GetById(workbenchStack.ContainedBagId!.Value)!;
 
         // Modify the workbench facility state and use ownerTransform to set Progress on the owning ItemStack
         var modified = workbench with { FacilityState = new FacilityState(RecipeId: "test") };
@@ -53,7 +56,7 @@ public class CraftingIntegrationTests
             ownerTransform: stack => stack.WithProperty("Progress", new IntValue(42)));
 
         var foundStack = updated.RootBag.Grid.GetCell(0).Stack!;
-        var found = foundStack.ContainedBag!;
+        var found = updated.Store.GetById(foundStack.ContainedBagId!.Value)!;
         Assert.Equal("test", found.FacilityState!.RecipeId);
         Assert.Equal(42, foundStack.GetInt("Progress"));
     }
@@ -122,7 +125,7 @@ public class CraftingIntegrationTests
 
         // Check: workbench output should now have Stone Axe
         var workbenchCell = session.Current.RootBag.Grid.GetCell(0);
-        var workbenchBag = workbenchCell.Stack!.ContainedBag!;
+        var workbenchBag = session.Current.Store.GetById(workbenchCell.Stack!.ContainedBagId!.Value)!;
         var outputCell = workbenchBag.Grid.GetCell(2); // output slot
 
         Assert.False(outputCell.IsEmpty, "Output slot should contain Stone Axe");

@@ -4,13 +4,13 @@ namespace Pockets.Core.Models;
 
 /// <summary>
 /// An ItemType paired with a count. Supports merging same-type stacks and splitting.
-/// Bag-type items carry their contents via ContainedBag, so the bag travels with the item.
+/// Bag-type items reference their contents via ContainedBagId (a Guid into the BagStore).
 /// Unique (non-stackable) items may carry per-instance Properties.
 /// </summary>
 public record ItemStack(
     ItemType ItemType,
     int Count,
-    Bag? ContainedBag = null,
+    Guid? ContainedBagId = null,
     ImmutableDictionary<string, PropertyValue>? Properties = null)
 {
     /// <summary>

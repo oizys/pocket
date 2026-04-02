@@ -90,8 +90,12 @@ public record GameSession(
     /// <summary>
     /// Moves the cursor to a specific position. Not undoable, not logged.
     /// </summary>
-    public GameSession MoveCursor(GameState state, Position position) =>
-        this with { Current = state with { Cursor = new Cursor(position) } };
+    public GameSession MoveCursor(GameState state, Position position)
+    {
+        var bLoc = state.Locations.Get(LocationId.B);
+        var newLoc = bLoc with { Cursor = new Cursor(position) };
+        return this with { Current = state with { Locations = state.Locations.Set(LocationId.B, newLoc) } };
+    }
 
     /// <summary>
     /// Primary action (left-click / key 1). Contextual grab/drop/swap/merge/interact. Undoable.
@@ -266,7 +270,7 @@ public record GameSession(
                 var (newGrid, _) = rootGrid.AcquireItems(new[] { stack });
                 rootGrid = newGrid;
             }
-            newState = newState with { RootBag = newState.RootBag with { Grid = rootGrid } };
+            newState = newState with { Store = newState.Store.Set(newState.RootBagId, newState.RootBag with { Grid = rootGrid }) };
         }
 
         var newStack = PushWithLimit(UndoStack, Current);
@@ -351,8 +355,7 @@ public record GameSession(
         if (Recipes.IsDefaultOrEmpty)
             return (state, logs);
 
-        var registry = state.Registry;
-        var facilities = registry.Facilities.ToList();
+        var facilities = state.Store.Facilities.ToList();
         if (facilities.Count == 0)
             return (state, logs);
 
@@ -363,17 +366,17 @@ public record GameSession(
                 continue;
 
             // Read current progress from owning ItemStack's properties
-            var ownerInfo = registry.GetOwnerOf(facility.Id);
+            var ownerInfo = state.Store.GetOwnerOf(facility.Id);
             int currentProgress = 0;
             if (ownerInfo is not null)
             {
-                var parentBag = registry.GetById(ownerInfo.ParentBagId);
+                var parentBag = state.Store.GetById(ownerInfo.ParentBagId);
                 var ownerStack = parentBag?.Grid.GetCell(ownerInfo.CellIndex).Stack;
                 currentProgress = ownerStack?.GetInt("Progress") ?? 0;
             }
 
             var wasCrafting = facility.FacilityState?.RecipeId;
-            var (ticked, newProgress) = FacilityLogic.Tick(facility, currentProgress, facilityRecipes);
+            var (ticked, newProgress, newBags) = FacilityLogic.Tick(facility, currentProgress, facilityRecipes);
             if (ticked == facility && newProgress == currentProgress)
                 continue;
 
@@ -384,6 +387,10 @@ public record GameSession(
                 var recipeName = recipe?.Name ?? wasCrafting;
                 logs = logs.Add($"✦ {facility.EnvironmentType} crafted: {recipeName}");
             }
+
+            // Register any newly created bags from the output factory
+            if (newBags.Count > 0)
+                state = state with { Store = state.Store.AddRange(newBags) };
 
             // Update both the facility bag and the owning stack's progress property
             var progressValue = newProgress;

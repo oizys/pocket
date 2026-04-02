@@ -21,8 +21,10 @@ public class GridViewRenderTests : IDisposable
 
     private static GameState MakeState(Grid grid, Position cursor)
     {
-        return new GameState(
-            new Bag(grid), new Cursor(cursor), AllTypes, GameState.CreateHandBag());
+        var rootBag = new Bag(grid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag);
+        return new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id, new Cursor(cursor)), AllTypes);
     }
 
     private GridView SetupGridView(GameState state)

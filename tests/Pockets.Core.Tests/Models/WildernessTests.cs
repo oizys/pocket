@@ -31,7 +31,7 @@ public class WildernessTests
         var wildernessBag = WildernessGenerator.Generate(template, new Random(42));
 
         var rootGrid = Grid.Create(4, 3);
-        var bagCell = new Cell(new ItemStack(ForestBagType, 1, ContainedBag: wildernessBag));
+        var bagCell = new Cell(new ItemStack(ForestBagType, 1, ContainedBagId: wildernessBag.Id));
         rootGrid = rootGrid.SetCell(0, bagCell);
 
         if (rootContents != null)
@@ -42,7 +42,9 @@ public class WildernessTests
         }
 
         var rootBag = new Bag(rootGrid);
-        return new GameState(rootBag, new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(wildernessBag);
+        return new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
     }
 
     // ==================== WildernessGenerator ====================
@@ -207,7 +209,7 @@ public class WildernessTests
         // Cell 0 in root should still be the wilderness bag
         var rootCell0 = result.State.RootBag.Grid.GetCell(0);
         Assert.Equal(ForestBagType, rootCell0.Stack!.ItemType);
-        Assert.NotNull(rootCell0.Stack.ContainedBag);
+        Assert.NotNull(rootCell0.Stack.ContainedBagId);
     }
 
     [Fact]

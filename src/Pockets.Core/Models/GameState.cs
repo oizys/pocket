@@ -1,96 +1,98 @@
 namespace Pockets.Core.Models;
 
 /// <summary>
-/// Top-level game state composing the root bag, cursor, hand bag, breadcrumbs, and known item types.
-/// Hand is a real bag that holds grabbed items (true cut). Breadcrumbs enable nested bag navigation.
-/// All operations return new instances (immutable). Tools operate on the active bag (leaf of breadcrumb trail).
+/// Top-level game state: a flat bag store, a set of named locations (cursors into the store),
+/// and the known item types. All operations return new instances (immutable).
+/// Tools operate on the B (bag/inventory) location by default.
 /// </summary>
 public record GameState(
-    Bag RootBag,
-    Cursor Cursor,
-    ImmutableArray<ItemType> ItemTypes,
-    Bag HandBag,
-    ImmutableStack<BreadcrumbEntry>? Breadcrumbs = null)
+    BagStore Store,
+    LocationMap Locations,
+    ImmutableArray<ItemType> ItemTypes)
 {
-    /// <summary>
-    /// Registry of all bags reachable from root and hand.
-    /// Rebuilt on every access. Records copy fields via `with`, so caching
-    /// would require invalidation; BFS is fast enough for current bag counts.
-    /// </summary>
-    public BagRegistry Registry => BagRegistry.Build(RootBag, HandBag);
+    // ==================== Location accessors ====================
 
     /// <summary>
-    /// The breadcrumb stack, never null.
+    /// The B (inventory) location. Always present.
     /// </summary>
-    public ImmutableStack<BreadcrumbEntry> BreadcrumbStack =>
-        Breadcrumbs ?? ImmutableStack<BreadcrumbEntry>.Empty;
+    private Location BLoc => Locations.Get(LocationId.B);
 
     /// <summary>
-    /// True when inside a nested bag (breadcrumb stack is non-empty).
+    /// The H (hand) location. Always present.
     /// </summary>
-    public bool IsNested => Breadcrumbs is not null && !Breadcrumbs.IsEmpty;
+    private Location HLoc => Locations.Get(LocationId.H);
+
+    // ==================== Backward-compatible computed properties ====================
+
+    /// <summary>
+    /// The root bag Id for the inventory location.
+    /// </summary>
+    public Guid RootBagId => BLoc.BagId;
+
+    /// <summary>
+    /// The hand bag Id.
+    /// </summary>
+    public Guid HandBagId => HLoc.BagId;
+
+    /// <summary>
+    /// The current cursor in the inventory location.
+    /// </summary>
+    public Cursor Cursor => BLoc.Cursor;
+
+    /// <summary>
+    /// The breadcrumb stack for the inventory location.
+    /// </summary>
+    public ImmutableStack<BreadcrumbEntry> BreadcrumbStack => BLoc.Breadcrumbs;
+
+    /// <summary>
+    /// True when inside a nested bag in the inventory location.
+    /// </summary>
+    public bool IsNested => BLoc.IsNested;
+
+    /// <summary>
+    /// The root bag, resolved from the store.
+    /// </summary>
+    public Bag RootBag => Store.GetById(RootBagId)!;
+
+    /// <summary>
+    /// The hand bag, resolved from the store.
+    /// </summary>
+    public Bag HandBag => Store.GetById(HandBagId)!;
+
+    // ==================== Active bag resolution ====================
+
+    /// <summary>
+    /// The Id of the bag currently being viewed — follows breadcrumbs from root to leaf.
+    /// </summary>
+    public Guid ActiveBagId
+    {
+        get
+        {
+            var bagId = RootBagId;
+            foreach (var entry in BreadcrumbStack.Reverse())
+            {
+                var bag = Store.GetById(bagId)!;
+                var cell = bag.Grid.GetCell(entry.CellIndex);
+                if (cell.Stack?.ContainedBagId is not { } childId)
+                    break;
+                bagId = childId;
+            }
+            return bagId;
+        }
+    }
 
     /// <summary>
     /// The bag currently being viewed — follows breadcrumbs from root to leaf.
     /// </summary>
-    public Bag ActiveBag
-    {
-        get
-        {
-            var bag = RootBag;
-            foreach (var entry in BreadcrumbStack.Reverse())
-            {
-                var cell = bag.Grid.GetCell(entry.CellIndex);
-                if (cell.Stack?.ContainedBag is null)
-                    break;
-                bag = cell.Stack.ContainedBag;
-            }
-            return bag;
-        }
-    }
+    public Bag ActiveBag => Store.GetById(ActiveBagId)!;
 
     /// <summary>
-    /// Returns a new GameState with the active bag replaced, propagating changes
-    /// back up the breadcrumb trail to the root.
+    /// Returns a new GameState with the active bag replaced in the store.
     /// </summary>
-    private GameState WithActiveBag(Bag newActiveBag)
-    {
-        if (!IsNested)
-            return this with { RootBag = newActiveBag };
+    private GameState WithActiveBag(Bag newActiveBag) =>
+        this with { Store = Store.Set(ActiveBagId, newActiveBag) };
 
-        // Rebuild from leaf to root using breadcrumb entries
-        var entries = BreadcrumbStack.Reverse().ToList();
-        var currentBag = newActiveBag;
-
-        for (int i = entries.Count - 1; i >= 0; i--)
-        {
-            var parentBag = i == 0
-                ? RootBag
-                : GetBagAtDepth(i);
-            var cell = parentBag.Grid.GetCell(entries[i].CellIndex);
-            var updatedCell = cell with { Stack = cell.Stack! with { ContainedBag = currentBag } };
-            var updatedGrid = parentBag.Grid.SetCell(entries[i].CellIndex, updatedCell);
-            currentBag = parentBag with { Grid = updatedGrid };
-        }
-
-        return this with { RootBag = currentBag };
-    }
-
-    /// <summary>
-    /// Gets the bag at the specified depth in the breadcrumb trail (0 = root).
-    /// </summary>
-    private Bag GetBagAtDepth(int depth)
-    {
-        var bag = RootBag;
-        var entries = BreadcrumbStack.Reverse().ToList();
-        for (int i = 0; i < depth && i < entries.Count; i++)
-        {
-            var cell = bag.Grid.GetCell(entries[i].CellIndex);
-            if (cell.Stack?.ContainedBag is null) break;
-            bag = cell.Stack.ContainedBag;
-        }
-        return bag;
-    }
+    // ==================== Hand helpers ====================
 
     /// <summary>
     /// True when the hand bag contains at least one item.
@@ -111,27 +113,67 @@ public record GameState(
     public static Bag CreateHandBag(int handSize = 1) =>
         new Bag(Grid.Create(handSize, 1));
 
+    // ==================== Location mutation helpers ====================
+
+    /// <summary>
+    /// Returns a new GameState with the B location's cursor updated.
+    /// </summary>
+    private GameState WithCursor(Cursor cursor) =>
+        this with { Locations = Locations.Set(LocationId.B, BLoc with { Cursor = cursor }) };
+
+    /// <summary>
+    /// Returns a new GameState with the B location's breadcrumbs updated.
+    /// </summary>
+    private GameState WithBreadcrumbs(ImmutableStack<BreadcrumbEntry> breadcrumbs) =>
+        this with { Locations = Locations.Set(LocationId.B, BLoc with { Breadcrumbs = breadcrumbs }) };
+
+    /// <summary>
+    /// Returns a new GameState with the B location's cursor and breadcrumbs updated.
+    /// </summary>
+    private GameState WithBLocation(Cursor cursor, ImmutableStack<BreadcrumbEntry> breadcrumbs) =>
+        this with { Locations = Locations.Set(LocationId.B, BLoc with { Cursor = cursor, Breadcrumbs = breadcrumbs }) };
+
+    /// <summary>
+    /// Returns a new GameState with the hand bag replaced in the store.
+    /// </summary>
+    private GameState WithHandBag(Bag newHand) =>
+        this with { Store = Store.Set(HandBagId, newHand) };
+
+    // ==================== Factory ====================
+
     /// <summary>
     /// Creates the initial Stage 1 game state: 8×4 bag, cursor at origin,
     /// with the given item stacks acquired into the grid.
+    /// Any extra bags (referenced by ContainedBagId in the stacks) must be passed via extraBags.
     /// </summary>
     public static GameState CreateStage1(
         ImmutableArray<ItemType> itemTypes,
         IEnumerable<ItemStack> initialStacks,
-        GameConfig? config = null)
+        GameConfig? config = null,
+        IEnumerable<Bag>? extraBags = null)
     {
         config ??= new GameConfig();
         var bag = new Bag(Grid.Create(8, 4));
         var (filledBag, _) = bag.AcquireItems(initialStacks);
-        return new GameState(filledBag, new Cursor(new Position(0, 0)), itemTypes, CreateHandBag(config.HandSize));
+        var handBag = CreateHandBag(config.HandSize);
+
+        var store = BagStore.Empty.Add(filledBag).Add(handBag);
+        if (extraBags is not null)
+            store = store.AddRange(extraBags);
+
+        var locations = LocationMap.Create(handBag.Id, filledBag.Id);
+
+        return new GameState(store, locations, itemTypes);
     }
+
+    // ==================== Navigation ====================
 
     /// <summary>
     /// Returns a new GameState with the cursor moved one step in the given direction,
     /// wrapping within the active bag's grid.
     /// </summary>
     public GameState MoveCursor(Direction direction) =>
-        this with { Cursor = Cursor.Move(direction, ActiveBag.Grid.Rows, ActiveBag.Grid.Columns) };
+        WithCursor(Cursor.Move(direction, ActiveBag.Grid.Rows, ActiveBag.Grid.Columns));
 
     /// <summary>
     /// Returns the cell at the current cursor position in the active bag.
@@ -169,11 +211,7 @@ public record GameState(
         var entry = new BreadcrumbEntry(cellIndex, Cursor);
         var newBreadcrumbs = BreadcrumbStack.Push(entry);
 
-        return ToolResult.Ok(this with
-        {
-            Cursor = new Cursor(new Position(0, 0)),
-            Breadcrumbs = newBreadcrumbs
-        });
+        return ToolResult.Ok(WithBLocation(new Cursor(new Position(0, 0)), newBreadcrumbs));
     }
 
     /// <summary>
@@ -189,11 +227,7 @@ public record GameState(
         var top = BreadcrumbStack.Peek();
         var poppedStack = BreadcrumbStack.Pop();
 
-        return ToolResult.Ok(this with
-        {
-            Cursor = top.SavedCursor,
-            Breadcrumbs = poppedStack.IsEmpty ? null : poppedStack
-        });
+        return ToolResult.Ok(WithBLocation(top.SavedCursor, poppedStack));
     }
 
     /// <summary>
@@ -204,88 +238,62 @@ public record GameState(
         get
         {
             var path = new List<string> { RootBag.EnvironmentType };
-            var bag = RootBag;
+            var bagId = RootBagId;
             foreach (var entry in BreadcrumbStack.Reverse())
             {
+                var bag = Store.GetById(bagId)!;
                 var cell = bag.Grid.GetCell(entry.CellIndex);
-                if (cell.Stack?.ContainedBag is null) break;
+                if (cell.Stack?.ContainedBagId is not { } childId) break;
                 var name = cell.Stack.ItemType.Name;
                 path.Add(name);
-                bag = cell.Stack.ContainedBag;
+                bagId = childId;
             }
             return path;
         }
     }
 
+    // ==================== Bag replacement ====================
+
     /// <summary>
-    /// Replaces a bag anywhere in the tree (root or nested) by its Id.
-    /// Uses DFS to find and replace, rebuilding parent bags on the way back up.
-    /// Returns unchanged state if the bag Id is not found.
+    /// Replaces a bag in the store by its Id. Optionally transforms the owning ItemStack
+    /// (e.g. to update progress properties) by scanning for the parent cell.
     /// </summary>
     public GameState ReplaceBagById(Guid bagId, Bag replacement, Func<ItemStack, ItemStack>? ownerTransform = null)
     {
-        if (RootBag.Id == bagId)
-            return this with { RootBag = replacement };
+        var newStore = Store.Set(bagId, replacement);
 
-        var updatedRoot = ReplaceBagInTree(RootBag, bagId, replacement, ownerTransform);
-        if (updatedRoot is null)
-            return this; // not found
-
-        return this with { RootBag = updatedRoot };
-    }
-
-    /// <summary>
-    /// Recursively searches for and replaces a bag by Id within a bag tree.
-    /// Optionally transforms the owning ItemStack (e.g. to update progress properties).
-    /// Returns the updated parent bag, or null if not found.
-    /// </summary>
-    private static Bag? ReplaceBagInTree(Bag parent, Guid targetId, Bag replacement, Func<ItemStack, ItemStack>? ownerTransform)
-    {
-        for (int i = 0; i < parent.Grid.Cells.Length; i++)
+        if (ownerTransform is not null)
         {
-            var cell = parent.Grid.GetCell(i);
-            if (cell.Stack?.ContainedBag is not { } inner)
-                continue;
-
-            if (inner.Id == targetId)
+            var ownerInfo = Store.GetOwnerOf(bagId);
+            if (ownerInfo is not null)
             {
-                var updatedStack = cell.Stack! with { ContainedBag = replacement };
-                if (ownerTransform is not null)
-                    updatedStack = ownerTransform(updatedStack);
-                var updatedCell = cell with { Stack = updatedStack };
-                return parent with { Grid = parent.Grid.SetCell(i, updatedCell) };
-            }
-
-            var updatedInner = ReplaceBagInTree(inner, targetId, replacement, ownerTransform);
-            if (updatedInner is not null)
-            {
-                var updatedCell = cell with { Stack = cell.Stack! with { ContainedBag = updatedInner } };
-                return parent with { Grid = parent.Grid.SetCell(i, updatedCell) };
+                var parentBag = newStore.GetById(ownerInfo.ParentBagId)!;
+                var cell = parentBag.Grid.GetCell(ownerInfo.CellIndex);
+                if (cell.Stack is not null)
+                {
+                    var updatedStack = ownerTransform(cell.Stack);
+                    var updatedCell = cell with { Stack = updatedStack };
+                    var updatedParent = parentBag with { Grid = parentBag.Grid.SetCell(ownerInfo.CellIndex, updatedCell) };
+                    newStore = newStore.Set(ownerInfo.ParentBagId, updatedParent);
+                }
             }
         }
-        return null;
+
+        return this with { Store = newStore };
     }
 
     // ==================== Tools (operate on ActiveBag) ====================
 
     /// <summary>
-    /// Primary action (left-click / key 1). Context-sensitive:
-    /// - Cell has bag → enter bag
-    /// - Nested + empty hand + occupied cell → harvest to parent
-    /// - Empty hand + occupied cell → grab full stack
-    /// - Full hand + empty cell → drop all
-    /// - Full hand + same type → merge (overflow stays in hand)
-    /// - Full hand + different type → swap
+    /// Primary action (left-click / key 1). Context-sensitive.
     /// </summary>
     public ToolResult ToolPrimary()
     {
         var cell = CurrentCell;
 
-        // Output slots always grab — never enter/interact with the crafted item
         if (cell.Frame is OutputSlotFrame && !cell.IsEmpty && !HasItemsInHand)
             return ToolGrab();
 
-        // Interact first: enter bags (always), harvest when nested
         if (cell.HasBag)
             return EnterBag();
 
@@ -293,23 +301,18 @@ public record GameState(
         {
             if (cell.IsEmpty)
                 return ToolResult.Ok(this);
-            // Nested non-bag item → harvest; root → grab
             return IsNested ? ToolHarvest() : ToolGrab();
         }
 
-        // Hand is full
         if (cell.IsEmpty)
             return ToolDrop();
         if (cell.Stack!.ItemType == HandItems[0].ItemType)
-            return ToolDrop(); // merge
+            return ToolDrop();
         return ToolSwap();
     }
 
     /// <summary>
-    /// Secondary action (right-click / key 2). Half/one variant:
-    /// - Empty hand + occupied cell → grab half
-    /// - Full hand + empty cell → place one
-    /// - Full hand + same type → place one
+    /// Secondary action (right-click / key 2). Half/one variant.
     /// </summary>
     public ToolResult ToolSecondary()
     {
@@ -322,7 +325,6 @@ public record GameState(
             return ToolQuickSplit();
         }
 
-        // Hand is full: place one
         if (cell.IsEmpty || cell.Stack!.ItemType == HandItems[0].ItemType)
             return ToolPlaceOne();
 
@@ -340,7 +342,6 @@ public record GameState(
         var cellStack = CurrentCell.Stack!;
         var handStack = HandItems[0];
 
-        // Put hand item in cell, cell item in hand (preserve cell frame)
         var activeBag = ActiveBag;
         var grid = activeBag.Grid.SetCell(Cursor.Position, CurrentCell with { Stack = handStack });
 
@@ -349,10 +350,10 @@ public record GameState(
         if (unplaced.Count > 0)
             return ToolResult.Fail(this, "Cannot swap: hand cannot hold this item");
 
-        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
-        {
-            HandBag = newHand
-        });
+        var newStore = Store
+            .Set(ActiveBagId, activeBag with { Grid = grid })
+            .Set(HandBagId, newHand);
+        return ToolResult.Ok(this with { Store = newStore });
     }
 
     /// <summary>
@@ -385,7 +386,6 @@ public record GameState(
         var activeBag = ActiveBag;
         var grid = activeBag.Grid.SetCell(Cursor.Position, cell with { Stack = newCellStack });
 
-        // Reduce hand by 1
         Bag updatedHand;
         if (handStack.Count <= 1)
         {
@@ -398,15 +398,14 @@ public record GameState(
             (updatedHand, _) = updatedHand.AcquireItems(new[] { reducedStack });
         }
 
-        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
-        {
-            HandBag = updatedHand
-        });
+        var newStore = Store
+            .Set(ActiveBagId, activeBag with { Grid = grid })
+            .Set(HandBagId, updatedHand);
+        return ToolResult.Ok(this with { Store = newStore });
     }
 
     /// <summary>
     /// Grab: remove item from cursor cell and acquire it into the hand bag.
-    /// If cursor cell is a planter with a fully grown plant, harvest produce instead.
     /// </summary>
     public ToolResult ToolGrab()
     {
@@ -424,16 +423,15 @@ public record GameState(
 
         var activeBag = ActiveBag;
         var grid = activeBag.Grid.SetCell(Cursor.Position, CurrentCell with { Stack = null });
-        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
-        {
-            HandBag = updatedHand
-        });
+
+        var newStore = Store
+            .Set(ActiveBagId, activeBag with { Grid = grid })
+            .Set(HandBagId, updatedHand);
+        return ToolResult.Ok(this with { Store = newStore });
     }
 
     /// <summary>
-    /// Harvests produce from a fully grown plant. Looks up the produce item type by the plant's
-    /// "Produce" property, creates a stack with "Yield" count, acquires into hand.
-    /// Plant stays in cell with Progress reset to 0.
+    /// Harvests produce from a fully grown plant.
     /// </summary>
     private ToolResult ToolHarvestPlant()
     {
@@ -453,15 +451,14 @@ public record GameState(
         if (unplaced.Count > 0)
             return ToolResult.Fail(this, "Hand is full");
 
-        // Reset plant progress to 0
         var resetPlant = plant.WithProperty("Progress", new IntValue(0));
         var activeBag = ActiveBag;
         var grid = activeBag.Grid.SetCell(Cursor.Position, CurrentCell with { Stack = resetPlant });
 
-        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
-        {
-            HandBag = updatedHand
-        });
+        var newStore = Store
+            .Set(ActiveBagId, activeBag with { Grid = grid })
+            .Set(HandBagId, updatedHand);
+        return ToolResult.Ok(this with { Store = newStore });
     }
 
     /// <summary>
@@ -478,7 +475,6 @@ public record GameState(
         var cursorCell = grid.GetCell(Cursor.Position);
         var firstItem = handItems[0];
 
-        // Check if the cell accepts this item type (respects category and slot filters)
         if (!cursorCell.Accepts(firstItem.ItemType))
             return ToolResult.Fail(this, "Cannot drop: cell does not accept this item");
 
@@ -516,10 +512,10 @@ public record GameState(
         }
 
         var emptyHand = CreateHandBag(HandBag.Grid.Columns);
-        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
-        {
-            HandBag = emptyHand
-        });
+        var newStore = Store
+            .Set(ActiveBagId, activeBag with { Grid = grid })
+            .Set(HandBagId, emptyHand);
+        return ToolResult.Ok(this with { Store = newStore });
     }
 
     /// <summary>
@@ -544,10 +540,10 @@ public record GameState(
         var activeBag = ActiveBag;
         var grid = activeBag.Grid.SetCell(Cursor.Position, cell with { Stack = left });
 
-        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
-        {
-            HandBag = updatedHand
-        });
+        var newStore = Store
+            .Set(ActiveBagId, activeBag with { Grid = grid })
+            .Set(HandBagId, updatedHand);
+        return ToolResult.Ok(this with { Store = newStore });
     }
 
     /// <summary>
@@ -572,10 +568,10 @@ public record GameState(
         var activeBag = ActiveBag;
         var grid = activeBag.Grid.SetCell(Cursor.Position, cell with { Stack = left });
 
-        return ToolResult.Ok(WithActiveBag(activeBag with { Grid = grid }) with
-        {
-            HandBag = updatedHand
-        });
+        var newStore = Store
+            .Set(ActiveBagId, activeBag with { Grid = grid })
+            .Set(HandBagId, updatedHand);
+        return ToolResult.Ok(this with { Store = newStore });
     }
 
     /// <summary>
@@ -597,9 +593,8 @@ public record GameState(
             .GroupBy(s => s.ItemType)
             .SelectMany(g =>
             {
-                // Preserve items with ContainedBag as-is (unique bag items)
-                var bagItems = g.Where(s => s.ContainedBag is not null).ToList();
-                var total = g.Where(s => s.ContainedBag is null).Sum(s => s.Count);
+                var bagItems = g.Where(s => s.ContainedBagId is not null).ToList();
+                var total = g.Where(s => s.ContainedBagId is null).Sum(s => s.Count);
                 var max = g.Key.EffectiveMaxStackSize;
                 var stacks = new List<ItemStack>(bagItems);
                 while (total > 0)
@@ -621,8 +616,7 @@ public record GameState(
 
     /// <summary>
     /// Harvest: remove item from cursor cell in the active (inner) bag and acquire it
-    /// into the parent bag. Only works when inside a nested bag. Skips the cell that
-    /// holds the inner bag so it won't be overwritten.
+    /// into the parent bag. Only works when inside a nested bag.
     /// </summary>
     public ToolResult ToolHarvest()
     {
@@ -634,19 +628,34 @@ public record GameState(
             return ToolResult.Ok(this);
 
         var item = cell.Stack!;
+        var activeBagId = ActiveBagId;
 
-        // 1. Clear cursor cell in active bag and propagate to root (preserve frame)
+        // 1. Clear cursor cell in active bag
         var activeBag = ActiveBag;
         var clearedGrid = activeBag.Grid.SetCell(Cursor.Position, cell with { Stack = null });
-        var state = WithActiveBag(activeBag with { Grid = clearedGrid });
+        var updatedStore = Store.Set(activeBagId, activeBag with { Grid = clearedGrid });
 
-        // 2. Find parent bag in the updated tree
-        var entries = state.BreadcrumbStack.Reverse().ToList();
-        var parentDepth = entries.Count - 1;
-        var parentBag = parentDepth == 0 ? state.RootBag : state.GetBagAtDepth(parentDepth);
-        var innerBagCellIndex = entries[^1].CellIndex;
+        // 2. Find parent bag
+        var parentBagId = RootBagId;
+        var innerBagCellIndex = 0;
+        var entries = BreadcrumbStack.Reverse().ToList();
+
+        var currentId = RootBagId;
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var currentBag = updatedStore.GetById(currentId)!;
+            var entryCell = currentBag.Grid.GetCell(entries[i].CellIndex);
+            if (i == entries.Count - 1)
+            {
+                parentBagId = currentId;
+                innerBagCellIndex = entries[i].CellIndex;
+                break;
+            }
+            currentId = entryCell.Stack!.ContainedBagId!.Value;
+        }
 
         // 3. Acquire harvested item into parent, skipping the cell that holds the inner bag
+        var parentBag = updatedStore.GetById(parentBagId)!;
         var (updatedParentGrid, unplaced) = parentBag.Grid.AcquireItems(
             new[] { new ItemStack(item.ItemType, item.Count) },
             ImmutableHashSet.Create(innerBagCellIndex));
@@ -654,28 +663,9 @@ public record GameState(
         if (unplaced.Count > 0)
             return ToolResult.Fail(this, "Parent bag is full");
 
-        // 4. Update parent bag in tree
-        if (parentDepth == 0)
-        {
-            return ToolResult.Ok(state with { RootBag = parentBag with { Grid = updatedParentGrid } });
-        }
-        else
-        {
-            // Deep nesting: rebuild from parent level to root
-            var updatedParent = parentBag with { Grid = updatedParentGrid };
-            var currentBag = updatedParent;
-            for (int i = parentDepth - 1; i >= 0; i--)
-            {
-                var ancestor = i == 0
-                    ? state.RootBag
-                    : state.GetBagAtDepth(i);
-                var ancestorCell = ancestor.Grid.GetCell(entries[i].CellIndex);
-                var updatedCell = ancestorCell with { Stack = ancestorCell.Stack! with { ContainedBag = currentBag } };
-                var updatedGrid = ancestor.Grid.SetCell(entries[i].CellIndex, updatedCell);
-                currentBag = ancestor with { Grid = updatedGrid };
-            }
-            return ToolResult.Ok(state with { RootBag = currentBag });
-        }
+        updatedStore = updatedStore.Set(parentBagId, parentBag with { Grid = updatedParentGrid });
+
+        return ToolResult.Ok(this with { Store = updatedStore });
     }
 
     /// <summary>

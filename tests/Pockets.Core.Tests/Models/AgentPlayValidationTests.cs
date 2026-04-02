@@ -32,6 +32,7 @@ public class AgentPlayValidationTests
         var stacks = new List<ItemStack>();
 
         // Place ALL facilities in root grid (replicate BuildFacilityBag logic)
+        var extraBags = new List<Bag>();
         foreach (var (facilityId, facility) in registry.Facilities)
         {
             if (!registry.Items.TryGetValue(facilityId, out var facilityItemType))
@@ -41,7 +42,8 @@ public class AgentPlayValidationTests
             Recipe? firstRecipe = firstRecipeId is not null && registry.Recipes.TryGetValue(firstRecipeId, out var r) ? r : null;
 
             var facilityBag = BuildFacilityBag(facility, firstRecipe);
-            stacks.Add(new ItemStack(facilityItemType, 1, ContainedBag: facilityBag));
+            extraBags.Add(facilityBag);
+            stacks.Add(new ItemStack(facilityItemType, 1, ContainedBagId: facilityBag.Id));
         }
 
         // Compute total materials needed across ALL recipes and provide surplus
@@ -72,7 +74,7 @@ public class AgentPlayValidationTests
             }
         }
 
-        var state = GameState.CreateStage1(itemTypes, stacks);
+        var state = GameState.CreateStage1(itemTypes, stacks, extraBags: extraBags);
         var session = GameSession.New(state, allRecipes, facilityRecipeMap, TickMode.Rogue);
 
         return new TestContext(session, registry, facilityRecipeMap);
@@ -192,7 +194,8 @@ public class AgentPlayValidationTests
         for (int i = 0; i < grid.Cells.Length; i++)
         {
             var cell = grid.GetCell(i);
-            if (!cell.IsEmpty && cell.Stack!.ContainedBag is { } bag && bag.EnvironmentType == envType)
+            if (!cell.IsEmpty && cell.Stack!.ContainedBagId is { } bagId
+                && state.Store.GetById(bagId) is { } bag && bag.EnvironmentType == envType)
                 return Position.FromIndex(i, grid.Columns);
         }
         return null;
@@ -315,18 +318,23 @@ public class AgentPlayValidationTests
     /// </summary>
     private static GameSession TickUntilComplete(GameSession session, string envType, int maxTicks = 50)
     {
+        var hasStarted = false;
         for (int i = 0; i < maxTicks; i++)
         {
-            var facility = session.Current.Registry.Facilities
+            var facility = session.Current.Store.Facilities
                 .FirstOrDefault(f => f.EnvironmentType == envType);
-            if (facility is not null && facility.FacilityState?.RecipeId is null)
+
+            if (facility?.FacilityState?.RecipeId is not null)
+                hasStarted = true;
+
+            if (hasStarted && facility is not null && facility.FacilityState?.RecipeId is null)
                 return session;
 
             session = session.ExecuteSort(); // neutral action that generates a tick
         }
 
         // Final check
-        var finalFacility = session.Current.Registry.Facilities
+        var finalFacility = session.Current.Store.Facilities
             .FirstOrDefault(f => f.EnvironmentType == envType);
         Assert.Null(finalFacility?.FacilityState?.RecipeId);
         return session;

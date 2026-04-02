@@ -19,15 +19,20 @@ public class HandCellViewRenderTests : IDisposable
     private static GameState EmptyHandState()
     {
         var grid = Grid.Create(2, 1);
-        return new GameState(new Bag(grid), new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        var rootBag = new Bag(grid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag);
+        return new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
     }
 
     private static GameState HoldingState()
     {
         var grid = Grid.Create(2, 1);
+        var rootBag = new Bag(grid);
         var handBag = new Bag(Grid.Create(1, 1));
         var (filledHand, _) = handBag.AcquireItems(new[] { new ItemStack(Rock, 5) });
-        return new GameState(new Bag(grid), new Cursor(new Position(0, 0)), AllTypes, filledHand);
+        var store = BagStore.Empty.Add(rootBag).Add(filledHand);
+        return new GameState(store, LocationMap.Create(filledHand.Id, rootBag.Id), AllTypes);
     }
 
     private HandCellView SetupHandView(GameState state)

@@ -91,9 +91,11 @@ public class GeneratorBuiltinsTests
 
         var sv = Assert.IsType<StacksValue>(result);
         Assert.Single(sv.Stacks);
-        Assert.NotNull(sv.Stacks[0].ContainedBag);
-        Assert.Equal(3, sv.Stacks[0].ContainedBag!.Grid.Columns);
-        Assert.Equal("Pouch", sv.Stacks[0].ContainedBag!.EnvironmentType);
+        Assert.NotNull(sv.Stacks[0].ContainedBagId);
+        Assert.NotNull(sv.NewBags);
+        var attachedBag = sv.NewBags!.First(b => b.Id == sv.Stacks[0].ContainedBagId);
+        Assert.Equal(3, attachedBag.Grid.Columns);
+        Assert.Equal("Pouch", attachedBag.EnvironmentType);
     }
 
     // ==================== shuffle generator ====================

@@ -19,4 +19,6 @@
 | 15 | Farming (Seed → Plant → Produce Lifecycle) | Mid | Proposed | [farming.md](farming.md) |
 | 16 | Item Properties (Per-Instance Data on Unique Items) | Mid | Proposed | [item-properties.md](item-properties.md) |
 | -- | Inventory Controls Research (Cross-Game) | -- | Reference | [inventory-controls-research.md](inventory-controls-research.md) |
+| 17 | DSL Implementation Plan (Inventory Operations Language) | Early | Planned | [dsl-implementation-plan.md](dsl-implementation-plan.md) |
+| -- | DSL Design Context (Language Spec) | -- | Reference | [dsl-design-context.md](dsl-design-context.md) |
 | -- | Godot Quirks (WSL2 / Dev Issues) | -- | Reference | [godot-quirks.md](godot-quirks.md) |

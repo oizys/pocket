@@ -25,7 +25,9 @@ public class FramePreservationTests
         var rootGrid = Grid.Create(4, 2);
         rootGrid = rootGrid.SetCell(0, new Cell(stack, Frame: frame));
         var rootBag = new Bag(rootGrid);
-        return new GameState(rootBag, new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag);
+        return new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
     }
 
     /// <summary>
@@ -41,7 +43,8 @@ public class FramePreservationTests
         var handBag = GameState.CreateHandBag();
         var (filledHand, _) = handBag.AcquireItems(new[] { handStack });
 
-        return new GameState(rootBag, new Cursor(new Position(0, 0)), AllTypes, filledHand);
+        var store = BagStore.Empty.Add(rootBag).Add(filledHand);
+        return new GameState(store, LocationMap.Create(filledHand.Id, rootBag.Id), AllTypes);
     }
 
     // ==================== ToolGrab ====================
@@ -148,8 +151,11 @@ public class FramePreservationTests
 
         // Create root bag with bag-type item at cell 0 (containing innerBag)
         var rootGrid = Grid.Create(4, 2);
-        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(BagType, 1, ContainedBag: innerBag)));
-        var state = new GameState(new Bag(rootGrid), new Cursor(new Position(0, 0)), AllTypes, GameState.CreateHandBag());
+        rootGrid = rootGrid.SetCell(0, new Cell(new ItemStack(BagType, 1, ContainedBagId: innerBag.Id)));
+        var rootBag = new Bag(rootGrid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(innerBag);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
 
         // Enter the inner bag (cursor is at the bag cell)
         var enterResult = state.EnterBag();
@@ -167,7 +173,7 @@ public class FramePreservationTests
         Assert.True(harvestResult.Success);
 
         // The inner bag cell at (0,0) should be empty but still have the InputSlotFrame
-        var innerBagAfter = harvestResult.State.RootBag.Grid.GetCell(0).Stack!.ContainedBag!;
+        var innerBagAfter = harvestResult.State.Store.GetById(innerBag.Id)!;
         var framedCell = innerBagAfter.Grid.GetCell(0);
         Assert.True(framedCell.IsEmpty, "Inner bag cell should be empty after harvest");
         Assert.NotNull(framedCell.Frame);

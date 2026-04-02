@@ -70,8 +70,9 @@ public static class GeneratorBuiltins
     }
 
     /// <summary>
-    /// Creates a new bag from templateArgs[0] (GridTemplate) and attaches it as ContainedBag
+    /// Creates a new bag from templateArgs[0] (GridTemplate) and attaches it as ContainedBagId
     /// on each ItemStack in the input StacksValue. Returns a StacksValue with updated stacks.
+    /// The bag is stored in the StacksValue for later registration in the BagStore.
     /// </summary>
     public static PipelineValue AttachBag(PipelineValue? input, IReadOnlyList<object> templateArgs)
     {
@@ -82,10 +83,10 @@ public static class GeneratorBuiltins
         var bag = new Bag(grid, template.EnvironmentType, template.ColorScheme);
 
         var updatedStacks = stacks
-            .Select(s => s with { ContainedBag = bag })
+            .Select(s => s with { ContainedBagId = bag.Id })
             .ToList();
 
-        return new StacksValue(updatedStacks);
+        return new StacksValue(updatedStacks, new[] { bag });
     }
 
     /// <summary>
@@ -142,10 +143,10 @@ public static class GeneratorBuiltins
         var facilityBag = GameInitializer.BuildFacilityBag(facilityDef, firstRecipe);
 
         var updatedStacks = stacks
-            .Select(s => s with { ContainedBag = facilityBag })
+            .Select(s => s with { ContainedBagId = facilityBag.Id })
             .ToList();
 
-        return new StacksValue(updatedStacks);
+        return new StacksValue(updatedStacks, new[] { facilityBag });
     }
 
     /// <summary>
