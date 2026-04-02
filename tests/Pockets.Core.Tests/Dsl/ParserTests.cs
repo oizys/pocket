@@ -58,18 +58,18 @@ public class ParserTests
     }
 
     [Fact]
-    public void Parse_TryBlock()
+    public void Parse_TryBlock_Postfix()
     {
-        var nodes = DslParser.Parse("try { grab drop }");
+        var nodes = DslParser.Parse("[ grab drop ] try");
         Assert.Single(nodes);
         var tryNode = Assert.IsType<TryNode>(nodes[0]);
         Assert.Equal(2, tryNode.Body.Length);
     }
 
     [Fact]
-    public void Parse_IfOkBlock()
+    public void Parse_IfOkBlock_Postfix()
     {
-        var nodes = DslParser.Parse("if-ok { drop }");
+        var nodes = DslParser.Parse("[ drop ] if-ok");
         Assert.Single(nodes);
         var ifOk = Assert.IsType<IfOkNode>(nodes[0]);
         Assert.Single(ifOk.Body);
@@ -102,11 +102,26 @@ public class ParserTests
     }
 
     [Fact]
-    public void Parse_EachBlock()
+    public void Parse_EachBlock_Postfix()
     {
-        var nodes = DslParser.Parse("each { grab }");
+        var nodes = DslParser.Parse("[ grab ] each");
         Assert.Single(nodes);
         var each = Assert.IsType<EachNode>(nodes[0]);
         Assert.Single(each.Body);
+    }
+
+    [Fact]
+    public void Parse_Combinator_WithoutQuotation_Throws()
+    {
+        Assert.Throws<InvalidOperationException>(() => DslParser.Parse("grab try"));
+    }
+
+    [Fact]
+    public void Parse_NestedQuotations()
+    {
+        var nodes = DslParser.Parse("[ [ right ] 2 times grab ] try");
+        Assert.Single(nodes);
+        var tryNode = Assert.IsType<TryNode>(nodes[0]);
+        Assert.True(tryNode.Body.Length >= 2); // push_int(2), TimesNode, grab
     }
 }

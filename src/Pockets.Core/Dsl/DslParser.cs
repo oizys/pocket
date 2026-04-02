@@ -5,15 +5,14 @@ namespace Pockets.Core.Dsl;
 
 /// <summary>
 /// Parses DSL source text into a list of ProgramNodes.
-/// Tokens are whitespace-separated. Recognizes:
-///   - LocationIds (H, T, B, W, C) → pushed as immediates on the preceding or next op
-///   - Integers → pushed as immediates
-///   - [ ... ] → QuotationNode
-///   - { ... } times → TimesNode (sugar for [ ... ] N times)
-///   - try { ... } → TryNode
-///   - if-ok { ... } → IfOkNode
-///   - each { ... } → EachNode
-///   - :def name ... ; → DefNode (expanded inline)
+/// Tokens are whitespace-separated. All blocks use [ ] quotation syntax.
+/// Combinators are postfix and consume quotations from the preceding nodes.
+///   - LocationIds (H, T, B, W, C) → pushed as values
+///   - Integers → pushed as values
+///   - [ ... ] → QuotationNode (pushed, not executed)
+///   - try, if-ok, each → postfix combinators (consume preceding quotation)
+///   - times → postfix combinator (consumes preceding quotation + int)
+///   - :def name ... ; → macro definition (expanded inline)
 ///   - Everything else → OpNode
 /// </summary>
 public static class DslParser
@@ -46,7 +45,7 @@ public static class DslParser
             }
 
             // Single-char tokens
-            if (source[i] is '[' or ']' or '{' or '}' or ';')
+            if (source[i] is '[' or ']' or ';')
             {
                 tokens.Add(source[i].ToString());
                 i++;
@@ -55,7 +54,7 @@ public static class DslParser
 
             // Word token
             var start = i;
-            while (i < source.Length && !char.IsWhiteSpace(source[i]) && source[i] is not ('[' or ']' or '{' or '}' or ';'))
+            while (i < source.Length && !char.IsWhiteSpace(source[i]) && source[i] is not ('[' or ']' or ';'))
                 i++;
             tokens.Add(source[start..i]);
         }
@@ -74,7 +73,7 @@ public static class DslParser
             var token = tokens[i];
 
             // Block terminators
-            if (token == terminator || token == "]" || token == "}" || token == ";")
+            if (token == terminator || token == "]" || token == ";")
             {
                 end = i + 1;
                 return nodes.ToImmutable();
@@ -89,33 +88,34 @@ public static class DslParser
                 continue;
             }
 
-            // Block-based combinators: try { ... }, if-ok { ... }, each { ... }
-            if (token is "try" or "if-ok" or "each" && i + 1 < tokens.Count && tokens[i + 1] == "{")
+            // Postfix combinators: consume preceding quotation
+            if (token is "try" or "if-ok" or "each")
             {
-                var body = ParseBlock(tokens, i + 2, out var blockEnd, macros, "}");
-                ProgramNode node = token switch
+                if (nodes.Count >= 1 && nodes[^1] is QuotationNode q)
                 {
-                    "try" => new TryNode(body),
-                    "if-ok" => new IfOkNode(body),
-                    "each" => new EachNode(body),
-                    _ => throw new InvalidOperationException()
-                };
-                nodes.Add(node);
-                i = blockEnd;
-
-                // Check for trailing "times" after }
-                if (token != "try" && token != "if-ok" && token != "each"
-                    && i < tokens.Count && tokens[i] == "times")
-                {
-                    i++; // skip "times"
+                    nodes.RemoveAt(nodes.Count - 1);
+                    ProgramNode node = token switch
+                    {
+                        "try" => new TryNode(q.Body),
+                        "if-ok" => new IfOkNode(q.Body),
+                        "each" => new EachNode(q.Body),
+                        _ => throw new InvalidOperationException()
+                    };
+                    nodes.Add(node);
                 }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"'{token}' requires a preceding [ ] quotation");
+                }
+                i++;
                 continue;
             }
 
-            // times combinator: [ body ] N times → push_int(N), TimesNode(body)
+            // times: consumes preceding quotation (and int before it)
+            // [ body ] N times → push_int(N), TimesNode(body)
             if (token == "times")
             {
-                // Look for pattern: QuotationNode, push_int(N) — restructure to push_int(N), TimesNode(body)
                 if (nodes.Count >= 2
                     && nodes[^1] is OpNode intPush && intPush.Name == "__push_int"
                     && nodes[^2] is QuotationNode q)
@@ -127,9 +127,13 @@ public static class DslParser
                 }
                 else if (nodes.Count >= 1 && nodes[^1] is QuotationNode q2)
                 {
-                    // N [ body ] times — quotation is last, int already pushed earlier
                     nodes.RemoveAt(nodes.Count - 1);
                     nodes.Add(new TimesNode(q2.Body));
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        "'times' requires a preceding [ ] quotation");
                 }
                 i++;
                 continue;
@@ -152,7 +156,6 @@ public static class DslParser
             if (LocationNames.Contains(token.ToUpperInvariant()))
             {
                 var locId = Enum.Parse<LocationId>(token.ToUpperInvariant());
-                // If next token is an opcode, push as immediate on the op
                 nodes.Add(new OpNode("__push_location", ImmutableArray.Create<object>(locId)));
                 i++;
                 continue;

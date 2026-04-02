@@ -121,19 +121,21 @@ This moves right and harvests, three times in a row. The number goes between the
 
 ## Error handling
 
-Wrap verbs in `try { }` to catch errors instead of stopping the program:
+Use a quotation with `try` to catch errors instead of stopping the program:
 
 ```
-try { leave }
+[ leave ] try
 ```
 
-If you're already at the root bag, `leave` would fail. Inside `try`, the error is caught and pushed as a result. You can then check it:
+If you're already at the root bag, `leave` would fail. With `try`, the error is caught and pushed as a result. You can then check it with `if-ok`:
 
 ```
-try { grab } if-ok { right drop }
+[ grab ] try [ right drop ] if-ok
 ```
 
 This tries to grab. If it succeeds, moves right and drops. If the cell was empty (grab fails), the `if-ok` block is skipped.
+
+All combinators are **postfix** — the quotation comes first, then the combinator that consumes it. This keeps everything left-to-right, just like verbs.
 
 ## Macros
 

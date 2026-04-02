@@ -150,7 +150,7 @@ public class OpcodeTests
     {
         var state = MakeState(); // empty cell, grab will "fail" (no-op since empty)
         // This should not throw — try catches errors
-        var result = Run(state, "try { leave }");
+        var result = Run(state, "[ leave ] try");
         // Stack should have a DslResult (failed, since we're at root)
         Assert.False(result.IsStackEmpty);
     }
