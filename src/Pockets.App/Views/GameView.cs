@@ -6,22 +6,25 @@ using Pockets.App.Rendering;
 namespace Pockets.App.Views;
 
 /// <summary>
-/// Main game window. Delegates input handling to GameController, manages child panels and UI.
-/// Modal split dialog stays here (it's UI-specific).
+/// Main game window. Manages multiple panels (B, C, W, T, H) with focus tracking.
+/// Delegates input handling to GameController.
 /// </summary>
 public class GameView : Window
 {
     private readonly GameController _controller;
-    private readonly GridPanel _gridPanel;
-    private readonly RightPanel _rightPanel;
+    private readonly GridPanel _gridPanel;       // B panel (inventory)
+    private readonly RightPanel _rightPanel;     // Action log
+    private readonly BagPanelView _containerPanel; // C panel
+    private readonly BagPanelView _worldPanel;     // W panel
+    private readonly BagPanelView _toolbarPanel;   // T panel
     private readonly Random _rng = new();
     private object? _tickTimer;
     private readonly bool _enableTickTimer;
 
-    /// <summary>
-    /// Interval between realtime ticks (1 second per tick).
-    /// </summary>
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>X offset where all bag panels start (after H hand cell + gap).</summary>
+    private const int PanelXOffset = CellRenderer.CellWidth + 4;
 
     public GameView(
         GameState initialState,
@@ -51,34 +54,45 @@ public class GameView : Window
 
         _controller = new GameController(session);
 
+        // B panel (main inventory — existing GridPanel)
         _gridPanel = new GridPanel(_controller.Session.Current);
         if (!recipes.IsDefaultOrEmpty)
             _gridPanel.SetRecipes(recipes);
         _gridPanel.SetFacilityRecipeMap(facilityRecipeMap);
+
+        // Right panel (action log)
         _rightPanel = new RightPanel();
 
-        // Wire mouse events from GridView back to us
+        // C panel (container/facility) — starts hidden
+        _containerPanel = new BagPanelView(LocationId.C, "Container");
+
+        // W panel (world/wilderness) — starts hidden
+        _worldPanel = new BagPanelView(LocationId.W, "World");
+
+        // T panel (toolbar) — always visible
+        _toolbarPanel = new BagPanelView(LocationId.T, "Toolbar");
+
+        // Wire mouse events
         _gridPanel.GetGridView().GridCellClicked += OnGridCellClicked;
         _gridPanel.GetGridView().GridCellRightClicked += OnGridCellRightClicked;
         _gridPanel.GetGridView().MouseStateChanged += OnMouseStateChanged;
         _gridPanel.GetBackButton().BackClicked += OnBackClicked;
 
-        Add(_gridPanel, _rightPanel);
+        Add(_containerPanel, _gridPanel, _worldPanel, _toolbarPanel, _rightPanel);
 
-        // Start realtime tick timer after the main loop is ready
+        // Initial layout
+        UpdatePanelLayout();
+
         if (_enableTickTimer)
         {
             Application.MainLoop.AddIdle(() =>
             {
                 StartTickTimer();
-                return false; // Run once
+                return false;
             });
         }
     }
 
-    /// <summary>
-    /// Starts the realtime tick timer. Called once after the main loop is initialized.
-    /// </summary>
     private void StartTickTimer()
     {
         if (_controller.Session.TickMode != TickMode.Realtime || _tickTimer is not null)
@@ -89,13 +103,10 @@ public class GameView : Window
             var result = _controller.Tick();
             if (result.Handled)
                 UpdateUI();
-            return true; // Keep repeating
+            return true;
         });
     }
 
-    /// <summary>
-    /// Maps Terminal.Gui KeyEvent to abstract GameKey, or null if not a game key.
-    /// </summary>
     private static GameKey? MapKey(KeyEvent keyEvent)
     {
         return keyEvent.Key switch
@@ -112,13 +123,15 @@ public class GameView : Window
             (Key)'5' => GameKey.AcquireRandom,
             (Key)'r' or (Key)'R' => GameKey.CycleRecipe,
             (Key)'q' or (Key)'Q' => GameKey.LeaveBag,
+            Key.Tab => GameKey.FocusNext,
+            Key.BackTab => GameKey.FocusPrev,
             _ => null
         };
     }
 
     public override bool ProcessKey(KeyEvent keyEvent)
     {
-        // Shift-3 (#) = Modal Split dialog (UI-specific, not in GameController)
+        // Shift-3 (#) = Modal Split dialog
         if (keyEvent.Key == (Key)'#')
         {
             ShowModalSplitDialog();
@@ -170,11 +183,98 @@ public class GameView : Window
     {
         _gridPanel.UpdateState(_controller.Session.Current);
         _rightPanel.UpdateLog(_controller.Session.ActionLog);
+        UpdatePanelLayout();
     }
 
     /// <summary>
-    /// Opens a dialog for modal split: user enters the amount to grab.
+    /// Updates all panel positions and visibility based on current LocationMap and focus.
+    /// Layout: C above B, W below B, T at bottom, H left of all (handled by GridPanel).
     /// </summary>
+    private void UpdatePanelLayout()
+    {
+        var state = _controller.Session.Current;
+        var focus = _controller.Focus;
+
+        // Update B panel focus border
+        _gridPanel.Title = focus == LocationId.B ? "► Inventory" : "  Inventory";
+
+        // Container panel (C) — above B
+        var cLoc = state.Locations.TryGet(LocationId.C);
+        if (cLoc is not null)
+        {
+            var cBag = state.Store.GetById(cLoc.BagId);
+            _containerPanel.UpdatePanel(cBag, cLoc.Cursor, focus == LocationId.C);
+            _containerPanel.Title = focus == LocationId.C
+                ? $"► {cBag?.EnvironmentType ?? "Container"}"
+                : $"  {cBag?.EnvironmentType ?? "Container"}";
+        }
+        else
+        {
+            _containerPanel.UpdatePanel(null, null, false);
+        }
+
+        // World panel (W) — below B
+        var wLoc = state.Locations.TryGet(LocationId.W);
+        if (wLoc is not null)
+        {
+            var wBag = state.Store.GetById(wLoc.BagId);
+            _worldPanel.UpdatePanel(wBag, wLoc.Cursor, focus == LocationId.W);
+            _worldPanel.Title = focus == LocationId.W
+                ? $"► {wBag?.EnvironmentType ?? "World"}"
+                : $"  {wBag?.EnvironmentType ?? "World"}";
+        }
+        else
+        {
+            _worldPanel.UpdatePanel(null, null, false);
+        }
+
+        // Toolbar panel (T) — at bottom
+        var tLoc = state.Locations.TryGet(LocationId.T);
+        if (tLoc is not null)
+        {
+            var tBag = state.Store.GetById(tLoc.BagId);
+            _toolbarPanel.UpdatePanel(tBag, tLoc.Cursor, focus == LocationId.T);
+            _toolbarPanel.Title = focus == LocationId.T ? "► Toolbar" : "  Toolbar";
+        }
+
+        // Position panels vertically in left column
+        var y = 0;
+
+        // C panel at top (if visible)
+        if (_containerPanel.Visible && cLoc is not null)
+        {
+            var cBag = state.Store.GetById(cLoc.BagId);
+            var cHeight = cBag is not null ? CellRenderer.CellHeight * cBag.Grid.Rows + 2 : 0;
+            _containerPanel.X = PanelXOffset;
+            _containerPanel.Y = y;
+            y += cHeight;
+        }
+
+        // B panel (GridPanel)
+        _gridPanel.X = 0;
+        _gridPanel.Y = y;
+        y += CellRenderer.CellHeight * state.RootBag.Grid.Rows + 6;
+
+        // W panel below B (if visible)
+        if (_worldPanel.Visible && wLoc is not null)
+        {
+            var wBag = state.Store.GetById(wLoc.BagId);
+            var wHeight = wBag is not null ? CellRenderer.CellHeight * wBag.Grid.Rows + 2 : 0;
+            _worldPanel.X = PanelXOffset;
+            _worldPanel.Y = y;
+            y += wHeight;
+        }
+
+        // T panel at bottom
+        if (_toolbarPanel.Visible && tLoc is not null)
+        {
+            var tBag = state.Store.GetById(tLoc.BagId);
+            var tHeight = tBag is not null ? CellRenderer.CellHeight * tBag.Grid.Rows + 2 : 5;
+            _toolbarPanel.X = PanelXOffset;
+            _toolbarPanel.Y = Pos.AnchorEnd(tHeight + 3);
+        }
+    }
+
     private void ShowModalSplitDialog()
     {
         var cell = _controller.Session.Current.CurrentCell;

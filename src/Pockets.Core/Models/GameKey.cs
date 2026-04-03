@@ -17,7 +17,9 @@ public enum GameKey
     AcquireRandom,  // Key 5 (debug)
     CycleRecipe,    // R
     LeaveBag,       // Q
-    Undo            // Ctrl-Z
+    Undo,           // Ctrl-Z
+    FocusNext,      // Tab
+    FocusPrev       // Shift-Tab
 }
 
 /// <summary>

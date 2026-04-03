@@ -156,12 +156,14 @@ public record GameState(
         var bag = new Bag(Grid.Create(8, 4));
         var (filledBag, _) = bag.AcquireItems(initialStacks);
         var handBag = CreateHandBag(config.HandSize);
+        var toolbarBag = new Bag(Grid.Create(10, 1), "Toolbar");
 
-        var store = BagStore.Empty.Add(filledBag).Add(handBag);
+        var store = BagStore.Empty.Add(filledBag).Add(handBag).Add(toolbarBag);
         if (extraBags is not null)
             store = store.AddRange(extraBags);
 
-        var locations = LocationMap.Create(handBag.Id, filledBag.Id);
+        var locations = LocationMap.Create(handBag.Id, filledBag.Id)
+            .Set(LocationId.T, Location.AtOrigin(toolbarBag.Id));
 
         return new GameState(store, locations, itemTypes);
     }
@@ -229,6 +231,65 @@ public record GameState(
 
         return ToolResult.Ok(WithBLocation(top.SavedCursor, poppedStack));
     }
+
+    // ==================== Panel management ====================
+
+    /// <summary>
+    /// Opens a bag as a Container panel (LocationId.C). The bag remains in its
+    /// current grid cell — we're viewing it, not entering it via breadcrumbs.
+    /// </summary>
+    public ToolResult OpenAsContainer(Guid bagId)
+    {
+        if (Store.GetById(bagId) is null)
+            return ToolResult.Fail(this, "Bag not found");
+        if (Locations.Has(LocationId.C))
+            return ToolResult.Fail(this, "Container panel already open");
+
+        var newLocations = Locations.Set(LocationId.C, Location.AtOrigin(bagId));
+        return ToolResult.Ok(this with { Locations = newLocations });
+    }
+
+    /// <summary>
+    /// Opens a bag as a World panel (LocationId.W). The bag remains in its
+    /// current grid cell — we're viewing it, not entering it via breadcrumbs.
+    /// </summary>
+    public ToolResult OpenAsWorld(Guid bagId)
+    {
+        if (Store.GetById(bagId) is null)
+            return ToolResult.Fail(this, "Bag not found");
+        if (Locations.Has(LocationId.W))
+            return ToolResult.Fail(this, "World panel already open");
+
+        var newLocations = Locations.Set(LocationId.W, Location.AtOrigin(bagId));
+        return ToolResult.Ok(this with { Locations = newLocations });
+    }
+
+    /// <summary>
+    /// Closes a panel by removing its location. The bag data stays in the store.
+    /// </summary>
+    public ToolResult ClosePanel(LocationId panelId)
+    {
+        if (panelId is LocationId.H or LocationId.B)
+            return ToolResult.Fail(this, $"Cannot close {panelId} panel");
+        if (!Locations.Has(panelId))
+            return ToolResult.Fail(this, $"Panel {panelId} is not open");
+
+        return ToolResult.Ok(this with { Locations = Locations.Remove(panelId) });
+    }
+
+    /// <summary>
+    /// Returns true if the given location is the EnvironmentType of a wilderness bag.
+    /// Convention: wilderness bags have EnvironmentType containing nature-themed words.
+    /// For now, checks if the bag's EnvironmentType is in a known set.
+    /// </summary>
+    public static bool IsWildernessType(string environmentType) =>
+        environmentType is "Forest" or "Cave" or "Mountain" or "Ocean" or "Desert" or "Swamp";
+
+    /// <summary>
+    /// Returns true if the bag is a facility (has FacilityState).
+    /// </summary>
+    public static bool IsFacilityBag(Bag bag) =>
+        bag.FacilityState is not null;
 
     /// <summary>
     /// The breadcrumb path as a list of bag names/descriptions for display.

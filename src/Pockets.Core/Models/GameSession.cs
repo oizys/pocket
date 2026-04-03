@@ -83,13 +83,40 @@ public record GameSession(
     }
 
     /// <summary>
-    /// Moves the cursor one step. Not undoable, not logged.
+    /// Moves the cursor one step in the B location. Not undoable, not logged.
     /// </summary>
     public GameSession MoveCursor(Direction direction) =>
-        this with { Current = Current.MoveCursor(direction) };
+        MoveCursorAt(LocationId.B, direction);
 
     /// <summary>
-    /// Moves the cursor to a specific position. Not undoable, not logged.
+    /// Moves the cursor one step at the given location. Not undoable, not logged.
+    /// </summary>
+    public GameSession MoveCursorAt(LocationId locId, Direction direction)
+    {
+        var loc = Current.Locations.TryGet(locId);
+        if (loc is null) return this;
+
+        // Resolve the active bag for this location (follow breadcrumbs)
+        var bagId = loc.BagId;
+        foreach (var entry in loc.Breadcrumbs.Reverse())
+        {
+            var bag = Current.Store.GetById(bagId);
+            if (bag is null) break;
+            var cell = bag.Grid.GetCell(entry.CellIndex);
+            if (cell.Stack?.ContainedBagId is not { } childId) break;
+            bagId = childId;
+        }
+
+        var activeBag = Current.Store.GetById(bagId);
+        if (activeBag is null) return this;
+
+        var newCursor = loc.Cursor.Move(direction, activeBag.Grid.Rows, activeBag.Grid.Columns);
+        var newLoc = loc with { Cursor = newCursor };
+        return this with { Current = Current with { Locations = Current.Locations.Set(locId, newLoc) } };
+    }
+
+    /// <summary>
+    /// Moves the cursor to a specific position at the B location. Not undoable, not logged.
     /// </summary>
     public GameSession MoveCursor(GameState state, Position position)
     {
@@ -97,6 +124,12 @@ public record GameSession(
         var newLoc = bLoc with { Cursor = new Cursor(position) };
         return this with { Current = state with { Locations = state.Locations.Set(LocationId.B, newLoc) } };
     }
+
+    /// <summary>
+    /// Public wrapper for ApplyResult, used by GameController for panel operations.
+    /// </summary>
+    public GameSession ApplyToolResult(ToolResult result, Func<string> formatLog) =>
+        ApplyResult(result, formatLog);
 
     /// <summary>
     /// Primary action (left-click / key 1). Contextual grab/drop/swap/merge/interact. Undoable.
