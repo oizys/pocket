@@ -44,3 +44,19 @@ public sealed record EachNode(ImmutableArray<ProgramNode> Body) : ProgramNode;
 /// Defines a named macro. Body is expanded inline at parse time.
 /// </summary>
 public sealed record DefNode(string Name, ImmutableArray<ProgramNode> Body) : ProgramNode;
+
+/// <summary>
+/// Pops a quotation of paired [test] [body] sub-quotations.
+/// Runs each test; first to push true has its body executed.
+/// </summary>
+public sealed record CondNode(ImmutableArray<ProgramNode> Pairs) : ProgramNode;
+
+/// <summary>
+/// Pops a bool from the stack, runs Body if true.
+/// </summary>
+public sealed record WhenNode(ImmutableArray<ProgramNode> Body) : ProgramNode;
+
+/// <summary>
+/// Pops a bool from the stack, runs Body if false.
+/// </summary>
+public sealed record UnlessNode(ImmutableArray<ProgramNode> Body) : ProgramNode;

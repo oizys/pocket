@@ -89,7 +89,7 @@ public static class DslParser
             }
 
             // Postfix combinators: consume preceding quotation
-            if (token is "try" or "if-ok" or "each")
+            if (token is "try" or "if-ok" or "each" or "when" or "unless" or "cond")
             {
                 if (nodes.Count >= 1 && nodes[^1] is QuotationNode q)
                 {
@@ -99,6 +99,9 @@ public static class DslParser
                         "try" => new TryNode(q.Body),
                         "if-ok" => new IfOkNode(q.Body),
                         "each" => new EachNode(q.Body),
+                        "when" => new WhenNode(q.Body),
+                        "unless" => new UnlessNode(q.Body),
+                        "cond" => new CondNode(q.Body),
                         _ => throw new InvalidOperationException()
                     };
                     nodes.Add(node);

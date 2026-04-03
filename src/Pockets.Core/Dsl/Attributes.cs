@@ -41,3 +41,19 @@ public class ParamAttribute : Attribute
         Level = level;
     }
 }
+
+/// <summary>
+/// Marks a static method as a DSL query opcode. Queries read state but don't mutate it.
+/// The method receives the current GameState and returns a value (bool, int, etc.)
+/// which is pushed onto the stack. The OpResult passes through unchanged.
+/// </summary>
+[AttributeUsage(AttributeTargets.Method)]
+public class QueryAttribute : Attribute
+{
+    public string Name { get; }
+
+    public QueryAttribute(string name)
+    {
+        Name = name;
+    }
+}

@@ -16,22 +16,29 @@ public record ParamBinding(
     Type ParameterType);
 
 /// <summary>
-/// Cached reflection wrapper for a single [Opcode]-decorated method.
-/// Built once at startup, invoked many times. Handles argument resolution
-/// (popping LocationIds from the stack or using defaults), coercion, and invocation.
+/// Cached reflection wrapper for a single [Opcode] or [Query]-decorated method.
+/// Built once at startup, invoked many times.
+///
+/// Opcodes: (OpResult, coerced args) → OpResult
+/// Queries: (GameState) → object (wrapped into OpResult.WithPushed automatically)
 /// </summary>
 public class OpcodeBinding
 {
     public string Name { get; }
     public LocationId? DefaultLocation { get; }
+    public bool IsQuery { get; }
     public ImmutableArray<ParamBinding> Params { get; }
     private readonly MethodInfo _method;
 
+    /// <summary>
+    /// Creates a binding for an [Opcode]-decorated method.
+    /// </summary>
     public OpcodeBinding(MethodInfo method, OpcodeAttribute attr)
     {
         _method = method;
         Name = attr.Name;
         DefaultLocation = (int)attr.DefaultLocation >= 0 ? attr.DefaultLocation : null;
+        IsQuery = false;
 
         Params = method.GetParameters()
             .Where(p => p.GetCustomAttribute<ParamAttribute>() is not null)
@@ -50,16 +57,30 @@ public class OpcodeBinding
     }
 
     /// <summary>
+    /// Creates a binding for a [Query]-decorated method.
+    /// </summary>
+    public OpcodeBinding(MethodInfo method, QueryAttribute attr)
+    {
+        _method = method;
+        Name = attr.Name;
+        DefaultLocation = null;
+        IsQuery = true;
+        Params = ImmutableArray<ParamBinding>.Empty; // queries take no [Param] args
+    }
+
+    /// <summary>
     /// Resolves arguments from the stack and/or defaults, coercing each to the expected
-    /// access level. Returns resolved params and the stack with consumed values removed.
+    /// access level. Queries have no params so this is a no-op for them.
     /// </summary>
     public (ResolvedParam[] Args, ImmutableStack<object> Stack) ResolveArgs(
         ImmutableStack<object> stack, GameState state)
     {
+        if (IsQuery)
+            return (Array.Empty<ResolvedParam>(), stack);
+
         var args = new ResolvedParam[Params.Length];
         var current = stack;
 
-        // Process params in reverse order (rightmost popped first)
         for (int i = Params.Length - 1; i >= 0; i--)
         {
             var param = Params[i];
@@ -91,18 +112,23 @@ public class OpcodeBinding
     }
 
     /// <summary>
-    /// Invokes the opcode method. First parameter is OpResult, subsequent [Param]-decorated
-    /// parameters receive coerced values.
+    /// Invokes the method. For opcodes: (OpResult, coerced args) → OpResult.
+    /// For queries: (GameState) → object, wrapped into OpResult.WithPushed.
     /// </summary>
     public OpResult Invoke(OpResult input, ResolvedParam[] args)
     {
+        if (IsQuery)
+        {
+            var queryResult = _method.Invoke(null, new object[] { input.State })!;
+            return input.WithPushed(queryResult);
+        }
+
         var methodParams = _method.GetParameters();
         var invokeArgs = new object[methodParams.Length];
 
         // First param is always OpResult
         invokeArgs[0] = input;
 
-        // Map resolved values to method parameters
         int argIdx = 0;
         for (int i = 1; i < methodParams.Length; i++)
         {

@@ -6,12 +6,14 @@ namespace Pockets.Core.Dsl;
 /// <summary>
 /// The state token that flows through the DSL stack. Every opcode consumes one
 /// and produces one. Carries the current game state, the snapshot from before
-/// the expression started (for undo/diff), and accumulated errors.
+/// the expression started (for undo/diff), accumulated errors, and optional
+/// surface values to push onto the stack after the OpResult.
 /// </summary>
 public record OpResult(
     GameState State,
     GameState Before,
-    ImmutableList<string> Errors)
+    ImmutableList<string> Errors,
+    ImmutableArray<object> Pushed = default)
 {
     /// <summary>
     /// True when no errors have accumulated.
@@ -47,4 +49,18 @@ public record OpResult(
     /// </summary>
     public OpResult ClearErrors() =>
         new(State, Before, ImmutableList<string>.Empty);
+
+    /// <summary>
+    /// Returns a new OpResult with a value to push onto the stack after the OpResult itself.
+    /// State is unchanged. Used by query opcodes to push bools/ints.
+    /// </summary>
+    public OpResult WithPushed(object value) =>
+        this with { Pushed = ImmutableArray.Create(value) };
+
+    /// <summary>
+    /// Returns a new OpResult with multiple values to push onto the stack.
+    /// Values are pushed in order (first item ends up deepest).
+    /// </summary>
+    public OpResult WithPushed(params object[] values) =>
+        this with { Pushed = values.ToImmutableArray() };
 }
