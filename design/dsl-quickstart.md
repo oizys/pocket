@@ -1,6 +1,8 @@
 # Pockets DSL Quick Start
 
-The Pockets DSL is a concatenative language for inventory operations. Programs are strings of whitespace-separated words that execute left to right. Each word is either a **verb** (does something) or a **value** (pushes data for the next verb to use).
+The Pockets DSL is a concatenative language for inventory operations. Programs are strings of whitespace-separated words that execute left to right. Each word is either a **verb** (does something), a **query** (reads state and pushes a value), or a **value** (pushes data for the next word to use).
+
+> **Note:** Some examples in this guide use opcodes marked with * that are planned but not yet implemented. These are included to show the language's design direction.
 
 ## Your first program
 
@@ -12,7 +14,7 @@ This grabs the item at the cursor, moves the cursor right, and drops the item th
 
 ## Verbs
 
-Verbs are the actions you can perform. Every verb has a **default location** it operates on (usually B, your inventory bag), so you don't need to specify one unless you want to override it.
+Every verb has a **fixed arity** — it always consumes the same number of values from the stack. Most verbs default to operating on B (your inventory bag), so in the common case they consume nothing and you just write the verb name.
 
 ### Movement
 
@@ -25,15 +27,16 @@ Verbs are the actions you can perform. Every verb has a **default location** it 
 
 ### Inventory
 
-| Verb | What it does |
-|------|-------------|
-| `grab` | Pick up item at cursor into hand |
-| `drop` | Place hand item at cursor |
-| `swap` | Exchange hand item with cursor item |
-| `grab-half` | Pick up half the stack into hand |
-| `drop-one` | Place one item from hand at cursor |
-| `sort` | Sort and merge all items in the bag |
-| `split-at` | Split stack at cursor in half |
+| Verb | Default | What it does |
+|------|---------|-------------|
+| `grab` | B → H | Pick up item at cursor into hand |
+| `drop` | H → B | Place hand item at cursor |
+| `swap` | B ↔ H | Exchange hand item with cursor item |
+| `grab-half` | B → H | Pick up half the stack into hand |
+| `drop-one` | H → B | Place one item from hand at cursor |
+| `sort` | B | Sort and merge all items in the bag |
+| `split-at` | B | Split stack at cursor in half |
+| `harvest` | B | Take item from cursor cell (when nested) |
 
 ### Bag navigation
 
@@ -42,18 +45,12 @@ Verbs are the actions you can perform. Every verb has a **default location** it 
 | `enter` | Open the bag at cursor (go inside) |
 | `leave` | Go back to parent bag |
 
-### World actions
-
-| Verb | What it does |
-|------|-------------|
-| `harvest` | Take item from current cell (when inside a nested bag) |
-
 ### Context-sensitive
 
 | Verb | What it does |
 |------|-------------|
-| `primary` | Left-click action: enter bags, grab, drop, merge, swap, or harvest depending on context |
-| `secondary` | Right-click action: grab half or place one depending on context |
+| `primary` | Left-click action (see "How primary works" below) |
+| `secondary` | Right-click action (see "How secondary works" below) |
 
 ### Debug
 
@@ -61,85 +58,145 @@ Verbs are the actions you can perform. Every verb has a **default location** it 
 |------|-------------|
 | `acquire-random` | Add a random item to the bag |
 
+## Queries
+
+Queries read the current state and push a value onto the stack. They don't change anything.
+
+| Query | Pushes | What it checks |
+|-------|--------|---------------|
+| `hand-empty?` | bool | Is the hand empty? |
+| `cell-empty?` | bool | Is the cursor cell empty? |
+| `cell-has-bag?` | bool | Does the cursor cell contain a bag? |
+| `nested?` | bool | Are we inside a nested bag? |
+| `same-type?` | bool | Is the hand item the same type as the cell item? |
+| `output-slot?` | bool | Is the cursor cell an output slot? |
+| `cell-count` | int | Item count at cursor (0 if empty) |
+
 ## Values
 
-Values push data onto a stack for the next verb to consume.
+Values push data onto the stack.
 
 ### Locations
 
-Locations tell verbs which panel to operate on. There are five:
+Locations identify which panel a verb operates on:
 
 | Value | Location | What it is |
 |-------|----------|-----------|
 | `H` | Hand | The items you're carrying |
 | `T` | Toolbar | Equipped items (future) |
-| `B` | Bag | Your inventory — the default for most verbs |
-| `W` | World | The wilderness or world view (future) |
-| `C` | Container | A chest or facility you're interacting with (future) |
+| `B` | Bag | Your inventory — the default |
+| `W` | World | Wilderness or world view (future) |
+| `C` | Container | A chest or facility (future) |
 
-Most verbs default to B, so you rarely need to write it. You only use a location when you want to override:
-
-```
-C grab      -- grab from Container instead of Bag
-W harvest   -- harvest from World
-```
-
-Locations are case-insensitive (`b` and `B` both work).
+Most verbs default to B so you rarely write it. Locations are case-insensitive.
 
 ### Numbers
-
-Push an integer for verbs that need one:
 
 ```
 16 split-at    -- split the stack, keeping 16 on the left
 ```
 
-## Combining verbs
-
-Since programs execute left to right, you can chain any sequence:
+### Booleans
 
 ```
--- Move an item two cells to the right
-grab right right drop
-
--- Grab three items from different cells
-grab right grab right grab
-
--- Enter a bag, harvest something, come back
-enter harvest leave
+true    -- push true
+false   -- push false
 ```
 
-## Quotations and repetition
+## Stack manipulation
 
-Wrap verbs in `[ ]` to create a **quotation** — a block of code you can reuse:
+| Word | Effect | What it does |
+|------|--------|-------------|
+| `dup` | a → a a | Copy top of stack |
+| `pop` | a → | Discard top of stack |
+| `over` | a b → a b a | Copy second item to top |
+| `s-swap` | a b → b a | Swap top two stack values |
+| `call` | [q] → (executes q) | Execute a quotation from the stack |
+
+Note: `s-swap` is the stack swap. `swap` is the inventory verb (exchange hand and cell).
+
+## Arithmetic
+
+| Word | Effect |
+|------|--------|
+| `+` | a b → (a+b) |
+| `-` | a b → (a-b) |
+| `*` | a b → (a*b) |
+| `div` | a b → (a/b), returns 0 for divide-by-zero |
+
+## Logic and comparison
+
+| Word | Effect |
+|------|--------|
+| `and` | bool bool → bool |
+| `or` | bool bool → bool |
+| `not` | bool → bool |
+| `lte` | int int → bool (a ≤ b) |
+| `gte` | int int → bool (a ≥ b) |
+| `eq` | int int → bool (a = b) |
+
+## Combinators
+
+All combinators are **postfix** — the quotation comes first, then the combinator.
+
+### Repetition
 
 ```
 [ right harvest ] 3 times
 ```
 
-This moves right and harvests, three times in a row. The number goes between the quotation and `times`.
+Runs the body 3 times. The count goes between the quotation and `times`.
 
-## Error handling
-
-Use a quotation with `try` to catch errors instead of stopping the program:
+### Conditionals
 
 ```
-[ leave ] try
+cell-empty? not [ grab ] when          -- run body if true
+cell-empty? [ acquire-random ] unless  -- run body if false
+
+hand-empty?
+  [ grab ]           -- true branch
+  [ drop ]           -- false branch
+  if-else
 ```
 
-If you're already at the root bag, `leave` would fail. With `try`, the error is caught and pushed as a result. You can then check it with `if-ok`:
+### Dispatch tables
 
 ```
-[ grab ] try [ right drop ] if-ok
+[
+  [ cell-has-bag? ]    [ enter ]
+  [ hand-empty? ]      [ grab ]
+  [ true ]             [ drop ]
+] cond
 ```
 
-This tries to grab. If it succeeds, moves right and drops. If the cell was empty (grab fails), the `if-ok` block is skipped.
+`cond` takes a quotation of paired `[test] [body]` sub-quotations. It runs each test in order; the first to push `true` has its body executed. Remaining tests are skipped.
 
-All combinators are **postfix** — the quotation comes first, then the combinator that consumes it. This keeps everything left-to-right, just like verbs.
+### Error handling
+
+```
+[ leave ] try                           -- pushes true/false
+[ grab ] try [ right drop ] if-ok       -- run body only if try succeeded
+```
+
+`try` catches errors: pushes `true` if the body succeeded, `false` if it failed (and rolls back state on failure).
+
+### Loops
+
+```
+[ cell-empty? not ] [ harvest right ] while
+```
+
+`while` takes two quotations: a test and a body. Runs the test, and if it pushes `true`, runs the body. Repeats until the test returns `false`. Safety limits: breaks automatically if the OpResult accumulates errors, or after 512 iterations (whichever comes first).
+
+### Early exit
+
+```
+grab break sort    -- grab runs, sort never runs
+```
+
+`break` immediately exits the current quotation, loop, or program. The state is preserved as-is — it's not an error.
 
 ## Macros
-
-Define reusable sequences with `:def`:
 
 ```
 :def scoop  grab right ;
@@ -147,25 +204,53 @@ Define reusable sequences with `:def`:
 scoop scoop scoop
 ```
 
-This defines `scoop` as "grab then move right", then calls it three times. The definition ends with `;`. Macros are expanded inline at parse time — they're just shorthand, not functions.
+Defines `scoop` as "grab then move right". The definition ends with `;`. Macros are expanded inline at parse time — they're shorthand, not functions.
 
-## How it works under the hood
+## How primary works
 
-Every verb knows what "shape" of data it needs:
+`primary` is the left-click action. It's defined as a `cond` dispatch table:
 
-- `sort` needs a **Bag** — it sorts all cells
-- `grab` needs a **Cell** — it takes the item from that cell
-- `harvest` needs a **Cell** — it removes the item
-- `right` needs an **Index** — it moves the cursor position
+```
+[
+  [ output-slot? cell-empty? not and hand-empty? and ] [ grab ]
+  [ cell-has-bag? ]                                    [ enter ]
+  [ hand-empty? cell-empty? and ]                      [ ]
+  [ hand-empty? nested? and ]                          [ harvest ]
+  [ hand-empty? ]                                      [ grab ]
+  [ cell-empty? ]                                      [ drop ]
+  [ same-type? ]                                       [ drop ]
+  [ true ]                                             [ swap ]
+] cond
+```
 
-When you write a location like `B` before a verb, the system automatically **coerces** it to the right shape. `B` is a location. If the verb needs a Bag, the system resolves B's location to find the active bag. If it needs a Cell, it goes one step further and looks up the cell at the cursor. If it needs a Stack, it reads the item from that cell.
+Reading top to bottom: if you're on an output slot with an item and your hand is empty, grab. If the cell has a bag, enter it. If your hand is empty and the cell is empty, do nothing. If your hand is empty and you're nested, harvest. And so on. The first matching test wins.
 
-This coercion chain means you never have to think about "dereferencing" — you just name a location and the verb figures out what it needs.
+## How secondary works
+
+`secondary` is the right-click action:
+
+```
+[
+  [ hand-empty? cell-empty? and ]                      [ ]
+  [ hand-empty? cell-count 1 lte and ]                 [ ]
+  [ hand-empty? ]                                      [ grab-half ]
+  [ cell-empty? same-type? or ]                        [ drop-one ]
+  [ true ]                                             [ ]
+] cond
+```
+
+If your hand is empty and the cell is empty or has only 1 item, do nothing. If your hand is empty and the cell has more, grab half. If the cell is empty or the same type as your hand, drop one. Otherwise, nothing.
+
+## How coercion works
+
+Every verb knows what "shape" of data it needs. `sort` needs a **Bag**. `grab` needs a **Cell**. `right` needs an **Index**. The system automatically resolves a location to the right shape:
 
 ```
 Location → Bag → Cell → Stack
     B    →  inventory bag  →  cell at cursor  →  item in that cell
 ```
+
+This means you never need to think about dereferencing — just name a location and the verb figures out the rest.
 
 ## Examples
 
@@ -174,15 +259,15 @@ Location → Bag → Cell → Stack
 sort
 ```
 
-### Move an item to a specific spot
+### Move an item two cells to the right
 ```
-grab right right right down drop
+grab right right drop
 ```
 
-### Harvest a row of items from a wilderness bag
+### Harvest until the row is empty
 ```
 enter
-[ harvest right ] 6 times
+[ cell-empty? not ] [ harvest right ] while
 leave
 ```
 
@@ -191,8 +276,23 @@ leave
 enter right right grab leave drop
 ```
 
+### Check if a stack is between 3 and 10
+```
+cell-count dup 3 gte s-swap 10 lte and
+```
+
 ### Define a "collect all" macro
 ```
-:def collect-row  [ harvest right ] 8 times ;
+:def collect-row  [ cell-empty? not ] [ harvest right ] while ;
 enter collect-row leave
+```
+
+### Conditional grab-or-drop in one line
+```
+hand-empty? [ grab ] [ drop ] if-else
+```
+
+### Safe harvest with error recovery
+```
+[ enter collect-row leave ] try pop
 ```
