@@ -18,7 +18,7 @@ public record ParamBinding(
 /// <summary>
 /// Cached reflection wrapper for a single [Opcode]-decorated method.
 /// Built once at startup, invoked many times. Handles argument resolution
-/// (from data stack or defaults), coercion, invocation, and write-back.
+/// (popping LocationIds from the stack or using defaults), coercion, and invocation.
 /// </summary>
 public class OpcodeBinding
 {
@@ -50,25 +50,24 @@ public class OpcodeBinding
     }
 
     /// <summary>
-    /// Resolves arguments for this opcode from the data stack and/or defaults,
-    /// coerces each to the expected access level, and returns the resolved params.
+    /// Resolves arguments from the stack and/or defaults, coercing each to the expected
+    /// access level. Returns resolved params and the stack with consumed values removed.
     /// </summary>
-    public (ResolvedParam[] Args, DslState State) ResolveArgs(DslState state)
+    public (ResolvedParam[] Args, ImmutableStack<object> Stack) ResolveArgs(
+        ImmutableStack<object> stack, GameState state)
     {
         var args = new ResolvedParam[Params.Length];
+        var current = stack;
 
-        // Process params in reverse order (rightmost popped first from stack)
-        var currentState = state;
+        // Process params in reverse order (rightmost popped first)
         for (int i = Params.Length - 1; i >= 0; i--)
         {
             var param = Params[i];
 
-            // Try to get LocationId from stack, or use default
             LocationId locId;
-            if (!currentState.IsStackEmpty && currentState.Peek() is LocationId stackLocId)
+            if (!current.IsEmpty && current.Peek() is LocationId stackLocId)
             {
-                var (_, newState) = currentState.Pop<LocationId>();
-                currentState = newState;
+                current = current.Pop();
                 locId = stackLocId;
             }
             else if (param.DefaultLocation is { } defLoc)
@@ -85,24 +84,23 @@ public class OpcodeBinding
                     $"Opcode '{Name}' param '{param.Name}': no LocationId on stack and no default");
             }
 
-            args[i] = Coercion.Resolve(locId, param.Level, currentState.Game);
+            args[i] = Coercion.Resolve(locId, param.Level, state);
         }
 
-        return (args, currentState);
+        return (args, current);
     }
 
     /// <summary>
-    /// Invokes the opcode method with the resolved arguments.
-    /// The first parameter is always DslState; subsequent [Param]-decorated
-    /// parameters receive the coerced values.
+    /// Invokes the opcode method. First parameter is OpResult, subsequent [Param]-decorated
+    /// parameters receive coerced values.
     /// </summary>
-    public DslResult Invoke(DslState state, ResolvedParam[] args)
+    public OpResult Invoke(OpResult input, ResolvedParam[] args)
     {
         var methodParams = _method.GetParameters();
         var invokeArgs = new object[methodParams.Length];
 
-        // First param is always DslState
-        invokeArgs[0] = state;
+        // First param is always OpResult
+        invokeArgs[0] = input;
 
         // Map resolved values to method parameters
         int argIdx = 0;
@@ -115,18 +113,6 @@ public class OpcodeBinding
             }
         }
 
-        return (DslResult)_method.Invoke(null, invokeArgs)!;
-    }
-
-    /// <summary>
-    /// Applies write-back for Source and Target parameters. Sources are cleared,
-    /// targets are updated with new values from the result state.
-    /// </summary>
-    public GameState ApplyWriteBack(GameState state, DslResult result, ResolvedParam[] args)
-    {
-        // The opcode method already updated the state internally.
-        // Write-back is handled by the opcode itself since it has full context.
-        // This method exists as a hook for future generic write-back logic.
-        return result.State;
+        return (OpResult)_method.Invoke(null, invokeArgs)!;
     }
 }

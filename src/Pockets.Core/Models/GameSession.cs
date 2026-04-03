@@ -307,25 +307,25 @@ public record GameSession(
     /// </summary>
     public GameSession Execute(string dslExpression)
     {
-        var dslState = DslState.From(Current);
-        DslState result;
+        OpResult opResult;
         try
         {
-            result = DslInterpreter.Run(dslState, dslExpression);
+            opResult = DslInterpreter.RunProgram(Current, dslExpression);
         }
         catch (InvalidOperationException ex)
         {
             return this with { ActionLog = ActionLog.Add($"FAILED: {dslExpression} — {ex.Message}") };
         }
 
-        var newGameState = result.Game;
+        // Log accumulated errors but still apply state changes (partial success)
+        var logSuffix = opResult.IsOk ? "" : $" — {string.Join("; ", opResult.Errors)}";
 
         // Convert to ToolResult-style flow for ApplyResult
-        var toolResult = newGameState == Current
-            ? ToolResult.Ok(Current) // no-op
-            : ToolResult.Ok(newGameState);
+        var toolResult = opResult.State == Current
+            ? ToolResult.Ok(Current)
+            : ToolResult.Ok(opResult.State);
 
-        return ApplyResult(toolResult, () => dslExpression);
+        return ApplyResult(toolResult, () => dslExpression + logSuffix);
     }
 
     // --- Private helpers ---

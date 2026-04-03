@@ -4,7 +4,7 @@ using Pockets.Core.Models;
 
 namespace Pockets.Core.Tests.Dsl;
 
-public class DslStateTests
+public class OpResultTests
 {
     private static GameState MakeState()
     {
@@ -15,73 +15,78 @@ public class DslStateTests
     }
 
     [Fact]
-    public void From_CreatesEmptyStack()
+    public void Initial_SetsBeforeAndState()
     {
-        var state = DslState.From(MakeState());
-        Assert.True(state.IsStackEmpty);
+        var state = MakeState();
+        var result = OpResult.Initial(state);
+        Assert.Equal(state, result.State);
+        Assert.Equal(state, result.Before);
+        Assert.True(result.IsOk);
+        Assert.Empty(result.Errors);
     }
 
     [Fact]
-    public void Push_Pop_RoundTrips()
+    public void Chain_UpdatesState_PreservesBefore()
     {
-        var state = DslState.From(MakeState());
-        state = state.Push(42);
-        var (value, newState) = state.Pop<int>();
-        Assert.Equal(42, value);
-        Assert.True(newState.IsStackEmpty);
+        var state1 = MakeState();
+        var state2 = MakeState(); // different instance
+        var result = OpResult.Initial(state1).Chain(state2);
+
+        Assert.Equal(state2, result.State);
+        Assert.Equal(state1, result.Before);
+        Assert.True(result.IsOk);
     }
 
     [Fact]
-    public void Push_Multiple_LIFO()
+    public void ChainError_AccumulatesErrors()
     {
-        var state = DslState.From(MakeState())
-            .Push(1)
-            .Push(2)
-            .Push(3);
+        var state = MakeState();
+        var result = OpResult.Initial(state)
+            .ChainError("error 1")
+            .ChainError("error 2");
 
-        var (v1, s1) = state.Pop<int>();
-        var (v2, s2) = s1.Pop<int>();
-        var (v3, s3) = s2.Pop<int>();
-
-        Assert.Equal(3, v1);
-        Assert.Equal(2, v2);
-        Assert.Equal(1, v3);
-        Assert.True(s3.IsStackEmpty);
+        Assert.False(result.IsOk);
+        Assert.Equal(2, result.Errors.Count);
+        Assert.Equal("error 1", result.Errors[0]);
+        Assert.Equal("error 2", result.Errors[1]);
     }
 
     [Fact]
-    public void Pop_EmptyStack_Throws()
+    public void ChainError_PreservesState()
     {
-        var state = DslState.From(MakeState());
-        Assert.Throws<InvalidOperationException>(() => state.Pop<int>());
+        var state = MakeState();
+        var result = OpResult.Initial(state).ChainError("oops");
+        Assert.Equal(state, result.State);
     }
 
     [Fact]
-    public void Pop_WrongType_Throws()
+    public void ClearErrors_RemovesAllErrors()
     {
-        var state = DslState.From(MakeState()).Push("hello");
-        Assert.Throws<InvalidOperationException>(() => state.Pop<int>());
+        var state = MakeState();
+        var result = OpResult.Initial(state)
+            .ChainError("error 1")
+            .ChainError("error 2")
+            .ClearErrors();
+
+        Assert.True(result.IsOk);
+        Assert.Empty(result.Errors);
     }
 
     [Fact]
-    public void Peek_ReturnsTop()
+    public void RunProgram_ReturnsOpResult()
     {
-        var state = DslState.From(MakeState()).Push(42);
-        Assert.Equal(42, state.Peek());
+        var state = MakeState();
+        var result = DslInterpreter.RunProgram(state, "right");
+        Assert.Equal(state, result.Before);
+        Assert.NotEqual(state, result.State); // cursor moved
     }
 
     [Fact]
-    public void Peek_EmptyStack_ReturnsNull()
+    public void RunProgram_EmptyProgram_NoChange()
     {
-        var state = DslState.From(MakeState());
-        Assert.Null(state.Peek());
-    }
-
-    [Fact]
-    public void Push_LocationId_RoundTrips()
-    {
-        var state = DslState.From(MakeState()).Push(LocationId.W);
-        var (value, _) = state.Pop<LocationId>();
-        Assert.Equal(LocationId.W, value);
+        var state = MakeState();
+        var result = DslInterpreter.RunProgram(state, "");
+        Assert.Equal(state, result.State);
+        Assert.Equal(state, result.Before);
     }
 }

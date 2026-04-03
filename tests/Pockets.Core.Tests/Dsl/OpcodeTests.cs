@@ -21,8 +21,8 @@ public class OpcodeTests
         return new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), Types);
     }
 
-    private static DslState Run(GameState game, string program) =>
-        DslInterpreter.Run(DslState.From(game), program);
+    private static OpResult Run(GameState game, string program) =>
+        DslInterpreter.RunProgram(game, program);
 
     // ==================== Navigation ====================
 
@@ -31,7 +31,7 @@ public class OpcodeTests
     {
         var state = MakeState();
         var result = Run(state, "right");
-        Assert.Equal(new Position(0, 1), result.Game.Cursor.Position);
+        Assert.Equal(new Position(0, 1), result.State.Cursor.Position);
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public class OpcodeTests
     {
         var state = MakeState();
         var result = Run(state, "left");
-        Assert.Equal(new Position(0, 3), result.Game.Cursor.Position);
+        Assert.Equal(new Position(0, 3), result.State.Cursor.Position);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class OpcodeTests
     {
         var state = MakeState();
         var result = Run(state, "down");
-        Assert.Equal(new Position(1, 0), result.Game.Cursor.Position);
+        Assert.Equal(new Position(1, 0), result.State.Cursor.Position);
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public class OpcodeTests
     {
         var state = MakeState();
         var result = Run(state, "right right down");
-        Assert.Equal(new Position(1, 2), result.Game.Cursor.Position);
+        Assert.Equal(new Position(1, 2), result.State.Cursor.Position);
     }
 
     // ==================== Grab and Drop ====================
@@ -66,9 +66,9 @@ public class OpcodeTests
         var state = MakeState((0, new ItemStack(Rock, 5)));
         var result = Run(state, "grab");
 
-        Assert.True(result.Game.CurrentCell.IsEmpty);
-        Assert.True(result.Game.HasItemsInHand);
-        Assert.Equal(5, result.Game.HandItems[0].Count);
+        Assert.True(result.State.CurrentCell.IsEmpty);
+        Assert.True(result.State.HasItemsInHand);
+        Assert.Equal(5, result.State.HandItems[0].Count);
     }
 
     [Fact]
@@ -77,10 +77,9 @@ public class OpcodeTests
         var state = MakeState((0, new ItemStack(Rock, 5)));
         var result = Run(state, "grab right drop");
 
-        // Cell 0 should be empty, cell 1 should have the rock
-        Assert.True(result.Game.RootBag.Grid.GetCell(0).IsEmpty);
-        Assert.Equal(5, result.Game.RootBag.Grid.GetCell(1).Stack!.Count);
-        Assert.False(result.Game.HasItemsInHand);
+        Assert.True(result.State.RootBag.Grid.GetCell(0).IsEmpty);
+        Assert.Equal(5, result.State.RootBag.Grid.GetCell(1).Stack!.Count);
+        Assert.False(result.State.HasItemsInHand);
     }
 
     [Fact]
@@ -89,10 +88,9 @@ public class OpcodeTests
         var state = MakeState((0, new ItemStack(Rock, 10)));
         var result = Run(state, "grab-half");
 
-        // Left half stays (5), right half goes to hand (5)
-        Assert.Equal(5, result.Game.CurrentCell.Stack!.Count);
-        Assert.True(result.Game.HasItemsInHand);
-        Assert.Equal(5, result.Game.HandItems[0].Count);
+        Assert.Equal(5, result.State.CurrentCell.Stack!.Count);
+        Assert.True(result.State.HasItemsInHand);
+        Assert.Equal(5, result.State.HandItems[0].Count);
     }
 
     // ==================== Sort ====================
@@ -106,8 +104,7 @@ public class OpcodeTests
             (2, new ItemStack(Rock, 3)));
         var result = Run(state, "sort");
 
-        // Should be sorted by category then name: Material(Rock) before Weapon(Sword)
-        var grid = result.Game.RootBag.Grid;
+        var grid = result.State.RootBag.Grid;
         Assert.Equal("Rock", grid.GetCell(0).Stack!.ItemType.Name);
         Assert.Equal(8, grid.GetCell(0).Stack!.Count);
         Assert.Equal("Sword", grid.GetCell(1).Stack!.ItemType.Name);
@@ -128,11 +125,11 @@ public class OpcodeTests
         var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), types);
 
         var afterEnter = Run(state, "enter");
-        Assert.True(afterEnter.Game.IsNested);
-        Assert.Equal(3, afterEnter.Game.ActiveBag.Grid.Columns);
+        Assert.True(afterEnter.State.IsNested);
+        Assert.Equal(3, afterEnter.State.ActiveBag.Grid.Columns);
 
         var afterLeave = Run(state, "enter leave");
-        Assert.False(afterLeave.Game.IsNested);
+        Assert.False(afterLeave.State.IsNested);
     }
 
     // ==================== Combinators ====================
@@ -142,37 +139,57 @@ public class OpcodeTests
     {
         var state = MakeState();
         var result = Run(state, "[ right ] 3 times");
-        Assert.Equal(new Position(0, 3), result.Game.Cursor.Position);
+        Assert.Equal(new Position(0, 3), result.State.Cursor.Position);
     }
 
     [Fact]
     public void Try_CatchesErrors()
     {
-        var state = MakeState(); // empty cell, grab will "fail" (no-op since empty)
-        // This should not throw — try catches errors
+        var state = MakeState();
         var result = Run(state, "[ leave ] try");
-        // Stack should have a DslResult (failed, since we're at root)
-        Assert.False(result.IsStackEmpty);
+        // try catches the error, result should still be ok (errors cleared)
+        Assert.True(result.IsOk);
     }
 
-    // ==================== Integration: DSL produces same results as direct API ====================
+    // ==================== OpResult threading ====================
+
+    [Fact]
+    public void OpResult_PreservesBefore()
+    {
+        var state = MakeState((0, new ItemStack(Rock, 5)));
+        var result = Run(state, "grab right drop");
+
+        // Before should be the original state
+        Assert.Equal(state, result.Before);
+        // State should be different (items moved)
+        Assert.NotEqual(state, result.State);
+    }
+
+    [Fact]
+    public void OpResult_AccumulatesErrors()
+    {
+        var state = MakeState(); // empty grid
+        // leave fails (at root), but execution continues
+        var result = Run(state, "leave");
+        Assert.False(result.IsOk);
+        Assert.Contains("Already at root bag", result.Errors[0]);
+    }
+
+    // ==================== Regression: DSL matches direct API ====================
 
     [Fact]
     public void Regression_GrabDrop_MatchesDirectApi()
     {
         var state = MakeState((0, new ItemStack(Rock, 5)));
 
-        // Direct API
         var directGrab = state.ToolGrab();
         var directState = directGrab.State.MoveCursor(Direction.Right);
         var directDrop = directState.ToolDrop();
 
-        // DSL
         var dslResult = Run(state, "grab right drop");
 
-        // Both should produce the same grid state
         var directGrid = directDrop.State.RootBag.Grid;
-        var dslGrid = dslResult.Game.RootBag.Grid;
+        var dslGrid = dslResult.State.RootBag.Grid;
 
         Assert.True(directGrid.GetCell(0).IsEmpty);
         Assert.True(dslGrid.GetCell(0).IsEmpty);
@@ -192,7 +209,7 @@ public class OpcodeTests
         for (int i = 0; i < 8; i++)
         {
             var directCell = directResult.State.RootBag.Grid.GetCell(i);
-            var dslCell = dslResult.Game.RootBag.Grid.GetCell(i);
+            var dslCell = dslResult.State.RootBag.Grid.GetCell(i);
             Assert.Equal(directCell.IsEmpty, dslCell.IsEmpty);
             if (!directCell.IsEmpty)
             {
