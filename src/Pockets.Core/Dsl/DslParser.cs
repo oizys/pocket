@@ -115,6 +115,56 @@ public static class DslParser
                 continue;
             }
 
+            // if-else: consumes two preceding quotations
+            // [ true-body ] [ false-body ] if-else
+            if (token == "if-else")
+            {
+                if (nodes.Count >= 2
+                    && nodes[^1] is QuotationNode falseQ
+                    && nodes[^2] is QuotationNode trueQ)
+                {
+                    nodes.RemoveAt(nodes.Count - 1);
+                    nodes.RemoveAt(nodes.Count - 1);
+                    nodes.Add(new IfElseNode(trueQ.Body, falseQ.Body));
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        "'if-else' requires two preceding [ ] quotations");
+                }
+                i++;
+                continue;
+            }
+
+            // while: consumes two preceding quotations
+            // [ test ] [ body ] while
+            if (token == "while")
+            {
+                if (nodes.Count >= 2
+                    && nodes[^1] is QuotationNode bodyQ
+                    && nodes[^2] is QuotationNode testQ)
+                {
+                    nodes.RemoveAt(nodes.Count - 1);
+                    nodes.RemoveAt(nodes.Count - 1);
+                    nodes.Add(new WhileNode(testQ.Body, bodyQ.Body));
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        "'while' requires two preceding [ ] quotations: [ test ] [ body ] while");
+                }
+                i++;
+                continue;
+            }
+
+            // break: immediate exit from current run
+            if (token == "break")
+            {
+                nodes.Add(BreakNode.Instance);
+                i++;
+                continue;
+            }
+
             // times: consumes preceding quotation (and int before it)
             // [ body ] N times → push_int(N), TimesNode(body)
             if (token == "times")

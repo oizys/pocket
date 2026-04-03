@@ -154,13 +154,29 @@ public static class DslInterpreter
             CondNode c => ExecuteCond(stack, c.Pairs),
             WhenNode w => ExecuteWhen(stack, w),
             UnlessNode u => ExecuteUnless(stack, u),
+            IfElseNode ie => ExecuteIfElse(stack, ie),
+            WhileNode wh => ExecuteWhile(stack, wh),
+            BreakNode => throw new BreakException(stack),
             DefNode => stack,
             _ => throw new InvalidOperationException($"Unknown node: {node.GetType().Name}")
         };
     }
 
-    public static ImmutableStack<object> Run(ImmutableStack<object> stack, IEnumerable<ProgramNode> program) =>
-        program.Aggregate(stack, Execute);
+    /// <summary>
+    /// Runs a sequence of program nodes as a left fold. Catches BreakException to
+    /// implement early exit from quotations/loops.
+    /// </summary>
+    public static ImmutableStack<object> Run(ImmutableStack<object> stack, IEnumerable<ProgramNode> program)
+    {
+        try
+        {
+            return program.Aggregate(stack, Execute);
+        }
+        catch (BreakException ex)
+        {
+            return ex.Stack;
+        }
+    }
 
     public static ImmutableStack<object> Run(ImmutableStack<object> stack, string program) =>
         Run(stack, DslParser.Parse(program));
@@ -185,17 +201,34 @@ public static class DslInterpreter
             return stack;
         }
 
-        // Built-in logic/value ops (no reflection needed)
+        // Built-in ops (no reflection needed)
         switch (op.Name)
         {
+            // Logic
             case "and": { var (b, s1) = Pop<bool>(stack); var (a, s2) = Pop<bool>(s1); return Push(s2, a && b); }
             case "or":  { var (b, s1) = Pop<bool>(stack); var (a, s2) = Pop<bool>(s1); return Push(s2, a || b); }
             case "not": { var (a, s1) = Pop<bool>(stack); return Push(s1, !a); }
             case "true":  return Push(stack, true);
             case "false": return Push(stack, false);
+
+            // Comparison
             case "lte": { var (b, s1) = Pop<int>(stack); var (a, s2) = Pop<int>(s1); return Push(s2, a <= b); }
             case "gte": { var (b, s1) = Pop<int>(stack); var (a, s2) = Pop<int>(s1); return Push(s2, a >= b); }
             case "eq":  { var (b, s1) = Pop<int>(stack); var (a, s2) = Pop<int>(s1); return Push(s2, a == b); }
+
+            // Arithmetic
+            case "+":   { var (b, s1) = Pop<int>(stack); var (a, s2) = Pop<int>(s1); return Push(s2, a + b); }
+            case "-":   { var (b, s1) = Pop<int>(stack); var (a, s2) = Pop<int>(s1); return Push(s2, a - b); }
+            case "*":   { var (b, s1) = Pop<int>(stack); var (a, s2) = Pop<int>(s1); return Push(s2, a * b); }
+            case "div": { var (b, s1) = Pop<int>(stack); var (a, s2) = Pop<int>(s1);
+                           return b == 0 ? Push(s2, 0) : Push(s2, a / b); }
+
+            // Stack manipulation
+            case "dup":  { var top = stack.Peek(); return Push(stack, top); }
+            case "pop":  return stack.Pop();
+            case "over":   { var (b, s1) = Pop<object>(stack); var a = s1.Peek(); return Push(Push(s1, b), a); }
+            case "s-swap": { var (b, s1) = Pop<object>(stack); var (a, s2) = Pop<object>(s1); return Push(Push(s2, b), a); }
+            case "call":   { var (q, s1) = Pop<QuotationNode>(stack); return Run(s1, q.Body); }
         }
 
         // Push any immediates
@@ -240,7 +273,16 @@ public static class DslInterpreter
         var (count, popped) = Pop<int>(stack);
         var current = popped;
         for (int i = 0; i < count; i++)
-            current = Run(current, node.Body);
+        {
+            try
+            {
+                current = RunRaw(current, node.Body);
+            }
+            catch (BreakException ex)
+            {
+                return ex.Stack;
+            }
+        }
         return current;
     }
 
@@ -323,5 +365,69 @@ public static class DslInterpreter
 
         // No test matched — return stack unchanged
         return stack;
+    }
+
+    private static ImmutableStack<object> ExecuteIfElse(ImmutableStack<object> stack, IfElseNode node)
+    {
+        var (flag, popped) = Pop<bool>(stack);
+        return flag ? Run(popped, node.TrueBody) : Run(popped, node.FalseBody);
+    }
+
+    private static ImmutableStack<object> ExecuteWhile(ImmutableStack<object> stack, WhileNode node)
+    {
+        var current = stack;
+        for (int i = 0; i < node.MaxIterations; i++)
+        {
+            // Run test
+            var afterTest = RunRaw(current, node.Test);
+            var (testResult, cleanStack) = Pop<bool>(afterTest);
+
+            if (!testResult)
+                return cleanStack;
+
+            // Check for errors before running body
+            var opResult = FindOpResult(cleanStack);
+            if (!opResult.IsOk)
+                return cleanStack;
+
+            // Run body — use RunRaw so BreakException propagates to us
+            try
+            {
+                current = RunRaw(cleanStack, node.Body);
+            }
+            catch (BreakException ex)
+            {
+                return ex.Stack; // break exits the while loop cleanly
+            }
+
+            // Check for errors after body
+            opResult = FindOpResult(current);
+            if (!opResult.IsOk)
+                return current;
+        }
+
+        // Hit iteration limit — add error
+        var finalResult = FindOpResult(current);
+        return ReplaceOpResult(current, finalResult.ChainError($"while: exceeded {node.MaxIterations} iterations"));
+    }
+
+    /// <summary>
+    /// Runs nodes without catching BreakException. Used by while/times so break propagates.
+    /// </summary>
+    private static ImmutableStack<object> RunRaw(ImmutableStack<object> stack, IEnumerable<ProgramNode> program) =>
+        program.Aggregate(stack, Execute);
+}
+
+/// <summary>
+/// Thrown by BreakNode to unwind the current Run/quotation/call.
+/// Caught by Run to implement early exit.
+/// </summary>
+public class BreakException : Exception
+{
+    public ImmutableStack<object> Stack { get; }
+
+    public BreakException(ImmutableStack<object> stack) : base("break")
+    {
+        Stack = stack;
     }
 }
