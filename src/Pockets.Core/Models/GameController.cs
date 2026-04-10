@@ -186,14 +186,12 @@ public class GameController
     {
         _session = _session.MoveCursor(_session.Current, pos);
 
-        var newSession = type switch
+        _session = type switch
         {
-            ClickType.Primary => _session.ExecutePrimary(),
+            ClickType.Primary => ExecuteFocusedPrimary(),
             ClickType.Secondary => _session.ExecuteSecondary(),
             _ => _session
         };
-
-        _session = newSession;
 
         var clickName = type == ClickType.Primary ? "LClick" : "RClick";
         return ControllerResult.Handle(_session, $"{clickName}: ({pos.Row},{pos.Col})");
