@@ -8,32 +8,36 @@ namespace Pockets.App.Views;
 /// <summary>
 /// A reusable panel that renders a bag's grid with cursor highlighting.
 /// Used for C (container), W (world), and T (toolbar) panels.
-/// Simpler than GridPanel — no breadcrumbs, description, or mouse handling.
+/// Inherits from View (not FrameView) so mouse events on cells reach the override.
+/// Draws its own title and border.
 /// </summary>
-public class BagPanelView : FrameView
+public class BagPanelView : View
 {
     private readonly LocationId _locationId;
+    private string _title;
     private Bag? _bag;
     private Cursor _cursor = new(new Position(0, 0));
     private bool _isFocused;
 
     public LocationId LocationId => _locationId;
 
+    /// <summary>Title to display in the top border.</summary>
+    public string Title
+    {
+        get => _title;
+        set { _title = value; SetNeedsDisplay(); }
+    }
+
     /// <summary>Fired when a cell in this panel is clicked. (LocationId, Position, ClickType)</summary>
     public event Action<LocationId, Position, ClickType>? CellClicked;
 
-    public BagPanelView(LocationId locationId, string title) : base(title)
+    public BagPanelView(LocationId locationId, string title)
     {
         _locationId = locationId;
+        _title = title;
         Visible = false;
-
-        ColorScheme = new ColorScheme
-        {
-            Normal = Application.Driver.MakeAttribute(Color.White, Color.Black),
-            Focus = Application.Driver.MakeAttribute(Color.White, Color.Black),
-            HotNormal = Application.Driver.MakeAttribute(Color.White, Color.Black),
-            HotFocus = Application.Driver.MakeAttribute(Color.White, Color.Black)
-        };
+        CanFocus = true;
+        WantMousePositionReports = true;
     }
 
     /// <summary>
@@ -47,6 +51,7 @@ public class BagPanelView : FrameView
 
         if (bag is not null)
         {
+            // +2 for border (1 char on each side)
             Width = CellRenderer.CellWidth * bag.Grid.Columns + 2;
             Height = CellRenderer.CellHeight * bag.Grid.Rows + 2;
             Visible = true;
@@ -63,8 +68,7 @@ public class BagPanelView : FrameView
     {
         if (_bag is null) return false;
 
-        // Map mouse coords (relative to FrameView) to grid position.
-        // The FrameView has a 1-cell border, so cells start at (1, 1).
+        // Coordinates are relative to this View. Border is at 0/edge, cells start at +1.
         var gridX = mouseEvent.X - 1;
         var gridY = mouseEvent.Y - 1;
         if (gridX < 0 || gridY < 0) return false;
@@ -93,26 +97,60 @@ public class BagPanelView : FrameView
 
     public override void Redraw(Rect bounds)
     {
-        // Draw frame border with focus color
-        var borderColor = _isFocused
-            ? Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
-            : Application.Driver.MakeAttribute(Color.DarkGray, Color.Black);
+        var driver = Application.Driver;
 
-        // Override the FrameView border color
-        var savedScheme = ColorScheme;
-        ColorScheme = new ColorScheme
+        // Clear background to black
+        var bgAttr = driver.MakeAttribute(Color.White, Color.Black);
+        driver.SetAttribute(bgAttr);
+        for (int row = 0; row < bounds.Height; row++)
         {
-            Normal = borderColor,
-            Focus = borderColor,
-            HotNormal = borderColor,
-            HotFocus = borderColor
-        };
+            Move(0, row);
+            for (int col = 0; col < bounds.Width; col++)
+                driver.AddRune(' ');
+        }
 
-        base.Redraw(bounds);
-        ColorScheme = savedScheme;
+        // Draw border
+        var borderColor = _isFocused
+            ? driver.MakeAttribute(Color.BrightCyan, Color.Black)
+            : driver.MakeAttribute(Color.DarkGray, Color.Black);
+        driver.SetAttribute(borderColor);
+
+        var w = bounds.Width;
+        var h = bounds.Height;
+
+        // Top border with title
+        Move(0, 0);
+        driver.AddRune('\u250c'); // ┌
+        var titleText = _isFocused ? $"► {_title}" : $"  {_title}";
+        var titleStart = 1;
+        for (int i = 1; i < w - 1; i++)
+        {
+            if (i - titleStart < titleText.Length)
+                driver.AddRune(titleText[i - titleStart]);
+            else
+                driver.AddRune('\u2500'); // ─
+        }
+        driver.AddRune('\u2510'); // ┐
+
+        // Side borders
+        for (int y = 1; y < h - 1; y++)
+        {
+            Move(0, y);
+            driver.AddRune('\u2502'); // │
+            Move(w - 1, y);
+            driver.AddRune('\u2502');
+        }
+
+        // Bottom border
+        Move(0, h - 1);
+        driver.AddRune('\u2514'); // └
+        for (int i = 1; i < w - 1; i++)
+            driver.AddRune('\u2500');
+        driver.AddRune('\u2518'); // ┘
 
         if (_bag is null) return;
 
+        // Draw cells
         var grid = _bag.Grid;
         for (int row = 0; row < grid.Rows; row++)
         {
@@ -122,8 +160,8 @@ public class BagPanelView : FrameView
                 var cell = grid.GetCell(pos);
                 var isCursor = _isFocused && row == _cursor.Position.Row && col == _cursor.Position.Col;
 
-                var x = col * CellRenderer.CellWidth;
-                var y = row * CellRenderer.CellHeight;
+                var x = col * CellRenderer.CellWidth + 1; // +1 for border
+                var y = row * CellRenderer.CellHeight + 1;
 
                 DrawCell(x, y, cell, isCursor);
             }
@@ -146,14 +184,14 @@ public class BagPanelView : FrameView
 
         // Top border
         driver.SetAttribute(borderAttr);
-        Move(x + 1, y + 1); // +1 for FrameView border
+        Move(x, y);
         driver.AddRune('\u250c');
         for (int i = 0; i < CellRenderer.ContentWidth; i++)
             driver.AddRune('\u2500');
         driver.AddRune('\u2510');
 
         // Content row
-        Move(x + 1, y + 2);
+        Move(x, y + 1);
         driver.SetAttribute(borderAttr);
         driver.AddRune('\u2502');
         driver.SetAttribute(contentAttr);
@@ -164,7 +202,7 @@ public class BagPanelView : FrameView
         driver.AddRune('\u2502');
 
         // Bottom border
-        Move(x + 1, y + 3);
+        Move(x, y + 2);
         driver.AddRune('\u2514');
         for (int i = 0; i < CellRenderer.ContentWidth; i++)
             driver.AddRune('\u2500');

@@ -214,10 +214,8 @@ public class GameView : Window
         if (cLoc is not null)
         {
             var cBag = state.Store.GetById(cLoc.BagId);
+            _containerPanel.Title = cBag?.EnvironmentType ?? "Container";
             _containerPanel.UpdatePanel(cBag, cLoc.Cursor, focus == LocationId.C);
-            _containerPanel.Title = focus == LocationId.C
-                ? $"► {cBag?.EnvironmentType ?? "Container"}"
-                : $"  {cBag?.EnvironmentType ?? "Container"}";
         }
         else
         {
@@ -229,10 +227,8 @@ public class GameView : Window
         if (wLoc is not null)
         {
             var wBag = state.Store.GetById(wLoc.BagId);
+            _worldPanel.Title = wBag?.EnvironmentType ?? "World";
             _worldPanel.UpdatePanel(wBag, wLoc.Cursor, focus == LocationId.W);
-            _worldPanel.Title = focus == LocationId.W
-                ? $"► {wBag?.EnvironmentType ?? "World"}"
-                : $"  {wBag?.EnvironmentType ?? "World"}";
         }
         else
         {
@@ -244,8 +240,8 @@ public class GameView : Window
         if (tLoc is not null)
         {
             var tBag = state.Store.GetById(tLoc.BagId);
+            _toolbarPanel.Title = "Toolbar";
             _toolbarPanel.UpdatePanel(tBag, tLoc.Cursor, focus == LocationId.T);
-            _toolbarPanel.Title = focus == LocationId.T ? "► Toolbar" : "  Toolbar";
         }
 
         // Position panels vertically in left column

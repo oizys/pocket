@@ -207,6 +207,69 @@ public class PanelTests
     }
 
     [Fact]
+    public void HandleGridClick_OnCPanel_DropsIntoFocusedCell()
+    {
+        // Build a facility with an input slot that accepts Rock
+        var facilityGrid = Grid.Create(3, 1)
+            .SetCell(0, new Cell(Frame: new InputSlotFrame("in1", ItemTypeFilter: Rock)))
+            .SetCell(1, new Cell(Frame: new InputSlotFrame("in2", ItemTypeFilter: Rock)))
+            .SetCell(2, new Cell(Frame: new OutputSlotFrame("out1")));
+        var facilityBag = new Bag(facilityGrid, "Workbench", FacilityState: new FacilityState());
+
+        var rootGrid = Grid.Create(8, 4)
+            .SetCell(0, new Cell(new ItemStack(FacilityType, 1, ContainedBagId: facilityBag.Id)))
+            .SetCell(2, new Cell(new ItemStack(Rock, 10)));
+        var rootBag = new Bag(rootGrid);
+        var handBag = GameState.CreateHandBag();
+        var toolbarBag = new Bag(Grid.Create(10, 1), "Toolbar");
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(toolbarBag).Add(facilityBag);
+        var locations = LocationMap.Create(handBag.Id, rootBag.Id)
+            .Set(LocationId.T, Location.AtOrigin(toolbarBag.Id));
+        var state = new GameState(store, locations, Types);
+
+        var session = GameSession.New(state);
+        var controller = new GameController(session);
+
+        // Click on the facility (cell 0) to open as C
+        controller.HandleGridClick(LocationId.B, new Position(0, 0), ClickType.Primary);
+        Assert.Equal(LocationId.C, controller.Focus);
+
+        // Click on the rock (cell 2 in B) to focus B and grab
+        controller.HandleGridClick(LocationId.B, new Position(0, 2), ClickType.Primary);
+        Assert.Equal(LocationId.B, controller.Focus);
+        Assert.True(controller.Session.Current.HasItemsInHand);
+
+        // Click on the first input slot in C (cell 0) — should focus C and drop
+        controller.HandleGridClick(LocationId.C, new Position(0, 0), ClickType.Primary);
+        Assert.Equal(LocationId.C, controller.Focus);
+
+        // The facility's input slot 0 should now contain rocks
+        var updatedFacility = controller.Session.Current.Store.GetById(facilityBag.Id)!;
+        var input0 = updatedFacility.Grid.GetCell(0);
+        Assert.False(input0.IsEmpty);
+        Assert.Equal("Rock", input0.Stack!.ItemType.Name);
+        Assert.False(controller.Session.Current.HasItemsInHand);
+    }
+
+    [Fact]
+    public void HandleGridClick_OnAlreadyOpenBag_TogglesPanel()
+    {
+        var state = MakeStateWithFacilityAndWild();
+        var session = GameSession.New(state);
+        var controller = new GameController(session);
+
+        // First click opens
+        controller.HandleGridClick(LocationId.B, new Position(0, 0), ClickType.Primary);
+        Assert.True(controller.Session.Current.Locations.Has(LocationId.C));
+
+        // Second click on the same bag should close it
+        // Need to refocus B first since it was switched to C
+        controller.SetFocus(LocationId.B);
+        controller.HandleGridClick(LocationId.B, new Position(0, 0), ClickType.Primary);
+        Assert.False(controller.Session.Current.Locations.Has(LocationId.C));
+    }
+
+    [Fact]
     public void LeaveBag_WhenFocusedOnC_ClosesPanel()
     {
         var state = MakeStateWithFacilityAndWild();

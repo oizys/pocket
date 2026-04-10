@@ -128,7 +128,37 @@ public class GameController
         // Resolve the focused panel's cursor cell
         var focusedCell = ResolveFocusedCell(state);
 
-        // Check for "already open as C/W" no-op when clicking on a bag in B
+        // Toggle: clicking a bag in B that's already open as C/W closes that panel
+        if (_focus == LocationId.B && focusedCell.HasBag)
+        {
+            var bagId = focusedCell.Stack!.ContainedBagId!.Value;
+            var bag = state.Store.GetById(bagId);
+
+            if (bag is not null)
+            {
+                // If this bag is already open as C or W, close that panel
+                if (state.Locations.TryGet(LocationId.C) is { } cLoc && cLoc.BagId == bagId)
+                {
+                    var closeResult = state.ClosePanel(LocationId.C);
+                    if (closeResult.Success)
+                    {
+                        _session = _session.ApplyToolResult(closeResult, () => $"Close: {bag.EnvironmentType}");
+                        return _session;
+                    }
+                }
+                if (state.Locations.TryGet(LocationId.W) is { } wLoc && wLoc.BagId == bagId)
+                {
+                    var closeResult = state.ClosePanel(LocationId.W);
+                    if (closeResult.Success)
+                    {
+                        _session = _session.ApplyToolResult(closeResult, () => $"Close: {bag.EnvironmentType}");
+                        return _session;
+                    }
+                }
+            }
+        }
+
+        // Open as C/W when clicking a bag in B (only if not already open and hand is empty)
         if (_focus == LocationId.B && focusedCell.HasBag && !state.HasItemsInHand)
         {
             var bagId = focusedCell.Stack!.ContainedBagId!.Value;
@@ -136,18 +166,6 @@ public class GameController
 
             if (bag is not null)
             {
-                // If this bag is already open as C or W, focus that panel instead
-                if (state.Locations.TryGet(LocationId.C) is { } cLoc && cLoc.BagId == bagId)
-                {
-                    _focus = LocationId.C;
-                    return _session;
-                }
-                if (state.Locations.TryGet(LocationId.W) is { } wLoc && wLoc.BagId == bagId)
-                {
-                    _focus = LocationId.W;
-                    return _session;
-                }
-
                 if (GameState.IsFacilityBag(bag))
                 {
                     var result = state.OpenAsContainer(bagId);
