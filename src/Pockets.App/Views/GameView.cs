@@ -78,6 +78,10 @@ public class GameView : Window
         _gridPanel.GetGridView().MouseStateChanged += OnMouseStateChanged;
         _gridPanel.GetBackButton().BackClicked += OnBackClicked;
 
+        _containerPanel.CellClicked += OnPanelCellClicked;
+        _worldPanel.CellClicked += OnPanelCellClicked;
+        _toolbarPanel.CellClicked += OnPanelCellClicked;
+
         Add(_containerPanel, _gridPanel, _worldPanel, _toolbarPanel, _rightPanel);
 
         // Initial layout
@@ -169,6 +173,13 @@ public class GameView : Window
     {
         var result = _controller.HandleBackClick();
         _gridPanel.SetInputStatus(result.StatusMessage ?? "Back (click)");
+        UpdateUI();
+    }
+
+    private void OnPanelCellClicked(LocationId panelId, Position pos, ClickType type)
+    {
+        var result = _controller.HandleGridClick(panelId, pos, type);
+        _gridPanel.SetInputStatus(result.StatusMessage ?? $"Click {panelId}: ({pos.Row},{pos.Col})");
         UpdateUI();
     }
 

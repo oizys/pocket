@@ -19,6 +19,9 @@ public class BagPanelView : FrameView
 
     public LocationId LocationId => _locationId;
 
+    /// <summary>Fired when a cell in this panel is clicked. (LocationId, Position, ClickType)</summary>
+    public event Action<LocationId, Position, ClickType>? CellClicked;
+
     public BagPanelView(LocationId locationId, string title) : base(title)
     {
         _locationId = locationId;
@@ -54,6 +57,38 @@ public class BagPanelView : FrameView
         }
 
         SetNeedsDisplay();
+    }
+
+    public override bool MouseEvent(MouseEvent mouseEvent)
+    {
+        if (_bag is null) return false;
+
+        // Map mouse coords (relative to FrameView) to grid position.
+        // The FrameView has a 1-cell border, so cells start at (1, 1).
+        var gridX = mouseEvent.X - 1;
+        var gridY = mouseEvent.Y - 1;
+        if (gridX < 0 || gridY < 0) return false;
+
+        var col = gridX / CellRenderer.CellWidth;
+        var row = gridY / CellRenderer.CellHeight;
+        if (col < 0 || col >= _bag.Grid.Columns || row < 0 || row >= _bag.Grid.Rows)
+            return false;
+
+        var pos = new Position(row, col);
+
+        if (mouseEvent.Flags.HasFlag(MouseFlags.Button1Clicked))
+        {
+            CellClicked?.Invoke(_locationId, pos, ClickType.Primary);
+            return true;
+        }
+        if (mouseEvent.Flags.HasFlag(MouseFlags.Button3Clicked) ||
+            mouseEvent.Flags.HasFlag(MouseFlags.Button2Clicked))
+        {
+            CellClicked?.Invoke(_locationId, pos, ClickType.Secondary);
+            return true;
+        }
+
+        return false;
     }
 
     public override void Redraw(Rect bounds)

@@ -116,24 +116,38 @@ public class GameController
     }
 
     /// <summary>
-    /// Executes Primary action with panel-aware bag opening.
-    /// If the cursor cell in the focused panel contains a facility bag → open as C.
-    /// If it contains a wilderness bag → open as W.
-    /// Otherwise, delegate to normal ToolPrimary.
+    /// Executes Primary action with panel-aware bag opening and routing.
+    /// On B with a bag cell: opens as C/W if not already open (no-op if already open).
+    /// On any other panel: temporarily swaps B with the focused panel so the
+    /// existing tool methods (which read from B) operate on the right cell.
     /// </summary>
     private GameSession ExecuteFocusedPrimary()
     {
         var state = _session.Current;
-        var cell = state.CurrentCell;
 
-        // Only attempt panel-open when focused on B and the cell has a bag
-        if (_focus == LocationId.B && cell.HasBag && !state.HasItemsInHand)
+        // Resolve the focused panel's cursor cell
+        var focusedCell = ResolveFocusedCell(state);
+
+        // Check for "already open as C/W" no-op when clicking on a bag in B
+        if (_focus == LocationId.B && focusedCell.HasBag && !state.HasItemsInHand)
         {
-            var bagId = cell.Stack!.ContainedBagId!.Value;
+            var bagId = focusedCell.Stack!.ContainedBagId!.Value;
             var bag = state.Store.GetById(bagId);
 
             if (bag is not null)
             {
+                // If this bag is already open as C or W, focus that panel instead
+                if (state.Locations.TryGet(LocationId.C) is { } cLoc && cLoc.BagId == bagId)
+                {
+                    _focus = LocationId.C;
+                    return _session;
+                }
+                if (state.Locations.TryGet(LocationId.W) is { } wLoc && wLoc.BagId == bagId)
+                {
+                    _focus = LocationId.W;
+                    return _session;
+                }
+
                 if (GameState.IsFacilityBag(bag))
                 {
                     var result = state.OpenAsContainer(bagId);
@@ -157,7 +171,63 @@ public class GameController
             }
         }
 
+        // For non-B focus, temporarily route the tool through the focused location
+        if (_focus != LocationId.B)
+            return ExecuteOnFocusedPanel(s => s.ExecutePrimary());
+
         return _session.ExecutePrimary();
+    }
+
+    /// <summary>
+    /// Resolves the cell at the focused panel's cursor.
+    /// </summary>
+    private Cell ResolveFocusedCell(GameState state)
+    {
+        var loc = state.Locations.TryGet(_focus);
+        if (loc is null) return state.CurrentCell;
+
+        var bagId = loc.BagId;
+        foreach (var entry in loc.Breadcrumbs.Reverse())
+        {
+            var b = state.Store.GetById(bagId);
+            if (b is null) break;
+            var c = b.Grid.GetCell(entry.CellIndex);
+            if (c.Stack?.ContainedBagId is not { } childId) break;
+            bagId = childId;
+        }
+        var bag = state.Store.GetById(bagId);
+        if (bag is null) return state.CurrentCell;
+        return bag.Grid.GetCell(loc.Cursor.Position);
+    }
+
+    /// <summary>
+    /// Runs a tool by temporarily swapping B with the focused location, then restoring B.
+    /// This lets existing tool methods (which read from B) operate on any panel without modification.
+    /// </summary>
+    private GameSession ExecuteOnFocusedPanel(Func<GameSession, GameSession> toolFn)
+    {
+        var state = _session.Current;
+        var savedB = state.Locations.Get(LocationId.B);
+        var focusedLoc = state.Locations.Get(_focus);
+
+        // Swap: B becomes the focused location
+        var swapped = state with { Locations = state.Locations.Set(LocationId.B, focusedLoc) };
+        var swappedSession = _session with { Current = swapped };
+
+        // Run the tool against the swapped state
+        var afterTool = toolFn(swappedSession);
+
+        // Extract the new "B" (which is really the focused location's new state)
+        var newFocusedLoc = afterTool.Current.Locations.Get(LocationId.B);
+
+        // Restore: put savedB back as B, put the modified location back at _focus
+        var restored = afterTool.Current with
+        {
+            Locations = afterTool.Current.Locations
+                .Set(LocationId.B, savedB)
+                .Set(_focus, newFocusedLoc)
+        };
+        return afterTool with { Current = restored };
     }
 
     /// <summary>
@@ -179,12 +249,26 @@ public class GameController
     }
 
     /// <summary>
-    /// Handles a mouse click on a grid cell. Moves cursor to the position,
-    /// then executes the appropriate action based on click type.
+    /// Handles a mouse click on a grid cell in a specific panel.
+    /// Switches focus to the clicked panel, moves its cursor, then executes the action.
     /// </summary>
-    public ControllerResult HandleGridClick(Position pos, ClickType type)
+    public ControllerResult HandleGridClick(LocationId panelId, Position pos, ClickType type)
     {
-        _session = _session.MoveCursor(_session.Current, pos);
+        // Auto-switch focus to the clicked panel
+        if (_session.Current.Locations.Has(panelId))
+            _focus = panelId;
+
+        // Move the cursor of the focused panel
+        var loc = _session.Current.Locations.TryGet(_focus);
+        if (loc is not null)
+        {
+            var newLoc = loc with { Cursor = new Cursor(pos) };
+            var newState = _session.Current with
+            {
+                Locations = _session.Current.Locations.Set(_focus, newLoc)
+            };
+            _session = _session with { Current = newState };
+        }
 
         _session = type switch
         {
@@ -194,8 +278,14 @@ public class GameController
         };
 
         var clickName = type == ClickType.Primary ? "LClick" : "RClick";
-        return ControllerResult.Handle(_session, $"{clickName}: ({pos.Row},{pos.Col})");
+        return ControllerResult.Handle(_session, $"{clickName} {_focus}: ({pos.Row},{pos.Col})");
     }
+
+    /// <summary>
+    /// Backward-compatible overload for B panel clicks.
+    /// </summary>
+    public ControllerResult HandleGridClick(Position pos, ClickType type) =>
+        HandleGridClick(LocationId.B, pos, type);
 
     /// <summary>
     /// Handles a click on the back/leave-bag button.
