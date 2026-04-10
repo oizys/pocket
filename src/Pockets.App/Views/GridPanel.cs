@@ -123,12 +123,12 @@ public class GridPanel : FrameView
         _inputStatus.SetNeedsDisplay();
     }
 
-    public void UpdateState(GameState state)
+    public void UpdateState(GameState state, LocationId focus = LocationId.B)
     {
         _gridView.UpdateState(state);
         _handCell.UpdateState(state);
         _backButton.SetEnabled(state.IsNested);
-        _descriptionView.UpdateState(state);
+        _descriptionView.UpdateState(state, focus);
 
         // Reposition hand cell in case grid dimensions changed
         var gridWidth = Rendering.CellRenderer.CellWidth * state.ActiveBag.Grid.Columns;

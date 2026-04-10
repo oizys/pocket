@@ -44,10 +44,33 @@ public class ItemDescriptionView : FrameView
     public void SetFacilityRecipeMap(ImmutableDictionary<string, ImmutableArray<string>>? map) =>
         _facilityRecipeMap = map;
 
-    public void UpdateState(GameState state)
+    public void UpdateState(GameState state) => UpdateState(state, LocationId.B);
+
+    public void UpdateState(GameState state, LocationId focus)
     {
-        var cell = state.CurrentCell;
-        var activeBag = state.ActiveBag;
+        var loc = state.Locations.TryGet(focus);
+        Cell cell;
+        Bag activeBag;
+        if (loc is not null)
+        {
+            // Resolve the active bag for this location (follow breadcrumbs)
+            var bagId = loc.BagId;
+            foreach (var entry in loc.Breadcrumbs.Reverse())
+            {
+                var b = state.Store.GetById(bagId);
+                if (b is null) break;
+                var c = b.Grid.GetCell(entry.CellIndex);
+                if (c.Stack?.ContainedBagId is not { } childId) break;
+                bagId = childId;
+            }
+            activeBag = state.Store.GetById(bagId) ?? state.ActiveBag;
+            cell = activeBag.Grid.GetCell(loc.Cursor.Position);
+        }
+        else
+        {
+            cell = state.CurrentCell;
+            activeBag = state.ActiveBag;
+        }
         var lines = new List<string>();
 
         // Item stack info

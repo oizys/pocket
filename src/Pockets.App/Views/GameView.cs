@@ -181,7 +181,7 @@ public class GameView : Window
 
     private void UpdateUI()
     {
-        _gridPanel.UpdateState(_controller.Session.Current);
+        _gridPanel.UpdateState(_controller.Session.Current, _controller.Focus);
         _rightPanel.UpdateLog(_controller.Session.ActionLog);
         UpdatePanelLayout();
     }

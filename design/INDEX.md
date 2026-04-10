@@ -21,4 +21,5 @@
 | -- | Inventory Controls Research (Cross-Game) | -- | Reference | [inventory-controls-research.md](inventory-controls-research.md) |
 | 17 | DSL Implementation Plan (Inventory Operations Language) | Early | Planned | [dsl-implementation-plan.md](dsl-implementation-plan.md) |
 | -- | DSL Design Context (Language Spec) | -- | Reference | [dsl-design-context.md](dsl-design-context.md) |
+| 18 | Panel UX Design (Multi-Panel Layout & Interaction) | Early | In Progress | [panel-ux.md](panel-ux.md) |
 | -- | Godot Quirks (WSL2 / Dev Issues) | -- | Reference | [godot-quirks.md](godot-quirks.md) |
