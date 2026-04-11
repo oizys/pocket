@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "Bash(where dotnet:*)",
+      "Bash(cmd.exe /c \"where dotnet\")",
+      "Bash(cmd.exe /c \"dotnet build C:\\\\git\\\\pocket\\\\Pockets.sln 2>&1\")",
+      "Bash(\"/c/Program Files/dotnet/dotnet.exe\" build \"C:/git/pocket/Pockets.sln\")",
+      "Bash(dotnet:*)"
+    ]
+  }
+}
