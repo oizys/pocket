@@ -83,6 +83,78 @@ W is a core concept that evolves through the game:
 
 The TUI prototype handles stage 1 (abstract). The Godot build will explore stages 2-4.
 
+## Panel State Rules (needs formalization)
+
+As the panel system grows, we're hitting edge cases where it's unclear what should happen. We need to write down rules and patterns, ideally as part of the DSL's standard behavior.
+
+### Current implicit rules (derived from behavior)
+
+**Opening:**
+- Primary on a facility bag in B → opens as C (replaces existing C if any)
+- Primary on a wilderness bag in B → opens as W (replaces existing W)
+- Primary on a facility/wilderness already shown in C/W → closes that panel (toggle)
+- Primary on a non-bag item → grab/drop/swap (normal tool behavior)
+
+**Closing:**
+- Q key while focused on C → close C, focus returns to B
+- Q key while focused on W → close W, focus returns to B
+- Clicking the same bag in B again → toggle close
+- Q key while focused on B with no breadcrumbs → no-op (or exit game?)
+
+**Focus:**
+- Tab / Shift-Tab cycles through open panels in order: T, C, B, W
+- Mouse click on a panel auto-switches focus to it
+- Focus determines which panel zero-arg DSL verbs act on
+- Opening C/W shifts focus to the new panel
+
+**Cross-panel:**
+- Hand (H) is shared — grab from any panel, drop to any panel works
+- Tools execute against the focused panel (B is temporarily swapped internally)
+- Store mutations from tools preserve correctly across panels
+
+### Rules that need design decisions
+
+**Multi-panel content limits:**
+- Can C and W both be open at once? Current answer: yes, independently. Future: maybe no — at most two content panels visible alongside B.
+- Should opening a new C when C is in use replace the old one silently, or ask? Current: silent replace.
+- Should there be a "pinned" state where a panel can't be replaced without explicit close?
+
+**Nested navigation vs panel opening:**
+- What if the player wants to enter a nested bag the old-fashioned way (breadcrumb push) instead of opening as a panel? Is the answer "only panels, no breadcrumbs"?
+- Currently the `Enter` verb still exists but is unreachable via primary click. Does it need its own key?
+- Wilderness bags could be nested arbitrarily. Does opening a wilderness inside another wilderness chain W panels? Or breadcrumb within W?
+
+**Home root for B:**
+- When primary/open on a bag item in T is implemented, it "replaces B's root". We need a concept of "home B" to return to. Is there a stack of roots? A single home?
+- What if the player opens a bag-type item from C or W? Same question.
+
+**Panel-specific actions:**
+- R (CycleRecipe) currently operates on B's active bag. It should operate on the focused panel if it's a facility. Easy fix once we agree.
+- Sort, Undo, other tools — which panel do they operate on? Currently sort operates on the focused panel via the swap trick, which is correct.
+
+### Proposal: DSL-driven rules
+
+Rather than hardcoding all this in C#, the primary/secondary behaviors could be DSL `cond` tables (like they are today). Panel opening rules become DSL opcodes:
+
+```
+[
+  [ cell-has-facility? ]    [ open-as-c ]
+  [ cell-has-wilderness? ]  [ open-as-w ]
+  [ cell-has-bag? ]         [ enter ]
+  [ true ]                  [ normal-primary ]
+] cond
+```
+
+Then rules are visible, testable, and moddable. We can iterate on them without touching the interpreter.
+
+New opcodes needed:
+- `cell-has-facility?` — query
+- `cell-has-wilderness?` — query
+- `open-as-c` — opens cursor cell's bag as C
+- `open-as-w` — opens cursor cell's bag as W
+- `close-panel` — closes the focused panel
+- `focus` — query: pushes the current focus LocationId
+
 ## Open Questions
 
 - Should there be a visual indicator of which bag in B is currently open as C/W? (dimmed border, highlight, icon)

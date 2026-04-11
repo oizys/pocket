@@ -237,13 +237,12 @@ public record GameState(
     /// <summary>
     /// Opens a bag as a Container panel (LocationId.C). The bag remains in its
     /// current grid cell — we're viewing it, not entering it via breadcrumbs.
+    /// If C is already open with a different bag, it is replaced.
     /// </summary>
     public ToolResult OpenAsContainer(Guid bagId)
     {
         if (Store.GetById(bagId) is null)
             return ToolResult.Fail(this, "Bag not found");
-        if (Locations.Has(LocationId.C))
-            return ToolResult.Fail(this, "Container panel already open");
 
         var newLocations = Locations.Set(LocationId.C, Location.AtOrigin(bagId));
         return ToolResult.Ok(this with { Locations = newLocations });
@@ -252,13 +251,12 @@ public record GameState(
     /// <summary>
     /// Opens a bag as a World panel (LocationId.W). The bag remains in its
     /// current grid cell — we're viewing it, not entering it via breadcrumbs.
+    /// If W is already open with a different bag, it is replaced.
     /// </summary>
     public ToolResult OpenAsWorld(Guid bagId)
     {
         if (Store.GetById(bagId) is null)
             return ToolResult.Fail(this, "Bag not found");
-        if (Locations.Has(LocationId.W))
-            return ToolResult.Fail(this, "World panel already open");
 
         var newLocations = Locations.Set(LocationId.W, Location.AtOrigin(bagId));
         return ToolResult.Ok(this with { Locations = newLocations });

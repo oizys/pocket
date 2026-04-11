@@ -49,15 +49,20 @@ public class PanelTests
     }
 
     [Fact]
-    public void OpenAsContainer_FailsIfAlreadyOpen()
+    public void OpenAsContainer_ReplacesExisting()
     {
         var state = MakeStateWithFacilityAndWild();
-        var bagId = state.CurrentCell.Stack!.ContainedBagId!.Value;
-        var opened = state.OpenAsContainer(bagId).State;
-        var result = opened.OpenAsContainer(bagId);
+        var firstBagId = state.CurrentCell.Stack!.ContainedBagId!.Value;
+        var opened = state.OpenAsContainer(firstBagId).State;
 
-        Assert.False(result.Success);
-        Assert.Contains("already open", result.Error!);
+        // Add a second facility bag and open it
+        var secondFacility = new Bag(Grid.Create(3, 1), "Tanner", FacilityState: new FacilityState());
+        opened = opened with { Store = opened.Store.Add(secondFacility) };
+        var result = opened.OpenAsContainer(secondFacility.Id);
+
+        Assert.True(result.Success);
+        var cLoc = result.State.Locations.Get(LocationId.C);
+        Assert.Equal(secondFacility.Id, cLoc.BagId);
     }
 
     // ==================== OpenAsWorld ====================
@@ -267,6 +272,47 @@ public class PanelTests
         controller.SetFocus(LocationId.B);
         controller.HandleGridClick(LocationId.B, new Position(0, 0), ClickType.Primary);
         Assert.False(controller.Session.Current.Locations.Has(LocationId.C));
+    }
+
+    [Fact]
+    public void ClickSecondFacility_InB_ReplacesC_DoesNotEnterB()
+    {
+        // Build root with two facilities
+        var facility1 = new Bag(Grid.Create(3, 1), "Workbench", FacilityState: new FacilityState());
+        var facility2 = new Bag(Grid.Create(3, 1), "Tanner", FacilityState: new FacilityState());
+
+        var rootGrid = Grid.Create(8, 4)
+            .SetCell(0, new Cell(new ItemStack(FacilityType, 1, ContainedBagId: facility1.Id)))
+            .SetCell(1, new Cell(new ItemStack(FacilityType, 1, ContainedBagId: facility2.Id)));
+        var rootBag = new Bag(rootGrid);
+        var handBag = GameState.CreateHandBag();
+        var toolbarBag = new Bag(Grid.Create(10, 1), "Toolbar");
+        var store = BagStore.Empty
+            .Add(rootBag).Add(handBag).Add(toolbarBag)
+            .Add(facility1).Add(facility2);
+        var locations = LocationMap.Create(handBag.Id, rootBag.Id)
+            .Set(LocationId.T, Location.AtOrigin(toolbarBag.Id));
+        var state = new GameState(store, locations, Types);
+
+        var session = GameSession.New(state);
+        var controller = new GameController(session);
+
+        // Open facility1 as C
+        controller.HandleGridClick(LocationId.B, new Position(0, 0), ClickType.Primary);
+        Assert.Equal(LocationId.C, controller.Focus);
+        Assert.Equal(facility1.Id, controller.Session.Current.Locations.Get(LocationId.C).BagId);
+
+        // Click facility2 in B (need to refocus B first to move its cursor)
+        controller.SetFocus(LocationId.B);
+        controller.HandleGridClick(LocationId.B, new Position(0, 1), ClickType.Primary);
+
+        // C should now show facility2
+        Assert.True(controller.Session.Current.Locations.Has(LocationId.C));
+        Assert.Equal(facility2.Id, controller.Session.Current.Locations.Get(LocationId.C).BagId);
+        Assert.Equal(LocationId.C, controller.Focus);
+
+        // B should NOT be nested (no breadcrumbs pushed)
+        Assert.False(controller.Session.Current.IsNested);
     }
 
     [Fact]
