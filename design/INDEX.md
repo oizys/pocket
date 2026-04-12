@@ -23,3 +23,4 @@
 | -- | DSL Design Context (Language Spec) | -- | Reference | [dsl-design-context.md](dsl-design-context.md) |
 | 18 | Panel UX Design (Multi-Panel Layout & Interaction) | Early | In Progress | [panel-ux.md](panel-ux.md) |
 | -- | Godot Quirks (WSL2 / Dev Issues) | -- | Reference | [godot-quirks.md](godot-quirks.md) |
+| 19 | Conveyors / Belts / Arms (Automation Primitives) | Mid | Proposed | [conveyors.md](conveyors.md) |
