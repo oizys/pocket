@@ -1,0 +1,9 @@
+# Runtime working files for the icon-gen pipeline.
+# None of these are source — they're produced by running the scripts.
+work/
+output_blind/
+_blind_workdir/
+manifest.csv
+descriptions.tsv
+scores.tsv
+failed_prompts.txt

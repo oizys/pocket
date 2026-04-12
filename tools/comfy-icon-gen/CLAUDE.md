@@ -25,8 +25,11 @@ or a max iteration count is reached.
 The isolation matters because without it, you fool yourself: an agent that
 knows the prompt reads descriptions charitably, and an agent that can see the
 image metadata can cheat by reading the ComfyUI workflow embedded in the PNG.
-Both failure modes are blocked here — the describer literally cannot extract
-metadata (it only has the `Read` tool) and the comparator has zero tools at all.
+Both failure modes are blocked here with belt-and-suspenders isolation. For
+the describer: (a) `strip_metadata.py` removes tEXt/iTXt chunks before the
+image is ever shown, and (b) `--tools Read` means there's no Bash or Python
+available to re-extract anything from the raw bytes even if chunks were
+present. The comparator has zero tools at all — pure text in, text out.
 
 ## Requirements
 
@@ -51,8 +54,11 @@ COMFYUI_OUTPUT_DIR=C:\path\to\ComfyUI\output
 COMFYUI_API_URL=http://127.0.0.1:8001
 ```
 
-- `COMFYUI_OUTPUT_DIR` — where ComfyUI writes images. The pipeline writes
-  sidecar JSON next to each image here.
+- `COMFYUI_OUTPUT_DIR` — where ComfyUI itself writes raw images. The
+  pipeline reads from here, then copies each finished image into its own
+  local `--work-dir` (default `./work/images/`) so the rest of the stages
+  never touch ComfyUI's directory. This keeps the tool self-contained and
+  lets each iteration wipe its work dir cleanly.
 - `COMFYUI_API_URL` — base URL of ComfyUI's REST API. The Desktop app
   typically uses `:8001`; standalone ComfyUI uses `:8188`.
 
@@ -63,13 +69,19 @@ COMFYUI_API_URL=http://127.0.0.1:8001
 - **`batch_prompts.py`** — Stage 1 generator. Reads a prompts file (one per
   line), loads `workflow.json`, converts it from UI format to ComfyUI API
   format, and POSTs each prompt to `/prompt`. Polls `/history/{prompt_id}`
-  until each job finishes. Writes a JSON sidecar next to each output image
-  and a `manifest.csv` mapping image filenames to their source prompts.
+  until each job finishes, then copies each finished image out of
+  `COMFYUI_OUTPUT_DIR` into the local `--work-dir` (default
+  `./work/images/`) and writes a JSON sidecar alongside it. Also writes
+  `manifest.csv` mapping image filenames to their source prompts. The work
+  dir is wiped at the start of each run by default (pass `--no-clean` to
+  preserve).
 
 - **`strip_metadata.py`** — Copies PNGs from one directory to another,
   removing all embedded tEXt/iTXt chunks (the ComfyUI workflow, the prompt,
   everything). The resulting images are visually identical but carry no
-  evidence of how they were generated. Feeds the blind describer.
+  evidence of how they were generated. Feeds the blind describer. Defaults
+  to reading from `./work/images/` and writing to `./output_blind/`; both
+  can be overridden with positional args.
 
 - **`describe.py`** — Stage 2 blind describer. For each row in
   `manifest.csv`, spawns an isolated `claude -p` subprocess restricted to
@@ -114,8 +126,14 @@ COMFYUI_API_URL=http://127.0.0.1:8001
   Columns: `image_filename, prompt_text`. One row per successfully generated
   image. The single source of truth connecting prompts to their outputs.
 
+- **`work/images/`** — Local copies of images generated this run, pulled
+  out of `COMFYUI_OUTPUT_DIR` by `batch_prompts.py`. Sidecar JSON files live
+  alongside each PNG here. The whole directory is wiped at the start of
+  every `batch_prompts.py` run by default, so it only ever contains the
+  current iteration's outputs. Ignored by git.
+
 - **`output_blind/`** — Directory populated by `strip_metadata.py` with
-  metadata-stripped copies of the images from `COMFYUI_OUTPUT_DIR`. Only read
+  metadata-stripped copies of the images from `work/images/`. Only read
   by `describe.py`.
 
 - **`descriptions.tsv`** — Tab-separated output of `describe.py`.
@@ -140,9 +158,10 @@ COMFYUI_API_URL=http://127.0.0.1:8001
   any project context (e.g. Pockets-specific memory).
 
 - **Per-image sidecar JSON files** (`<image_filename>.json` next to each
-  PNG in `COMFYUI_OUTPUT_DIR`) — Written by `batch_prompts.py`. Contains
-  the prompt, seed, sampler settings, and a deep copy of the full
-  API-format workflow. Enables exact reproduction of any image.
+  PNG in `work/images/`) — Written by `batch_prompts.py` as it copies each
+  finished image out of ComfyUI's output dir. Contains the prompt, seed,
+  sampler settings, and a deep copy of the full API-format workflow.
+  Enables exact reproduction of any image.
 
 ## Running
 
@@ -157,7 +176,7 @@ python validate_loop.py prompts.txt --threshold 8 --max-iter 3 --min-remaining 2
 
 ```
 python batch_prompts.py prompts.txt
-python strip_metadata.py <comfyui_output_dir> output_blind
+python strip_metadata.py                    # defaults: work/images/ -> output_blind/
 python describe.py
 python compare.py
 python build_failed.py 7
@@ -166,19 +185,22 @@ python build_failed.py 7
 ### batch_prompts.py standalone options
 
 ```
-python batch_prompts.py prompts.txt --seeds fixed       # same seed for all (compare prompts)
-python batch_prompts.py prompts.txt --steps 30          # override sampler steps
-python batch_prompts.py prompts.txt --prefix run42      # custom filename prefix
-python batch_prompts.py prompts.txt --no-sidecar        # skip JSON sidecar writing
-python batch_prompts.py prompts.txt --workflow alt.json # use a different workflow
+python batch_prompts.py prompts.txt --seeds fixed              # same seed for all (compare prompts)
+python batch_prompts.py prompts.txt --steps 30                 # override sampler steps
+python batch_prompts.py prompts.txt --prefix run42             # custom filename prefix
+python batch_prompts.py prompts.txt --no-sidecar               # skip JSON sidecar writing
+python batch_prompts.py prompts.txt --workflow alt.json        # use a different workflow
+python batch_prompts.py prompts.txt --work-dir ./scratch/      # custom local work dir
+python batch_prompts.py prompts.txt --no-clean                 # accumulate across runs instead of wiping
 ```
 
 ## Integration notes for Pockets
 
 The intended workflow when integrating with Pockets:
 
-1. Pockets project Claude writes `assets.txt` listing each game asset and a
-   generation prompt, one per line.
+1. Pockets project Claude writes a prompts file (e.g. `assets.txt` — the
+   name is arbitrary, `validate_loop.py` just takes a positional argument)
+   listing each game asset and a generation prompt, one per line.
 2. Pockets invokes `python validate_loop.py assets.txt` with appropriate
    thresholds.
 3. The pipeline loops until all assets meet the threshold or give up.
@@ -202,8 +224,10 @@ defaults shipped here are local paths only, safe to commit).
   those exact files or a modified workflow.
 - **`--bare` mode breaks Claude Max auth.** The describer/comparator do NOT
   use `--bare` because it skips OAuth/keychain reads, forcing API-key auth.
-  Isolation is instead achieved by running each CLI invocation with
-  `cwd=_blind_workdir/`, which has no project memory.
+  Isolation is instead achieved by (a) running each CLI invocation with
+  `cwd=_blind_workdir/`, which has no project memory, and (b) passing
+  `--no-session-persistence` so the subprocess leaves no session state
+  behind and inherits none from prior runs.
 - **Seed widgets have an extra value.** ComfyUI auto-inserts a
   `control_after_generate` widget after any seed input, which shows up in
   `widgets_values` but NOT in the inputs list. `batch_prompts.py` handles
@@ -226,8 +250,12 @@ defaults shipped here are local paths only, safe to commit).
 prompts.txt
     |
     v
-batch_prompts.py -----> ComfyUI /prompt -----> COMFYUI_OUTPUT_DIR/*.png
-    |                                              + *.json (sidecars)
+batch_prompts.py ---> ComfyUI /prompt ---> COMFYUI_OUTPUT_DIR/*.png
+    |                                              |
+    |  wipes work/images/, then copies files local |
+    v                                              v
+work/images/*.png + *.json (sidecars)  <----------+
+    |
     |  writes
     v
 manifest.csv

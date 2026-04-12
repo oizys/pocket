@@ -13,6 +13,7 @@ Usage:
 import csv
 import os
 import json
+import shutil
 import time
 import random
 import argparse
@@ -43,6 +44,10 @@ DEFAULT_OUTPUT_DIR = Path(
     os.environ.get("COMFYUI_OUTPUT_DIR")
     or (Path(__file__).parent.parent / "output")
 )
+# Local work directory where we keep copies of generated images + sidecars.
+# Decoupling from COMFYUI_OUTPUT_DIR keeps this tool self-contained and lets
+# us wipe the dir between runs for clean cross-iteration hygiene.
+DEFAULT_WORK_DIR = Path(__file__).parent / "work" / "images"
 
 
 def load_workflow(path: Path) -> dict:
@@ -136,13 +141,40 @@ def wait_for_completion(prompt_id: str, api_url: str, timeout: float = 600.0) ->
     return []
 
 
-def write_sidecar(image_info: dict, metadata: dict, output_dir: Path) -> Path:
-    """Write a JSON sidecar next to the output image with the same basename."""
-    image_path = output_dir / image_info.get("subfolder", "") / image_info["filename"]
-    sidecar_path = image_path.with_suffix(".json")
+def write_sidecar(image_info: dict, metadata: dict, work_dir: Path) -> Path:
+    """Write a JSON sidecar in work_dir with the same basename as the image.
+
+    Sidecars live alongside the local work copy of the image (flat — any
+    ComfyUI subfolder is collapsed away since we're re-homing the files).
+    """
+    sidecar_path = (work_dir / image_info["filename"]).with_suffix(".json")
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
     sidecar_path.write_text(json.dumps(metadata, indent=2))
     return sidecar_path
+
+
+def copy_to_workdir(image_info: dict, output_dir: Path, work_dir: Path) -> Path:
+    """Copy a generated image from ComfyUI's output dir into work_dir.
+
+    ComfyUI insists on writing to its own configured output directory; this
+    helper pulls each finished image into our local work dir so the rest of
+    the pipeline can operate entirely within the tool folder. Returns the
+    destination path.
+    """
+    src = output_dir / image_info.get("subfolder", "") / image_info["filename"]
+    dst = work_dir / image_info["filename"]
+    work_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return dst
+
+
+def clean_work_dir(work_dir: Path) -> None:
+    """Remove all files in work_dir (but not the dir itself)."""
+    if not work_dir.exists():
+        return
+    for f in work_dir.iterdir():
+        if f.is_file():
+            f.unlink()
 
 
 def main():
@@ -158,16 +190,29 @@ def main():
     parser.add_argument("--workflow", default=str(DEFAULT_WORKFLOW),
                         help="Path to workflow JSON (UI format). Defaults to ./workflow.json next to this script.")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR),
-                        help="ComfyUI output directory (where images + sidecars land). "
+                        help="ComfyUI output directory (where ComfyUI writes raw images — "
+                             "this tool reads from here and copies into --work-dir). "
                              "Env: COMFYUI_OUTPUT_DIR.")
+    parser.add_argument("--work-dir", default=str(DEFAULT_WORK_DIR),
+                        help="Local working directory for image copies + sidecars. "
+                             f"Default: {DEFAULT_WORK_DIR}. Wiped at start of each run "
+                             "unless --no-clean is passed.")
+    parser.add_argument("--no-clean", action="store_true",
+                        help="Don't wipe --work-dir before this run. Useful when "
+                             "accumulating across multiple manual runs.")
     parser.add_argument("--api-url", default=DEFAULT_API,
                         help="ComfyUI API base URL. Env: COMFYUI_API_URL.")
     args = parser.parse_args()
 
     workflow_path = Path(args.workflow)
     output_dir = Path(args.output_dir)
+    work_dir = Path(args.work_dir)
     if not workflow_path.exists():
         print(f"Workflow not found: {workflow_path}"); return
+
+    if not args.no_clean:
+        clean_work_dir(work_dir)
+    work_dir.mkdir(parents=True, exist_ok=True)
 
     prompts = [line.strip() for line in Path(args.prompts_file).read_text().splitlines() if line.strip()]
     if not prompts:
@@ -185,9 +230,10 @@ def main():
     save_id = nodes["SaveImage"]
     guidance_id = nodes.get("FluxGuidance")
 
-    print(f"Workflow: {workflow_path}")
-    print(f"Output dir: {output_dir}")
-    print(f"API: {args.api_url}")
+    print(f"Workflow:   {workflow_path}")
+    print(f"ComfyUI out: {output_dir}")
+    print(f"Work dir:   {work_dir}")
+    print(f"API:        {args.api_url}")
     print(f"Queueing {len(prompts)} prompts...\n")
 
     manifest_path = Path(args.manifest)
@@ -241,15 +287,18 @@ def main():
             continue
 
         for img in images:
+            local_path = copy_to_workdir(img, output_dir, work_dir)
             metadata["image_filename"] = img["filename"]
-            sidecar = write_sidecar(img, metadata, output_dir)
+            sidecar = write_sidecar(img, metadata, work_dir)
             manifest_writer.writerow([img["filename"], prompt_text])
             manifest_file.flush()
-            print(f"       saved {img['filename']}  +  {sidecar.name}")
+            print(f"       copied {img['filename']} -> {local_path}  +  {sidecar.name}")
 
     manifest_file.close()
-    print(f"\nDone. Images saved to {output_dir} with prefix '{args.prefix}_'")
-    print(f"Manifest written to {manifest_path}")
+    print(f"\nDone. {len(prompts)} prompts queued with prefix '{args.prefix}_'")
+    print(f"ComfyUI source: {output_dir}")
+    print(f"Local copies:   {work_dir}")
+    print(f"Manifest:       {manifest_path}")
 
 
 if __name__ == "__main__":

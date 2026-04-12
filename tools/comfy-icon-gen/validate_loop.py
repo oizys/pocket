@@ -45,6 +45,7 @@ DEFAULT_OUTPUT_DIR = Path(
     or (HERE.parent / "output")
 )
 DEFAULT_WORKFLOW = HERE / "workflow.json"
+DEFAULT_WORK_DIR = HERE / "work" / "images"
 BLIND_DIR = HERE / "output_blind"
 
 
@@ -70,12 +71,19 @@ def main():
     parser.add_argument("--workflow", default=str(DEFAULT_WORKFLOW),
                         help="Path to workflow JSON; defaults to ./workflow.json")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR),
-                        help="ComfyUI output directory. Env: COMFYUI_OUTPUT_DIR")
+                        help="ComfyUI output directory (where ComfyUI itself writes raw images; "
+                             "the pipeline reads from here and copies into --work-dir). "
+                             "Env: COMFYUI_OUTPUT_DIR")
+    parser.add_argument("--work-dir", default=str(DEFAULT_WORK_DIR),
+                        help="Local working directory for image copies + sidecars. "
+                             f"Default: {DEFAULT_WORK_DIR}. Wiped at the start of each "
+                             "iteration so cross-iteration state cannot leak.")
     parser.add_argument("--api-url", default=os.environ.get("COMFYUI_API_URL", "http://127.0.0.1:8001"),
                         help="ComfyUI API URL. Env: COMFYUI_API_URL")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
+    work_dir = Path(args.work_dir)
 
     python = sys.executable  # use the same interpreter running this script
     current_input = args.prompts_file
@@ -89,8 +97,9 @@ def main():
             [python, str(HERE / "batch_prompts.py"), current_input,
              "--workflow", args.workflow,
              "--output-dir", str(output_dir),
+             "--work-dir", str(work_dir),
              "--api-url", args.api_url],
-            [python, str(HERE / "strip_metadata.py"), str(output_dir), str(BLIND_DIR)],
+            [python, str(HERE / "strip_metadata.py"), str(work_dir), str(BLIND_DIR)],
             [python, str(HERE / "describe.py")],
             [python, str(HERE / "compare.py")],
             [python, str(HERE / "build_failed.py"), "--threshold", str(args.threshold)],
