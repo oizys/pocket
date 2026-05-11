@@ -26,9 +26,9 @@ The grid is the playing field. Cells render as one colored glyph (category-drive
 ### New views
 
 - **`GlyphRenderer`** — replaces `CellRenderer`'s text-content helper. Maps `(Category, ItemType)` → `(Glyph char, FgColor, BgColor)`. Reads from a glyph map alongside `CategoryColors`.
-- **`CompactGridView`** — renders cells at 3×2 terminal cells per logical cell (visually square at ~2:1 cell aspect). Selectable density (2×1 for late-game large wildernesses).
-- **`CommandStripView`** — replaces `GridPanel._toolbar` (the hardcoded Label at `GridPanel.cs:78`). Receives `(focused panel, cursor cell)` and renders the available verbs with hotkeys: `[1/E Open] [2 Half] [3 Split] [4 Sort] [Q Back]` on a bag cell; `[1 Drop] [4 Sort]` on an empty cell; etc.
-- **Standalone `FocusedDescriptionView`** — owned by `GameView`, not `GridPanel`. Subscribes to `FocusChanged` and `CursorMoved` events from all panels.
+- **`CompactGridView`** — renders cells at **3×2 terminal cells per logical cell** (visually square at ~2:1 cell aspect; matches Cogmind). Logical capacity ~33×25 at a 100×50 terminal, comfortably above the 16-cell max bag/wilderness dimension the design caps at (larger wildernesses stitch discrete rooms via portals). Glyph uses **both color and character** — category drives background/foreground color, item-type drives the glyph character (matches the Cogmind "color = class, glyph = identity" pattern).
+- **`CommandStripView`** — **one global strip**, anchored to the bottom row of `GameView` (full width). Replaces the hardcoded `GridPanel._toolbar` Label at `GridPanel.cs:78`. Receives `(focused panel, cursor cell, session.SplitMode)` and renders the verbs available right now: `[1/E Open] [2 Half] [3 Split] [4 Sort] [Q Back]` on a bag cell; `[1 Drop] [4 Sort]` on an empty cell; the inline split editor when `SplitMode` is active. Always one row, single source of truth for "what can I do right now."
+- **`FocusedDescriptionView`** — standalone fixed pane, always visible, owned by `GameView`. Subscribes to `FocusChanged` and `CursorMoved` events from every panel and re-renders for the focused panel's cursor cell. Position: **bottom of the left column, directly above the global command strip**, full left-column width, fixed **8 rows** tall. Content layered top-to-bottom: item name (colored to match its grid glyph), category + count, 1–2 line description, recipe list / crafting progress for facility cells. Same content set as today's `ItemDescriptionView`, but always-on and focus-tracking instead of B-bound.
 
 ### State changes
 
@@ -63,11 +63,14 @@ The grid is the playing field. Cells render as one colored glyph (category-drive
   4. **Glyph cells.** Biggest visual change — keep last so rollback is one commit.
 - **Godot impact:** zero. All changes in `Pockets.App`. Core API stable.
 
+## Decisions (2026-05-11)
+
+- **Cell aspect:** 3×2 (visually square, ~33×25 capacity). Bags and wildernesses cap at 16×16 by design; larger wildernesses stitch discrete rooms via portals, so dense 2×1 is not needed.
+- **Glyph differentiation:** color **and** glyph — category drives color, item-type drives the glyph character.
+- **Command strip:** one **global** strip at the bottom of `GameView`, full width. Single source of truth.
+
 ## Open Questions
 
-- **Glyph cell aspect:** 3×2 terminal cells (visually square, matches Cogmind, ~33×25 logical capacity at 100×50 terminal) vs 2×1 (denser, ~50×25, better for large wilderness grids). Pick one default per stage?
-- **Glyph differentiation:** color-only, glyph-only, or both? Cogmind uses both — category gives color, item-type gives glyph. Recommend matching that.
-- **Command strip ownership:** one global strip at `GameView` bottom, or one per panel? Per-panel is more accurate to focus model, global is simpler. Recommend per-panel, mirroring the focused-description pattern.
 - **Breadcrumbs:** stay in `GridPanel` title row, or move to the command strip? Title row is cleaner; recommend leaving them.
 - **R (CycleRecipe) on non-B focus:** does it operate on focused panel (per `panel-ux.md` §Recipe Selector)? Recommend yes — folds into change 3.
 
