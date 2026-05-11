@@ -24,3 +24,4 @@
 | 18 | Panel UX Design (Multi-Panel Layout & Interaction) | Early | In Progress | [panel-ux.md](panel-ux.md) |
 | -- | Godot Quirks (WSL2 / Dev Issues) | -- | Reference | [godot-quirks.md](godot-quirks.md) |
 | 19 | Conveyors / Belts / Arms (Automation Primitives) | Mid | Proposed | [conveyors.md](conveyors.md) |
+| 20 | TUI Cleanup & Redesign (Glyph Cells, No Modals, Focus-Following Panes) | Early | Proposed | [tui-redesign.md](tui-redesign.md) |
