@@ -28,7 +28,38 @@ The grid is the playing field. Cells render as one colored glyph (category-drive
 - **`GlyphRenderer`** — replaces `CellRenderer`'s text-content helper. Maps `(Category, ItemType)` → `(Glyph char, FgColor, BgColor)`. Reads from a glyph map alongside `CategoryColors`.
 - **`CompactGridView`** — renders cells at **3×2 terminal cells per logical cell** (visually square at ~2:1 cell aspect; matches Cogmind). Logical capacity ~33×25 at a 100×50 terminal, comfortably above the 16-cell max bag/wilderness dimension the design caps at (larger wildernesses stitch discrete rooms via portals). Glyph uses **both color and character** — category drives background/foreground color, item-type drives the glyph character (matches the Cogmind "color = class, glyph = identity" pattern).
 - **`CommandStripView`** — **one global strip**, anchored to the bottom row of `GameView` (full width). Replaces the hardcoded `GridPanel._toolbar` Label at `GridPanel.cs:78`. Receives `(focused panel, cursor cell, session.SplitMode)` and renders the verbs available right now: `[1/E Open] [2 Half] [3 Split] [4 Sort] [Q Back]` on a bag cell; `[1 Drop] [4 Sort]` on an empty cell; the inline split editor when `SplitMode` is active. Always one row, single source of truth for "what can I do right now."
-- **`FocusedDescriptionView`** — standalone fixed pane, always visible, owned by `GameView`. Subscribes to `FocusChanged` and `CursorMoved` events from every panel and re-renders for the focused panel's cursor cell. Position: **bottom of the left column, directly above the global command strip**, full left-column width, fixed **8 rows** tall. Content layered top-to-bottom: item name (colored to match its grid glyph), category + count, 1–2 line description, recipe list / crafting progress for facility cells. Same content set as today's `ItemDescriptionView`, but always-on and focus-tracking instead of B-bound.
+- **`FocusedDescriptionView`** — standalone fixed pane, always visible, owned by `GameView`. Subscribes to `FocusChanged` and `CursorMoved` events from every panel (including T) and re-renders for the focused panel's cursor cell. Position: **bottom of the left column, directly above the global command strip**, full left-column width, fixed **8 rows** tall. Content layered top-to-bottom: item name (colored to match its grid glyph), category + count, 1–2 line description, recipe list / crafting progress for facility cells. Same content set as today's `ItemDescriptionView`, but always-on and focus-tracking instead of B-bound.
+
+### Left-column vertical stack
+
+The T (Toolbar) panel from `panel-ux.md` §Panel Visibility ("B and T are always visible") stays — it's a 1×10 bag at `LocationId.T` and remains a focusable panel like B/C/W. With glyph cells (3×2 each) it's ~30 columns × 2 rows + border = 4 rows tall. Final left-column layout, top to bottom:
+
+```
+┌─ Left column ───────────────────────────────────┬─ Right column ─┐
+│ ┌─ [C] Container (above B, optional) ──────────┐│ Action Log     │
+│ │  3×2 glyph cells                              ││  > Sort: ok    │
+│ └───────────────────────────────────────────────┘│  > Grab: hand  │
+│ ┌─ [B] Active Bag ► (focused) ─────────────────┐│  ...           │
+│ │  3×2 glyph cells                              ││                │
+│ └───────────────────────────────────────────────┘│                │
+│ ┌─ [W] Wilderness (below B, optional) ─────────┐│                │
+│ │  3×2 glyph cells                              ││                │
+│ └───────────────────────────────────────────────┘│                │
+│ ┌─ [T] Toolbar — 1×10, always visible ─────────┐│                │
+│ │  ▣ ▣ ▣ ▣ ▣ ▣ ▣ ▣ ▣ ▣                          ││                │
+│ └───────────────────────────────────────────────┘│                │
+│ ┌─ Focused Description (8 rows, always) ───────┐│                │
+│ │  ⚙ Iron Wrench    Tool — 1                    ││                │
+│ │  Adjusts threaded fasteners.                  ││                │
+│ │  Recipe: …                                    ││                │
+│ └───────────────────────────────────────────────┘│                │
+├─ [1/E Open] [2 Half] [3 Split] [4 Sort] [Q Back] [^Z Undo] ───────┤
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- **H** (Hand) renders left of the focused grid panel, as today.
+- **T** is always at the bottom of the bag stack, never modal, never collapsed. Its cursor cell drives the description pane when T is focused (Tab cycle: T → C → B → W per `panel-ux.md`).
+- The bag region (C/B/W/T) gets the bulk of the height; description and command strip together occupy a fixed 9 rows at the bottom.
 
 ### State changes
 
@@ -68,11 +99,9 @@ The grid is the playing field. Cells render as one colored glyph (category-drive
 - **Cell aspect:** 3×2 (visually square, ~33×25 capacity). Bags and wildernesses cap at 16×16 by design; larger wildernesses stitch discrete rooms via portals, so dense 2×1 is not needed.
 - **Glyph differentiation:** color **and** glyph — category drives color, item-type drives the glyph character.
 - **Command strip:** one **global** strip at the bottom of `GameView`, full width. Single source of truth.
-
-## Open Questions
-
-- **Breadcrumbs:** stay in `GridPanel` title row, or move to the command strip? Title row is cleaner; recommend leaving them.
-- **R (CycleRecipe) on non-B focus:** does it operate on focused panel (per `panel-ux.md` §Recipe Selector)? Recommend yes — folds into change 3.
+- **Breadcrumbs:** stay in each grid panel's title row (per-panel, not in the command strip).
+- **Hotkey scope:** most hotkey actions operate on the focused panel. R/CycleRecipe, Sort, Split, Grab/Drop, etc. all resolve via the focus model. Global-only verbs (Undo, Quit) stay global.
+- **Toolbar (T) panel:** always visible at the bottom of the bag stack as a 1×10 grid, focusable like B/C/W; participates in the Tab focus cycle (T → C → B → W) and drives the description pane when focused.
 
 ## What stays untouched
 
