@@ -17,6 +17,7 @@ public class GameView : Window
     private readonly BagPanelView _containerPanel; // C panel
     private readonly BagPanelView _worldPanel;     // W panel
     private readonly BagPanelView _toolbarPanel;   // T panel
+    private readonly CommandStripView _commandStrip; // global bottom strip
     private readonly Random _rng = new();
     private object? _tickTimer;
     private readonly bool _enableTickTimer;
@@ -72,6 +73,9 @@ public class GameView : Window
         // T panel (toolbar) — always visible
         _toolbarPanel = new BagPanelView(LocationId.T, "Toolbar");
 
+        // Global command strip — single row at the bottom for hotkeys / split editor
+        _commandStrip = new CommandStripView();
+
         // Wire mouse events
         _gridPanel.GetGridView().GridCellClicked += OnGridCellClicked;
         _gridPanel.GetGridView().GridCellRightClicked += OnGridCellRightClicked;
@@ -81,7 +85,7 @@ public class GameView : Window
         _worldPanel.CellClicked += OnPanelCellClicked;
         _toolbarPanel.CellClicked += OnPanelCellClicked;
 
-        Add(_containerPanel, _gridPanel, _worldPanel, _toolbarPanel, _rightPanel);
+        Add(_containerPanel, _gridPanel, _worldPanel, _toolbarPanel, _rightPanel, _commandStrip);
 
         // Initial layout
         UpdatePanelLayout();
@@ -179,6 +183,7 @@ public class GameView : Window
     {
         _gridPanel.UpdateState(_controller.Session.Current, _controller.Focus);
         _rightPanel.UpdateLog(_controller.Session.ActionLog);
+        _commandStrip.Update(_controller.Session);
         UpdatePanelLayout();
     }
 
@@ -246,9 +251,10 @@ public class GameView : Window
         _gridPanel.X = 0;
         _gridPanel.Y = y;
         // GridPanel chrome budget beyond the active grid's cells: breadcrumb row (1)
-        // + FrameView border top/bottom (2) + toolbar label (1) + status label (1)
-        // + 1 row gap for the description view = 6.
-        y += CellRenderer.CellHeight * state.ActiveBag.Grid.Rows + 6;
+        // + FrameView border top/bottom (2) + status label (1)
+        // + 1 row gap for the description view = 5. (Hotkey hint moved to
+        // global CommandStripView, so the chrome shrank by 1.)
+        y += CellRenderer.CellHeight * state.ActiveBag.Grid.Rows + 5;
 
         // W panel below B (if visible)
         if (_worldPanel.Visible && wLoc is not null)
@@ -268,7 +274,8 @@ public class GameView : Window
             _toolbarPanel.X = PanelXOffset;
             // Anchor T tHeight + 3 rows from the bottom: tHeight covers T's own
             // cells + frame, the extra 3 clears GridPanel's bottom chrome
-            // (toolbar + status bar + frame bottom border) so they don't overlap.
+            // (status bar + frame bottom border = 2) plus the 1-row global
+            // CommandStripView pinned at AnchorEnd(1) so they don't overlap.
             _toolbarPanel.Y = Pos.AnchorEnd(tHeight + 3);
         }
     }

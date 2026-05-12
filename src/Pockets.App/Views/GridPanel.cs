@@ -15,7 +15,6 @@ public class GridPanel : FrameView
     private readonly HandCellView _handCell;
     private readonly Label _handLabel;
     private readonly ItemDescriptionView _descriptionView;
-    private readonly Label _hotkeyHintBar;
     private readonly Label _statusBar;
 
     /// <summary>X offset where the grid starts (after back button + gap).</summary>
@@ -74,14 +73,7 @@ public class GridPanel : FrameView
         };
         _descriptionView.UpdateState(state);
 
-        _hotkeyHintBar = new Label("[1/E/LClick:Action] [2/RClick:Half] [#:Modal] [4:Sort] [Q:Back] [^Z:Undo]")
-        {
-            X = 0,
-            Y = Pos.AnchorEnd(2),
-            Width = Dim.Fill(),
-            Height = 1
-        };
-
+        // Hotkey hints now live in the global CommandStripView at GameView level.
         _statusBar = new Label("")
         {
             X = 0,
@@ -91,7 +83,7 @@ public class GridPanel : FrameView
         };
 
         Add(_breadcrumbs, _backButton, _gridView, _handLabel, _handCell,
-            _descriptionView, _hotkeyHintBar, _statusBar);
+            _descriptionView, _statusBar);
     }
 
     public GridView GetGridView() => _gridView;
