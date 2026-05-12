@@ -17,7 +17,11 @@ public class GameView : Window
     private readonly BagPanelView _containerPanel; // C panel
     private readonly BagPanelView _worldPanel;     // W panel
     private readonly BagPanelView _toolbarPanel;   // T panel
+    private readonly ItemDescriptionView _focusedDescription; // standalone, follows focus
     private readonly CommandStripView _commandStrip; // global bottom strip
+
+    /// <summary>Height of the standalone focused-description pane.</summary>
+    private const int FocusedDescriptionHeight = 8;
     private readonly Random _rng = new();
     private object? _tickTimer;
     private readonly bool _enableTickTimer;
@@ -57,9 +61,9 @@ public class GameView : Window
 
         // B panel (main inventory — existing GridPanel)
         _gridPanel = new GridPanel(_controller.Session.Current);
-        if (!recipes.IsDefaultOrEmpty)
-            _gridPanel.SetRecipes(recipes);
-        _gridPanel.SetFacilityRecipeMap(facilityRecipeMap);
+        // Leave room at the bottom for the focused description pane + command strip
+        // so GridPanel's frame doesn't render through them.
+        _gridPanel.Height = Dim.Fill(FocusedDescriptionHeight + 1);
 
         // Right panel (action log)
         _rightPanel = new RightPanel();
@@ -73,6 +77,20 @@ public class GameView : Window
         // T panel (toolbar) — always visible
         _toolbarPanel = new BagPanelView(LocationId.T, "Toolbar");
 
+        // Standalone focused-description pane — fixed left-column slot above
+        // the command strip. Always visible; subscribes (via UpdateUI) to the
+        // focused panel's cursor cell.
+        _focusedDescription = new ItemDescriptionView
+        {
+            X = 0,
+            Y = Pos.AnchorEnd(FocusedDescriptionHeight + 1),
+            Width = Dim.Percent(70),
+            Height = FocusedDescriptionHeight
+        };
+        if (!recipes.IsDefaultOrEmpty)
+            _focusedDescription.SetRecipes(recipes);
+        _focusedDescription.SetFacilityRecipeMap(facilityRecipeMap);
+
         // Global command strip — single row at the bottom for hotkeys / split editor
         _commandStrip = new CommandStripView();
 
@@ -85,10 +103,13 @@ public class GameView : Window
         _worldPanel.CellClicked += OnPanelCellClicked;
         _toolbarPanel.CellClicked += OnPanelCellClicked;
 
-        Add(_containerPanel, _gridPanel, _worldPanel, _toolbarPanel, _rightPanel, _commandStrip);
+        Add(_containerPanel, _gridPanel, _worldPanel, _toolbarPanel, _rightPanel,
+            _focusedDescription, _commandStrip);
 
-        // Initial layout
-        UpdatePanelLayout();
+        // Initial state population — populates _focusedDescription, command strip,
+        // action log, and runs UpdatePanelLayout so the visible chrome is right
+        // at first render without requiring an input event.
+        UpdateUI();
 
         if (_enableTickTimer)
         {
@@ -193,7 +214,8 @@ public class GameView : Window
 
     private void UpdateUI()
     {
-        _gridPanel.UpdateState(_controller.Session.Current, _controller.Focus);
+        _gridPanel.UpdateState(_controller.Session.Current);
+        _focusedDescription.UpdateState(_controller.Session.Current, _controller.Focus);
         _rightPanel.UpdateLog(_controller.Session.ActionLog);
         _commandStrip.Update(_controller.Session);
         UpdatePanelLayout();
@@ -284,11 +306,11 @@ public class GameView : Window
             var tBag = state.Store.GetById(tLoc.BagId);
             var tHeight = tBag is not null ? CellRenderer.CellHeight * tBag.Grid.Rows + 2 : 5;
             _toolbarPanel.X = PanelXOffset;
-            // Anchor T tHeight + 3 rows from the bottom: tHeight covers T's own
-            // cells + frame, the extra 3 clears GridPanel's bottom chrome
-            // (status bar + frame bottom border = 2) plus the 1-row global
-            // CommandStripView pinned at AnchorEnd(1) so they don't overlap.
-            _toolbarPanel.Y = Pos.AnchorEnd(tHeight + 3);
+            // Anchor T above the standalone focused-description pane (8 rows)
+            // and the 1-row global CommandStripView. tHeight covers T's own
+            // cells + frame border. The extra +1 clears GridPanel's bottom
+            // frame border so the borders don't overlap.
+            _toolbarPanel.Y = Pos.AnchorEnd(tHeight + FocusedDescriptionHeight + 1 + 1);
         }
     }
 

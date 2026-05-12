@@ -230,14 +230,61 @@ public class GamePlaythroughTests : IDisposable
     }
 
     [Fact]
-    public void EnteringNestedBagOfDifferentHeight_RepositionsDescriptionView()
+    public void DescriptionPane_FollowsFocusAcrossPanels()
     {
-        // Regression test for Fix 1 (RootBag → ActiveBag in GridPanel layout).
-        // Root 4×2 with a bag-item in cell 0; nested 1×4 (different row count).
-        // Before the fix, the description view's Y was computed from RootBag rows
-        // and never updated, so it overlapped/gapped against the active grid.
-        // After the fix, the description repositions for ActiveBag rows on each
-        // UpdateState call.
+        // Stage 3 invariant: the focused-description pane reflects the
+        // *focused* panel's cursor cell, not always B. Open a facility bag
+        // as C, switch focus to C, and the description should show that
+        // bag's first cell (a recipe slot label) — not B's cursor.
+        // Concretely: with focus=B we expect a B-cell description; with
+        // focus=C we expect a C-cell description that differs.
+        var state = MakeTestState();  // Root with Rock×5 at (0,0)
+        var gameView = SetupGame(state);
+
+        var descView = FindFirstSubview<ItemDescriptionView>(gameView)!;
+        var label = FindFirstSubview<Label>(descView)!;
+        Assert.NotNull(label);
+
+        var bText = label.Text.ToString() ?? "";
+        Assert.Contains("Rock", bText); // B has Rock at cursor
+
+        // Add an empty C panel pointing at the hand bag (any open bag works
+        // for this test — we just need C's cursor cell to differ from B's).
+        var ctrl = (GameController)gameView.GetType()
+            .GetField("_controller",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(gameView)!;
+
+        // Create a small empty bag for C, register it in the store, and set
+        // a C Location pointing at its empty (0,0) cell.
+        var cBag = new Bag(Grid.Create(2, 2));
+        var stateWithC = ctrl.Session.Current with
+        {
+            Store = ctrl.Session.Current.Store.Add(cBag),
+            Locations = ctrl.Session.Current.Locations.Set(LocationId.C, Location.AtOrigin(cBag.Id))
+        };
+        ctrl.SetSession(ctrl.Session with { Current = stateWithC });
+        ctrl.SetFocus(LocationId.C);
+
+        // Trigger UpdateUI by sending a no-op key (cursor right wraps in 2x2).
+        SendKey(gameView, Key.CursorRight);
+
+        var cText = label.Text.ToString() ?? "";
+        // C's cursor cell is empty — description must NOT contain Rock
+        Assert.DoesNotContain("Rock", cText);
+        Assert.NotEqual(bText, cText);
+    }
+
+    [Fact]
+    public void DescriptionPaneY_IsStableAcrossActiveBagSizeChanges()
+    {
+        // Stage 3 invariant: the focused-description pane is a standalone view
+        // at GameView level positioned with Pos.AnchorEnd. Its Y must NOT
+        // change when the active bag's grid size changes (e.g. entering a
+        // nested bag of different rows). Stage 1's Fix 1 test used to assert
+        // the *opposite* — that the Y moved with ActiveBag.Rows — because the
+        // description was a child of GridPanel positioned right below the
+        // grid cells. Stage 3 fixes that coupling permanently.
         var bagItem = new ItemType("Pouch", Category.Material, IsStackable: false, MaxStackSize: 1);
         var innerCells = Enumerable.Repeat(new Cell(), 4).ToImmutableArray();
         var innerGrid = new Grid(1, 4, innerCells); // 1 col × 4 rows
@@ -259,15 +306,14 @@ public class GamePlaythroughTests : IDisposable
 
         var descView = FindFirstSubview<ItemDescriptionView>(gameView);
         Assert.NotNull(descView);
+        var rootY = descView!.Frame.Y;
 
-        // Root active: 2 rows → description Y = 1 + 2*CellHeight
-        Assert.Equal(1 + 2 * CellRenderer.CellHeight, descView!.Frame.Y);
-
-        // Enter nested bag (E key)
+        // Enter the nested bag — active grid changes from 4x2 to 1x4
         SendKey(gameView, (Key)'e');
 
-        // Nested active: 4 rows → description Y = 1 + 4*CellHeight
-        Assert.Equal(1 + 4 * CellRenderer.CellHeight, descView.Frame.Y);
+        // Pane Y must be unchanged. Old (stage 1) Fix 1 behavior would have
+        // changed it; stage 3 decouples the pane from the active grid size.
+        Assert.Equal(rootY, descView.Frame.Y);
     }
 
     private static T? FindFirstSubview<T>(View root) where T : View
