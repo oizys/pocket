@@ -20,7 +20,6 @@ public class GridView : View
     public event Action<Position>? GridCellRightClicked;
 
     /// <summary>Fired when any mouse event occurs (for debug display).</summary>
-    public event Action<MouseFlags>? MouseStateChanged;
 
     public GridView(GameState state)
     {
@@ -56,8 +55,6 @@ public class GridView : View
 
     public override bool MouseEvent(MouseEvent mouseEvent)
     {
-        MouseStateChanged?.Invoke(mouseEvent.Flags);
-
         // Left click — primary action (immediate, like Minecraft/Factorio)
         if (mouseEvent.Flags.HasFlag(MouseFlags.Button1Clicked))
         {

@@ -75,7 +75,6 @@ public class GameView : Window
         // Wire mouse events
         _gridPanel.GetGridView().GridCellClicked += OnGridCellClicked;
         _gridPanel.GetGridView().GridCellRightClicked += OnGridCellRightClicked;
-        _gridPanel.GetGridView().MouseStateChanged += OnMouseStateChanged;
         _gridPanel.GetBackButton().BackClicked += OnBackClicked;
 
         _containerPanel.CellClicked += OnPanelCellClicked;
@@ -148,46 +147,32 @@ public class GameView : Window
 
         var result = _controller.HandleKey(gameKey.Value, _rng);
         if (result.Handled)
-        {
-            _gridPanel.SetInputStatus(result.StatusMessage ?? $"Key: {keyEvent.Key}");
             UpdateUI();
-        }
         return result.Handled || base.ProcessKey(keyEvent);
     }
 
     private void OnGridCellClicked(Position pos)
     {
-        var result = _controller.HandleGridClick(pos, ClickType.Primary);
-        _gridPanel.SetInputStatus(result.StatusMessage ?? $"LClick: ({pos.Row},{pos.Col})");
+        _controller.HandleGridClick(pos, ClickType.Primary);
         UpdateUI();
     }
 
     private void OnGridCellRightClicked(Position pos)
     {
-        var result = _controller.HandleGridClick(pos, ClickType.Secondary);
-        _gridPanel.SetInputStatus(result.StatusMessage ?? $"RClick: ({pos.Row},{pos.Col})");
+        _controller.HandleGridClick(pos, ClickType.Secondary);
         UpdateUI();
     }
 
     private void OnBackClicked()
     {
-        var result = _controller.HandleBackClick();
-        _gridPanel.SetInputStatus(result.StatusMessage ?? "Back (click)");
+        _controller.HandleBackClick();
         UpdateUI();
     }
 
     private void OnPanelCellClicked(LocationId panelId, Position pos, ClickType type)
     {
-        var result = _controller.HandleGridClick(panelId, pos, type);
-        _gridPanel.SetInputStatus(result.StatusMessage ?? $"Click {panelId}: ({pos.Row},{pos.Col})");
+        _controller.HandleGridClick(panelId, pos, type);
         UpdateUI();
-    }
-
-    private void OnMouseStateChanged(MouseFlags flags)
-    {
-        var l = flags.HasFlag(MouseFlags.Button1Pressed) ? "■" : "·";
-        var r = flags.HasFlag(MouseFlags.Button3Pressed) ? "■" : "·";
-        _gridPanel.SetInputStatus($"[L{l}] [R{r}] {flags}");
     }
 
     private void UpdateUI()

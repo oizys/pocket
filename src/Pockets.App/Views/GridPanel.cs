@@ -17,7 +17,6 @@ public class GridPanel : FrameView
     private readonly ItemDescriptionView _descriptionView;
     private readonly Label _toolbar;
     private readonly Label _statusBar;
-    private readonly Label _inputStatus;
 
     /// <summary>X offset where the grid starts (after back button + gap).</summary>
     private const int GridXOffset = Rendering.CellRenderer.CellWidth + 2;
@@ -78,20 +77,12 @@ public class GridPanel : FrameView
         _toolbar = new Label("[1/E/LClick:Action] [2/RClick:Half] [#:Modal] [4:Sort] [Q:Back] [^Z:Undo]")
         {
             X = 0,
-            Y = Pos.AnchorEnd(3),
-            Width = Dim.Fill(),
-            Height = 1
-        };
-
-        _statusBar = new Label("")
-        {
-            X = 0,
             Y = Pos.AnchorEnd(2),
             Width = Dim.Fill(),
             Height = 1
         };
 
-        _inputStatus = new Label("Input: -")
+        _statusBar = new Label("")
         {
             X = 0,
             Y = Pos.AnchorEnd(1),
@@ -100,7 +91,7 @@ public class GridPanel : FrameView
         };
 
         Add(_breadcrumbs, _backButton, _gridView, _handLabel, _handCell,
-            _descriptionView, _toolbar, _statusBar, _inputStatus);
+            _descriptionView, _toolbar, _statusBar);
     }
 
     public GridView GetGridView() => _gridView;
@@ -116,12 +107,6 @@ public class GridPanel : FrameView
     /// </summary>
     public void SetFacilityRecipeMap(ImmutableDictionary<string, ImmutableArray<string>>? map) =>
         _descriptionView.SetFacilityRecipeMap(map);
-
-    public void SetInputStatus(string status)
-    {
-        _inputStatus.Text = $"Input: {status}";
-        _inputStatus.SetNeedsDisplay();
-    }
 
     public void UpdateState(GameState state, LocationId focus = LocationId.B)
     {
