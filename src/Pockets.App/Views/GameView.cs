@@ -245,10 +245,10 @@ public class GameView : Window
         // B panel (GridPanel)
         _gridPanel.X = 0;
         _gridPanel.Y = y;
-        // GridPanel chrome budget beyond the grid cells: breadcrumb row (1)
+        // GridPanel chrome budget beyond the active grid's cells: breadcrumb row (1)
         // + FrameView border top/bottom (2) + toolbar label (1) + status label (1)
         // + 1 row gap for the description view = 6.
-        y += CellRenderer.CellHeight * state.RootBag.Grid.Rows + 6;
+        y += CellRenderer.CellHeight * state.ActiveBag.Grid.Rows + 6;
 
         // W panel below B (if visible)
         if (_worldPanel.Visible && wLoc is not null)

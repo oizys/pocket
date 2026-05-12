@@ -66,7 +66,7 @@ public class GridPanel : FrameView
             Y = 1
         };
 
-        var gridHeight = Rendering.CellRenderer.CellHeight * state.RootBag.Grid.Rows;
+        var gridHeight = Rendering.CellRenderer.CellHeight * state.ActiveBag.Grid.Rows;
         _descriptionView = new ItemDescriptionView()
         {
             X = GridXOffset,
@@ -115,10 +115,12 @@ public class GridPanel : FrameView
         _backButton.SetEnabled(state.IsNested);
         _descriptionView.UpdateState(state, focus);
 
-        // Reposition hand cell in case grid dimensions changed
+        // Reposition hand cell and description view in case grid dimensions changed
         var gridWidth = Rendering.CellRenderer.CellWidth * state.ActiveBag.Grid.Columns;
         _handLabel.X = GridXOffset + gridWidth + 2;
         _handCell.X = GridXOffset + gridWidth + 2;
+        var gridHeight = Rendering.CellRenderer.CellHeight * state.ActiveBag.Grid.Rows;
+        _descriptionView.Y = 1 + gridHeight;
 
         // Breadcrumb trail
         _breadcrumbs.Text = string.Join(" > ", state.BreadcrumbPath);

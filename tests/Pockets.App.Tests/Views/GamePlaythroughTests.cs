@@ -185,4 +185,58 @@ public class GamePlaythroughTests : IDisposable
         // Inventory panel frame title
         Assert.Contains("Inventory", dump);
     }
+
+    [Fact]
+    public void EnteringNestedBagOfDifferentHeight_RepositionsDescriptionView()
+    {
+        // Regression test for Fix 1 (RootBag → ActiveBag in GridPanel layout).
+        // Root 4×2 with a bag-item in cell 0; nested 1×4 (different row count).
+        // Before the fix, the description view's Y was computed from RootBag rows
+        // and never updated, so it overlapped/gapped against the active grid.
+        // After the fix, the description repositions for ActiveBag rows on each
+        // UpdateState call.
+        var bagItem = new ItemType("Pouch", Category.Material, IsStackable: false, MaxStackSize: 1);
+        var innerCells = Enumerable.Repeat(new Cell(), 4).ToImmutableArray();
+        var innerGrid = new Grid(1, 4, innerCells); // 1 col × 4 rows
+        var innerBag = new Bag(innerGrid);
+
+        var rootCells = new Cell[8];
+        rootCells[0] = new Cell(new ItemStack(bagItem, 1, ContainedBagId: innerBag.Id));
+        for (int i = 1; i < 8; i++)
+            rootCells[i] = new Cell();
+        var rootGrid = new Grid(4, 2, rootCells.ToImmutableArray()); // 4 cols × 2 rows
+        var rootBag = new Bag(rootGrid);
+
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(innerBag);
+        var types = ImmutableArray.Create(bagItem);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), types);
+
+        var gameView = SetupGame(state);
+
+        var descView = FindFirstSubview<ItemDescriptionView>(gameView);
+        Assert.NotNull(descView);
+
+        // Root active: 2 rows → description Y = 1 + 2*CellHeight
+        Assert.Equal(1 + 2 * CellRenderer.CellHeight, descView!.Frame.Y);
+
+        // Enter nested bag (E key)
+        SendKey(gameView, (Key)'e');
+
+        // Nested active: 4 rows → description Y = 1 + 4*CellHeight
+        Assert.Equal(1 + 4 * CellRenderer.CellHeight, descView.Frame.Y);
+    }
+
+    private static T? FindFirstSubview<T>(View root) where T : View
+    {
+        foreach (var sub in root.Subviews)
+        {
+            if (sub is T match)
+                return match;
+            var deeper = FindFirstSubview<T>(sub);
+            if (deeper is not null)
+                return deeper;
+        }
+        return null;
+    }
 }
