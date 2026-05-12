@@ -1,12 +1,12 @@
 using Terminal.Gui;
 using Pockets.Core.Models;
+using Pockets.Core.Rendering;
 using Pockets.App.Rendering;
-using static Pockets.App.Rendering.CategoryColors;
 
 namespace Pockets.App.Views;
 
 /// <summary>
-/// Custom View that draws the inventory grid with box-drawing borders.
+/// Custom View that draws the active bag's grid as 3×2 colored-glyph cells.
 /// Handles mouse events and translates them to grid cell positions.
 /// </summary>
 public class GridView : View
@@ -18,8 +18,6 @@ public class GridView : View
 
     /// <summary>Fired when a cell is right-clicked.</summary>
     public event Action<Position>? GridCellRightClicked;
-
-    /// <summary>Fired when any mouse event occurs (for debug display).</summary>
 
     public GridView(GameState state)
     {
@@ -37,10 +35,6 @@ public class GridView : View
         SetNeedsDisplay();
     }
 
-    /// <summary>
-    /// Converts view-local mouse coordinates to a grid Position.
-    /// Returns null if outside the grid bounds.
-    /// </summary>
     private Position? MouseToGridPosition(int x, int y)
     {
         var col = x / CellRenderer.CellWidth;
@@ -55,7 +49,6 @@ public class GridView : View
 
     public override bool MouseEvent(MouseEvent mouseEvent)
     {
-        // Left click — primary action (immediate, like Minecraft/Factorio)
         if (mouseEvent.Flags.HasFlag(MouseFlags.Button1Clicked))
         {
             var pos = MouseToGridPosition(mouseEvent.X, mouseEvent.Y);
@@ -64,7 +57,6 @@ public class GridView : View
             return true;
         }
 
-        // Right click — secondary action
         if (mouseEvent.Flags.HasFlag(MouseFlags.Button3Clicked) ||
             mouseEvent.Flags.HasFlag(MouseFlags.Button2Clicked))
         {
@@ -82,7 +74,6 @@ public class GridView : View
         var driver = Application.Driver;
         var bg = driver.MakeAttribute(Color.White, Color.Black);
 
-        // Clear entire view area to black
         driver.SetAttribute(bg);
         for (int row = 0; row < bounds.Height; row++)
         {
@@ -101,51 +92,8 @@ public class GridView : View
                 var pos = new Position(row, col);
                 var cell = grid.GetCell(pos);
                 var isCursor = row == cursorPos.Row && col == cursorPos.Col;
-                DrawCell(col * CellRenderer.CellWidth, row * CellRenderer.CellHeight, cell, isCursor);
+                CellDrawing.Draw(this, col * CellRenderer.CellWidth, row * CellRenderer.CellHeight, cell, isCursor);
             }
         }
-    }
-
-    private void DrawCell(int x, int y, Cell cell, bool isCursor)
-    {
-        var driver = Application.Driver;
-
-        // Border color: category-colored background, frame-colored foreground
-        var borderBg = cell.IsEmpty ? Color.Black : CategoryColors.GetBackground(cell.Stack!.ItemType.Category);
-        var borderFg = cell.HasFrame
-            ? CategoryColors.GetFrameForeground(cell.Frame)
-            : cell.IsEmpty ? Color.DarkGray : CategoryColors.GetBorderForeground(cell.Stack!.ItemType.Category);
-        var borderAttr = driver.MakeAttribute(borderFg, borderBg);
-
-        // Content color: black bg normally, inverted for cursor
-        var contentAttr = isCursor
-            ? driver.MakeAttribute(Color.Black, Color.White)
-            : driver.MakeAttribute(Color.White, Color.Black);
-
-        // Top border
-        driver.SetAttribute(borderAttr);
-        Move(x, y);
-        driver.AddRune('\u250c');
-        for (int i = 0; i < CellRenderer.ContentWidth; i++)
-            driver.AddRune('\u2500');
-        driver.AddRune('\u2510');
-
-        // Content row
-        Move(x, y + 1);
-        driver.SetAttribute(borderAttr);
-        driver.AddRune('\u2502');
-        driver.SetAttribute(contentAttr);
-        var content = CellRenderer.GetCellContent(cell);
-        foreach (var ch in content)
-            driver.AddRune(ch);
-        driver.SetAttribute(borderAttr);
-        driver.AddRune('\u2502');
-
-        // Bottom border
-        Move(x, y + 2);
-        driver.AddRune('\u2514');
-        for (int i = 0; i < CellRenderer.ContentWidth; i++)
-            driver.AddRune('\u2500');
-        driver.AddRune('\u2518');
     }
 }

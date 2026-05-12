@@ -69,8 +69,9 @@ public class GamePlaythroughTests : IDisposable
         SetupGame(state);
 
         var dump = _harness!.DumpBuffer();
-        Assert.Contains("ROCK", dump);
-        Assert.Contains("HERB", dump);
+        // 3x2 glyph cells: Rock x5 -> "R 5", Herb x3 -> "H 3"
+        Assert.Contains("R 5", dump);
+        Assert.Contains("H 3", dump);
     }
 
     [Fact]
@@ -89,7 +90,7 @@ public class GamePlaythroughTests : IDisposable
         var state = MakeTestState();
         var gameView = SetupGame(state);
 
-        var rockPos = _harness!.FindText("ROCK");
+        var rockPos = _harness!.FindText("R 5");
         Assert.NotNull(rockPos);
         var initialAttr = _harness.GetAttribute(rockPos.Value.X, rockPos.Value.Y);
 
@@ -106,15 +107,15 @@ public class GamePlaythroughTests : IDisposable
         var state = MakeTestState();
         var gameView = SetupGame(state);
 
-        var rockPos = _harness!.FindText("ROCK");
+        var rockPos = _harness!.FindText("R 5");
         Assert.NotNull(rockPos);
 
         // Primary action = grab
         SendKey(gameView, (Key)'1');
 
-        // Rock should be gone from grid at that position
-        var charAtOldPos = _harness.GetText(rockPos.Value.X, rockPos.Value.Y, 4);
-        Assert.NotEqual("ROCK", charAtOldPos);
+        // Rock glyph + count should be gone from the original grid cell.
+        var charAtOldPos = _harness.GetText(rockPos.Value.X, rockPos.Value.Y, 3);
+        Assert.NotEqual("R 5", charAtOldPos);
     }
 
     [Fact]
@@ -135,7 +136,7 @@ public class GamePlaythroughTests : IDisposable
 
         // Rock should appear somewhere in the buffer still
         var dump = _harness!.DumpBuffer();
-        Assert.Contains("ROCK", dump);
+        Assert.Contains("R 5", dump);
     }
 
     [Fact]
@@ -147,8 +148,8 @@ public class GamePlaythroughTests : IDisposable
         SendKey(gameView, (Key)'4');
 
         var dump = _harness!.DumpBuffer();
-        Assert.Contains("ROCK", dump);
-        Assert.Contains("HERB", dump);
+        Assert.Contains("R 5", dump);
+        Assert.Contains("H 3", dump);
     }
 
     [Fact]
@@ -157,20 +158,20 @@ public class GamePlaythroughTests : IDisposable
         var state = MakeTestState();
         var gameView = SetupGame(state);
 
-        var rockPos = _harness!.FindText("ROCK");
+        var rockPos = _harness!.FindText("R 5");
         Assert.NotNull(rockPos);
 
         // Grab Rock
         SendKey(gameView, (Key)'1');
 
-        var charAfterGrab = _harness.GetText(rockPos.Value.X, rockPos.Value.Y, 4);
-        Assert.NotEqual("ROCK", charAfterGrab);
+        var charAfterGrab = _harness.GetText(rockPos.Value.X, rockPos.Value.Y, 3);
+        Assert.NotEqual("R 5", charAfterGrab);
 
         // Undo
         SendKey(gameView, Key.Z | Key.CtrlMask);
 
-        var charAfterUndo = _harness.GetText(rockPos.Value.X, rockPos.Value.Y, 4);
-        Assert.Equal("ROCK", charAfterUndo);
+        var charAfterUndo = _harness.GetText(rockPos.Value.X, rockPos.Value.Y, 3);
+        Assert.Equal("R 5", charAfterUndo);
     }
 
     [Fact]

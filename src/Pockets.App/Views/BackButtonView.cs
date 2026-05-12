@@ -4,14 +4,13 @@ using Pockets.App.Rendering;
 namespace Pockets.App.Views;
 
 /// <summary>
-/// A clickable cell-sized button that triggers "leave bag" (back navigation).
-/// Renders as a box-drawing cell with "< Back" text.
+/// A clickable cell-sized "back" button (leave-bag navigation). Renders as a
+/// single 3×2 cell: ` ← ` on row 1 when enabled, blank otherwise.
 /// </summary>
 public class BackButtonView : View
 {
     private bool _enabled;
 
-    /// <summary>Fired when the back button is clicked.</summary>
     public event Action? BackClicked;
 
     public BackButtonView()
@@ -40,37 +39,17 @@ public class BackButtonView : View
     public override void Redraw(Rect bounds)
     {
         var driver = Application.Driver;
-        var borderAttr = _enabled
-            ? driver.MakeAttribute(Color.White, Color.Black)
+        var attr = _enabled
+            ? driver.MakeAttribute(Color.BrightCyan, Color.Black)
             : driver.MakeAttribute(Color.DarkGray, Color.Black);
-        var contentAttr = _enabled
-            ? driver.MakeAttribute(Color.White, Color.Black)
-            : driver.MakeAttribute(Color.DarkGray, Color.Black);
+        driver.SetAttribute(attr);
 
-        // Top border
-        driver.SetAttribute(borderAttr);
         Move(0, 0);
-        driver.AddRune('\u250c');
-        for (int i = 0; i < CellRenderer.ContentWidth; i++)
-            driver.AddRune('\u2500');
-        driver.AddRune('\u2510');
-
-        // Content row
-        Move(0, 1);
-        driver.SetAttribute(borderAttr);
-        driver.AddRune('\u2502');
-        driver.SetAttribute(contentAttr);
-        var content = _enabled ? "\u2190 Back  " : "        ";
-        foreach (var ch in content)
+        foreach (var ch in _enabled ? " ← " : "   ")
             driver.AddRune(ch);
-        driver.SetAttribute(borderAttr);
-        driver.AddRune('\u2502');
 
-        // Bottom border
-        Move(0, 2);
-        driver.AddRune('\u2514');
-        for (int i = 0; i < CellRenderer.ContentWidth; i++)
-            driver.AddRune('\u2500');
-        driver.AddRune('\u2518');
+        Move(0, 1);
+        foreach (var ch in "   ")
+            driver.AddRune(ch);
     }
 }

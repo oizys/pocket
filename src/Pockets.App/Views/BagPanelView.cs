@@ -1,15 +1,12 @@
 using Terminal.Gui;
 using Pockets.Core.Models;
 using Pockets.App.Rendering;
-using static Pockets.App.Rendering.CategoryColors;
 
 namespace Pockets.App.Views;
 
 /// <summary>
-/// A reusable panel that renders a bag's grid with cursor highlighting.
-/// Used for C (container), W (world), and T (toolbar) panels.
-/// Inherits from View (not FrameView) so mouse events on cells reach the override.
-/// Draws its own title and border.
+/// A reusable panel that renders a bag's grid as 3×2 glyph cells with a title
+/// border. Used for C (container), W (world), and T (toolbar) panels.
 /// </summary>
 public class BagPanelView : View
 {
@@ -21,14 +18,12 @@ public class BagPanelView : View
 
     public LocationId LocationId => _locationId;
 
-    /// <summary>Title to display in the top border.</summary>
     public string Title
     {
         get => _title;
         set { _title = value; SetNeedsDisplay(); }
     }
 
-    /// <summary>Fired when a cell in this panel is clicked. (LocationId, Position, ClickType)</summary>
     public event Action<LocationId, Position, ClickType>? CellClicked;
 
     public BagPanelView(LocationId locationId, string title)
@@ -40,9 +35,6 @@ public class BagPanelView : View
         WantMousePositionReports = true;
     }
 
-    /// <summary>
-    /// Updates the bag and cursor for this panel. Pass null bag to hide.
-    /// </summary>
     public void UpdatePanel(Bag? bag, Cursor? cursor, bool isFocused)
     {
         _bag = bag;
@@ -51,7 +43,7 @@ public class BagPanelView : View
 
         if (bag is not null)
         {
-            // +2 for border (1 char on each side)
+            // +2 for outer border (1 char on each side)
             Width = CellRenderer.CellWidth * bag.Grid.Columns + 2;
             Height = CellRenderer.CellHeight * bag.Grid.Rows + 2;
             Visible = true;
@@ -68,7 +60,7 @@ public class BagPanelView : View
     {
         if (_bag is null) return false;
 
-        // Coordinates are relative to this View. Border is at 0/edge, cells start at +1.
+        // Border is 1 char on each side; cells start at +1.
         var gridX = mouseEvent.X - 1;
         var gridY = mouseEvent.Y - 1;
         if (gridX < 0 || gridY < 0) return false;
@@ -99,7 +91,6 @@ public class BagPanelView : View
     {
         var driver = Application.Driver;
 
-        // Clear background to black
         var bgAttr = driver.MakeAttribute(Color.White, Color.Black);
         driver.SetAttribute(bgAttr);
         for (int row = 0; row < bounds.Height; row++)
@@ -109,7 +100,6 @@ public class BagPanelView : View
                 driver.AddRune(' ');
         }
 
-        // Draw border
         var borderColor = _isFocused
             ? driver.MakeAttribute(Color.BrightCyan, Color.Black)
             : driver.MakeAttribute(Color.DarkGray, Color.Black);
@@ -120,7 +110,7 @@ public class BagPanelView : View
 
         // Top border with title
         Move(0, 0);
-        driver.AddRune('\u250c'); // ┌
+        driver.AddRune('┌'); // ┌
         var titleText = _isFocused ? $"► {_title}" : $"  {_title}";
         var titleStart = 1;
         for (int i = 1; i < w - 1; i++)
@@ -128,29 +118,29 @@ public class BagPanelView : View
             if (i - titleStart < titleText.Length)
                 driver.AddRune(titleText[i - titleStart]);
             else
-                driver.AddRune('\u2500'); // ─
+                driver.AddRune('─'); // ─
         }
-        driver.AddRune('\u2510'); // ┐
+        driver.AddRune('┐'); // ┐
 
         // Side borders
         for (int y = 1; y < h - 1; y++)
         {
             Move(0, y);
-            driver.AddRune('\u2502'); // │
+            driver.AddRune('│');
             Move(w - 1, y);
-            driver.AddRune('\u2502');
+            driver.AddRune('│');
         }
 
         // Bottom border
         Move(0, h - 1);
-        driver.AddRune('\u2514'); // └
+        driver.AddRune('└');
         for (int i = 1; i < w - 1; i++)
-            driver.AddRune('\u2500');
-        driver.AddRune('\u2518'); // ┘
+            driver.AddRune('─');
+        driver.AddRune('┘');
 
         if (_bag is null) return;
 
-        // Draw cells
+        // Draw cells inside the border
         var grid = _bag.Grid;
         for (int row = 0; row < grid.Rows; row++)
         {
@@ -159,53 +149,11 @@ public class BagPanelView : View
                 var pos = new Position(row, col);
                 var cell = grid.GetCell(pos);
                 var isCursor = _isFocused && row == _cursor.Position.Row && col == _cursor.Position.Col;
-
-                var x = col * CellRenderer.CellWidth + 1; // +1 for border
-                var y = row * CellRenderer.CellHeight + 1;
-
-                DrawCell(x, y, cell, isCursor);
+                CellDrawing.Draw(this,
+                    col * CellRenderer.CellWidth + 1,
+                    row * CellRenderer.CellHeight + 1,
+                    cell, isCursor);
             }
         }
-    }
-
-    private void DrawCell(int x, int y, Cell cell, bool isCursor)
-    {
-        var driver = Application.Driver;
-
-        var borderBg = cell.IsEmpty ? Color.Black : GetBackground(cell.Stack!.ItemType.Category);
-        var borderFg = cell.HasFrame
-            ? GetFrameForeground(cell.Frame)
-            : cell.IsEmpty ? Color.DarkGray : GetBorderForeground(cell.Stack!.ItemType.Category);
-        var borderAttr = driver.MakeAttribute(borderFg, borderBg);
-
-        var contentAttr = isCursor
-            ? driver.MakeAttribute(Color.Black, Color.White)
-            : driver.MakeAttribute(Color.White, Color.Black);
-
-        // Top border
-        driver.SetAttribute(borderAttr);
-        Move(x, y);
-        driver.AddRune('\u250c');
-        for (int i = 0; i < CellRenderer.ContentWidth; i++)
-            driver.AddRune('\u2500');
-        driver.AddRune('\u2510');
-
-        // Content row
-        Move(x, y + 1);
-        driver.SetAttribute(borderAttr);
-        driver.AddRune('\u2502');
-        driver.SetAttribute(contentAttr);
-        var content = CellRenderer.GetCellContent(cell);
-        foreach (var ch in content)
-            driver.AddRune(ch);
-        driver.SetAttribute(borderAttr);
-        driver.AddRune('\u2502');
-
-        // Bottom border
-        Move(x, y + 2);
-        driver.AddRune('\u2514');
-        for (int i = 0; i < CellRenderer.ContentWidth; i++)
-            driver.AddRune('\u2500');
-        driver.AddRune('\u2518');
     }
 }

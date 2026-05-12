@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using Terminal.Gui;
 using Pockets.Core.Models;
 using Pockets.App.Views;
 using Pockets.App.Rendering;
@@ -7,7 +6,8 @@ using Pockets.App.Rendering;
 namespace Pockets.App.Tests.Views;
 
 /// <summary>
-/// Tests that HandCellView renders correctly in empty and holding states.
+/// Tests that HandCellView renders the new 3×2 glyph cell. Hand is a single
+/// 3×2 cell — row 1 shows glyph + count, row 2 is the (always empty) frame row.
 /// </summary>
 public class HandCellViewRenderTests : IDisposable
 {
@@ -50,43 +50,31 @@ public class HandCellViewRenderTests : IDisposable
     }
 
     [Fact]
-    public void EmptyHand_RendersBoxBorders()
+    public void EmptyHand_RendersThreeSpaces_TwoRows()
     {
         SetupHandView(EmptyHandState());
-
-        Assert.Equal('\u250c', _harness!.GetChar(0, 0)); // ┌
-        Assert.Equal('\u2518', _harness.GetChar(9, 2));   // ┘
+        Assert.Equal("   ", _harness!.GetText(0, 0, 3));
+        Assert.Equal("   ", _harness.GetText(0, 1, 3));
     }
 
     [Fact]
-    public void EmptyHand_ContentIsBlank()
-    {
-        SetupHandView(EmptyHandState());
-
-        var content = _harness!.GetText(1, 1, CellRenderer.ContentWidth);
-        Assert.Equal(new string(' ', CellRenderer.ContentWidth), content);
-    }
-
-    [Fact]
-    public void HoldingItem_ShowsItemText()
+    public void HoldingItem_RendersGlyphAndCount()
     {
         SetupHandView(HoldingState());
-
-        var content = _harness!.GetText(1, 1, CellRenderer.ContentWidth);
-        Assert.Contains("ROCK", content);
-        Assert.Contains("5", content);
+        Assert.Equal("R 5", _harness!.GetText(0, 0, 3));
+        Assert.Equal("   ", _harness.GetText(0, 1, 3));
     }
 
     [Fact]
     public void HoldingItem_HasDifferentAttributeThanEmpty()
     {
         var view = SetupHandView(EmptyHandState());
-        var emptyAttr = _harness!.GetAttribute(1, 1);
+        var emptyAttr = _harness!.GetAttribute(0, 0);
 
         view.UpdateState(HoldingState());
         _harness.Render();
 
-        var holdingAttr = _harness.GetAttribute(1, 1);
+        var holdingAttr = _harness.GetAttribute(0, 0);
         Assert.NotEqual(emptyAttr, holdingAttr);
     }
 }
