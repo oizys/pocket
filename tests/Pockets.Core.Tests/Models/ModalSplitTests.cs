@@ -132,4 +132,90 @@ public class ModalSplitTests
         Assert.Equal(8, session.Current.RootBag.Grid.GetCell(0).Stack!.Count);
         Assert.False(session.Current.HasItemsInHand);
     }
+
+    // ==================== Inline SplitMode (Stage 2) ====================
+
+    [Fact]
+    public void BeginSplit_InitializesAtHalfStack()
+    {
+        var state = FromDiagram("[Rck8]*[    ] [    ] [    ]");
+        var session = GameSession.New(state);
+
+        session = session.BeginSplit(LocationId.B);
+
+        Assert.NotNull(session.SplitMode);
+        Assert.Equal(LocationId.B, session.SplitMode!.Location);
+        Assert.Equal(new Position(0, 0), session.SplitMode.CellPosition);
+        Assert.Equal(8, session.SplitMode.StackTotal);
+        Assert.Equal(4, session.SplitMode.GrabCount);
+    }
+
+    [Fact]
+    public void BeginSplit_EmptyCell_NoMode()
+    {
+        var state = FromDiagram("[    ]*[    ] [    ] [    ]");
+        var session = GameSession.New(state).BeginSplit(LocationId.B);
+        Assert.Null(session.SplitMode);
+    }
+
+    [Fact]
+    public void BeginSplit_SingleItem_NoMode()
+    {
+        var state = FromDiagram("[Rck1]*[    ] [    ] [    ]");
+        var session = GameSession.New(state).BeginSplit(LocationId.B);
+        Assert.Null(session.SplitMode);
+    }
+
+    [Fact]
+    public void AdjustSplit_ClampsToValidRange()
+    {
+        var state = FromDiagram("[Rck8]*[    ] [    ] [    ]");
+        var session = GameSession.New(state).BeginSplit(LocationId.B);
+
+        session = session.AdjustSplit(-100);
+        Assert.Equal(1, session.SplitMode!.GrabCount);
+
+        session = session.AdjustSplit(+100);
+        Assert.Equal(7, session.SplitMode!.GrabCount);
+    }
+
+    [Fact]
+    public void AdjustSplit_NotInMode_NoOp()
+    {
+        var state = FromDiagram("[Rck8]*[    ] [    ] [    ]");
+        var session = GameSession.New(state).AdjustSplit(3);
+        Assert.Null(session.SplitMode);
+    }
+
+    [Fact]
+    public void CommitSplit_AppliesModalSplit_ClearsMode()
+    {
+        var state = FromDiagram("[Rck8]*[    ] [    ] [    ]");
+        var session = GameSession.New(state)
+            .BeginSplit(LocationId.B)
+            .AdjustSplit(-1);     // GrabCount: 4 → 3, leftCount = 5
+        session = session.CommitSplit();
+
+        Assert.Null(session.SplitMode);
+        Assert.Equal(5, session.Current.RootBag.Grid.GetCell(0).Stack!.Count);
+        Assert.Equal(3, session.Current.HandItems[0].Count);
+        // Same undo semantics as direct ExecuteModalSplit
+        Assert.Equal(1, session.UndoDepth);
+    }
+
+    [Fact]
+    public void CancelSplit_LeavesStateUnchangedExceptMode()
+    {
+        var state = FromDiagram("[Rck8]*[    ] [    ] [    ]");
+        var session = GameSession.New(state)
+            .BeginSplit(LocationId.B)
+            .AdjustSplit(2);
+
+        var before = session.Current;
+        session = session.CancelSplit();
+
+        Assert.Null(session.SplitMode);
+        Assert.Equal(before, session.Current);
+        Assert.Equal(0, session.UndoDepth);
+    }
 }

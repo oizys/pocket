@@ -14,6 +14,17 @@ public enum TickMode { Rogue, Realtime }
 /// GameSession manages history, dispatches tools, and records actions.
 /// MoveCursor is not undoable. Failed tools are not pushed to undo stack but errors are logged.
 /// </summary>
+/// <summary>
+/// Transient in-progress state for the inline split editor. When non-null the
+/// session is in "split mode": arrow keys adjust the grab count, Enter commits
+/// (calling ToolModalSplit with the corresponding leftCount), Esc cancels.
+/// </summary>
+public record SplitModeState(
+    LocationId Location,
+    Position CellPosition,
+    int GrabCount,
+    int StackTotal);
+
 public record GameSession(
     GameState Current,
     ImmutableStack<GameState> UndoStack,
@@ -22,7 +33,8 @@ public record GameSession(
     ImmutableDictionary<string, ImmutableArray<string>>? FacilityRecipeMap = null,
     TickMode TickMode = TickMode.Rogue,
     int TickCount = 0,
-    int MaxUndoDepth = 1000)
+    int MaxUndoDepth = 1000,
+    SplitModeState? SplitMode = null)
 {
     /// <summary>
     /// Creates a new session with empty undo history.
@@ -295,6 +307,72 @@ public record GameSession(
         var result = Current.ToolModalSplit(leftCount);
         return ApplyResult(result, () => FormatModalSplitLog(cursorItem, leftCount));
     }
+
+    /// <summary>
+    /// Enters the inline split editor for the cursor cell at the given location.
+    /// No-op if the cell is empty or has only one item (can't split a single item).
+    /// Defaults GrabCount to half the stack so the initial split is even.
+    /// </summary>
+    public GameSession BeginSplit(LocationId loc)
+    {
+        var locInfo = Current.Locations.TryGet(loc);
+        if (locInfo is null) return this;
+
+        var bagId = locInfo.BagId;
+        foreach (var entry in locInfo.Breadcrumbs.Reverse())
+        {
+            var b = Current.Store.GetById(bagId);
+            if (b is null) break;
+            var c = b.Grid.GetCell(entry.CellIndex);
+            if (c.Stack?.ContainedBagId is not { } childId) break;
+            bagId = childId;
+        }
+        var bag = Current.Store.GetById(bagId);
+        if (bag is null) return this;
+
+        var cell = bag.Grid.GetCell(locInfo.Cursor.Position);
+        if (cell.IsEmpty || cell.Stack!.Count <= 1)
+            return this;
+
+        var total = cell.Stack.Count;
+        var initialGrab = total / 2;
+        return this with
+        {
+            SplitMode = new SplitModeState(loc, locInfo.Cursor.Position, initialGrab, total)
+        };
+    }
+
+    /// <summary>
+    /// Adjusts the active split's GrabCount by `delta`, clamping to [1, StackTotal - 1].
+    /// No-op when not in split mode.
+    /// </summary>
+    public GameSession AdjustSplit(int delta)
+    {
+        if (SplitMode is null) return this;
+        var next = SplitMode.GrabCount + delta;
+        if (next < 1) next = 1;
+        if (next > SplitMode.StackTotal - 1) next = SplitMode.StackTotal - 1;
+        if (next == SplitMode.GrabCount) return this;
+        return this with { SplitMode = SplitMode with { GrabCount = next } };
+    }
+
+    /// <summary>
+    /// Commits the active split by calling ExecuteModalSplit at the split location.
+    /// Clears the SplitMode on the resulting session.
+    /// </summary>
+    public GameSession CommitSplit()
+    {
+        if (SplitMode is null) return this;
+        var leftCount = SplitMode.StackTotal - SplitMode.GrabCount;
+        var loc = SplitMode.Location;
+        var afterSplit = RunAt(loc, s => s.ExecuteModalSplit(leftCount));
+        return afterSplit with { SplitMode = null };
+    }
+
+    /// <summary>
+    /// Cancels the active split with no state change beyond clearing SplitMode.
+    /// </summary>
+    public GameSession CancelSplit() => this with { SplitMode = null };
 
     /// <summary>
     /// Sort routed via the focused location when not B.
