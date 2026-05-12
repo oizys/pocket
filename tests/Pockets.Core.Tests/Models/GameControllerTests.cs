@@ -202,6 +202,51 @@ public class GameControllerTests
         Assert.Equal("Rck", grid.GetCell(1).Stack!.ItemType.Name);
     }
 
+    [Fact]
+    public void HandleKey_Sort_OnFocusedC_SortsCBagNotB()
+    {
+        // Regression test for Fix 2: hotkeys must operate on the focused panel.
+        // Before: GameController called _session.ExecuteSort() which always
+        // sorted B regardless of focus. Now ExecuteSort(_focus) routes via
+        // GameSession.RunAt, sorting the focused panel's bag.
+        var bCells = new Cell[12];
+        bCells[0] = new Cell(new ItemStack(Grs, 3));
+        bCells[1] = new Cell(new ItemStack(Rck, 5));
+        for (int i = 2; i < 12; i++) bCells[i] = new Cell();
+        var bGrid = new Grid(4, 3, bCells.ToImmutableArray());
+        var bBag = new Bag(bGrid);
+
+        var cCells = new Cell[4];
+        cCells[0] = new Cell(new ItemStack(Grs, 4)); // Cursor is at (0,0) by default
+        cCells[1] = new Cell(); // empty
+        cCells[2] = new Cell(new ItemStack(Rck, 2));
+        cCells[3] = new Cell();
+        var cGrid = new Grid(2, 2, cCells.ToImmutableArray());
+        var cBag = new Bag(cGrid);
+
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(bBag).Add(handBag).Add(cBag);
+        var locations = LocationMap.Create(handBag.Id, bBag.Id)
+            .Set(LocationId.C, Location.AtOrigin(cBag.Id));
+        var state = new GameState(store, locations, AllTypes);
+
+        var ctrl = new GameController(GameSession.New(state));
+        ctrl.SetFocus(LocationId.C);
+
+        ctrl.HandleKey(GameKey.Sort);
+
+        // The C bag must be sorted (Grs and Rck merged/grouped at the front,
+        // empty cells at the end). The B bag must be unchanged.
+        var newC = ctrl.Session.Current.Store.GetById(cBag.Id)!;
+        Assert.Equal("Grs", newC.Grid.GetCell(0).Stack!.ItemType.Name);
+        Assert.Equal("Rck", newC.Grid.GetCell(1).Stack!.ItemType.Name);
+        Assert.True(newC.Grid.GetCell(2).IsEmpty);
+
+        var newB = ctrl.Session.Current.Store.GetById(bBag.Id)!;
+        Assert.Equal("Grs", newB.Grid.GetCell(0).Stack!.ItemType.Name); // unchanged from start
+        Assert.Equal("Rck", newB.Grid.GetCell(1).Stack!.ItemType.Name);
+    }
+
     // ==================== Undo ====================
 
     [Fact]

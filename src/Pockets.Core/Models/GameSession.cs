@@ -132,7 +132,42 @@ public record GameSession(
         ApplyResult(result, formatLog);
 
     /// <summary>
+    /// Runs a tool at a given location by routing the underlying tool methods —
+    /// which are written against LocationId.B — through B by temporarily swapping
+    /// the focused location's LocationInfo into B and restoring afterwards.
+    /// Returning the tool's resulting session unchanged when the focus is B.
+    /// </summary>
+    private GameSession RunAt(LocationId loc, Func<GameSession, GameSession> tool)
+    {
+        if (loc == LocationId.B) return tool(this);
+
+        var state = Current;
+        var savedB = state.Locations.Get(LocationId.B);
+        var focusedLoc = state.Locations.Get(loc);
+
+        var swapped = state with { Locations = state.Locations.Set(LocationId.B, focusedLoc) };
+        var swappedSession = this with { Current = swapped };
+
+        var afterTool = tool(swappedSession);
+
+        var newFocusedLoc = afterTool.Current.Locations.Get(LocationId.B);
+        var restored = afterTool.Current with
+        {
+            Locations = afterTool.Current.Locations
+                .Set(LocationId.B, savedB)
+                .Set(loc, newFocusedLoc)
+        };
+        return afterTool with { Current = restored };
+    }
+
+    /// <summary>
     /// Primary action (left-click / key 1). Contextual grab/drop/swap/merge/interact. Undoable.
+    /// Routed via the focused location when not B.
+    /// </summary>
+    public GameSession ExecutePrimary(LocationId loc) => RunAt(loc, s => s.ExecutePrimary());
+
+    /// <summary>
+    /// Primary action against B. Existing call sites without focus continue to operate here.
     /// </summary>
     public GameSession ExecutePrimary()
     {
@@ -156,6 +191,11 @@ public record GameSession(
             return "Primary: no-op";
         });
     }
+
+    /// <summary>
+    /// Secondary action routed via the focused location when not B.
+    /// </summary>
+    public GameSession ExecuteSecondary(LocationId loc) => RunAt(loc, s => s.ExecuteSecondary());
 
     /// <summary>
     /// Secondary action (right-click / key 2). Half/one variant. Undoable.
@@ -232,6 +272,11 @@ public record GameSession(
     }
 
     /// <summary>
+    /// QuickSplit routed via the focused location when not B.
+    /// </summary>
+    public GameSession ExecuteQuickSplit(LocationId loc) => RunAt(loc, s => s.ExecuteQuickSplit());
+
+    /// <summary>
     /// Execute QuickSplit tool on current state.
     /// </summary>
     public GameSession ExecuteQuickSplit()
@@ -250,6 +295,11 @@ public record GameSession(
         var result = Current.ToolModalSplit(leftCount);
         return ApplyResult(result, () => FormatModalSplitLog(cursorItem, leftCount));
     }
+
+    /// <summary>
+    /// Sort routed via the focused location when not B.
+    /// </summary>
+    public GameSession ExecuteSort(LocationId loc) => RunAt(loc, s => s.ExecuteSort());
 
     /// <summary>
     /// Execute Sort tool on current state.
@@ -271,6 +321,11 @@ public record GameSession(
         return ApplyResult(result, () =>
             cursorItem != null ? $"Harvest: {cursorItem.Count} {cursorItem.ItemType.Name}" : "Harvest: empty cell");
     }
+
+    /// <summary>
+    /// CycleRecipe routed via the focused location when not B.
+    /// </summary>
+    public GameSession ExecuteCycleRecipe(LocationId loc) => RunAt(loc, s => s.ExecuteCycleRecipe());
 
     /// <summary>
     /// Cycles the active recipe on the facility at cursor. Dumps slot items to root bag.

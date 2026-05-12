@@ -94,15 +94,16 @@ public class GameController
             return ControllerResult.Handle(_session, "Action: LeaveBag");
         }
 
-        // Action keys
+        // Action keys — most operate on the focused panel; AcquireRandom is a debug
+        // tool tied to the root bag and stays B-only.
         GameSession? newSession = key switch
         {
             GameKey.Primary => ExecuteFocusedPrimary(),
-            GameKey.Secondary => _session.ExecuteSecondary(),
-            GameKey.QuickSplit => _session.ExecuteQuickSplit(),
-            GameKey.Sort => _session.ExecuteSort(),
+            GameKey.Secondary => _session.ExecuteSecondary(_focus),
+            GameKey.QuickSplit => _session.ExecuteQuickSplit(_focus),
+            GameKey.Sort => _session.ExecuteSort(_focus),
             GameKey.AcquireRandom => _session.ExecuteAcquireRandom(rng ?? new Random()),
-            GameKey.CycleRecipe => _session.ExecuteCycleRecipe(),
+            GameKey.CycleRecipe => _session.ExecuteCycleRecipe(_focus),
             _ => null
         };
 
@@ -189,11 +190,7 @@ public class GameController
             }
         }
 
-        // For non-B focus, temporarily route the tool through the focused location
-        if (_focus != LocationId.B)
-            return ExecuteOnFocusedPanel(s => s.ExecutePrimary());
-
-        return _session.ExecutePrimary();
+        return _session.ExecutePrimary(_focus);
     }
 
     /// <summary>
@@ -216,36 +213,6 @@ public class GameController
         var bag = state.Store.GetById(bagId);
         if (bag is null) return state.CurrentCell;
         return bag.Grid.GetCell(loc.Cursor.Position);
-    }
-
-    /// <summary>
-    /// Runs a tool by temporarily swapping B with the focused location, then restoring B.
-    /// This lets existing tool methods (which read from B) operate on any panel without modification.
-    /// </summary>
-    private GameSession ExecuteOnFocusedPanel(Func<GameSession, GameSession> toolFn)
-    {
-        var state = _session.Current;
-        var savedB = state.Locations.Get(LocationId.B);
-        var focusedLoc = state.Locations.Get(_focus);
-
-        // Swap: B becomes the focused location
-        var swapped = state with { Locations = state.Locations.Set(LocationId.B, focusedLoc) };
-        var swappedSession = _session with { Current = swapped };
-
-        // Run the tool against the swapped state
-        var afterTool = toolFn(swappedSession);
-
-        // Extract the new "B" (which is really the focused location's new state)
-        var newFocusedLoc = afterTool.Current.Locations.Get(LocationId.B);
-
-        // Restore: put savedB back as B, put the modified location back at _focus
-        var restored = afterTool.Current with
-        {
-            Locations = afterTool.Current.Locations
-                .Set(LocationId.B, savedB)
-                .Set(_focus, newFocusedLoc)
-        };
-        return afterTool with { Current = restored };
     }
 
     /// <summary>
@@ -291,7 +258,7 @@ public class GameController
         _session = type switch
         {
             ClickType.Primary => ExecuteFocusedPrimary(),
-            ClickType.Secondary => _session.ExecuteSecondary(),
+            ClickType.Secondary => _session.ExecuteSecondary(_focus),
             _ => _session
         };
 
