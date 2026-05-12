@@ -107,6 +107,12 @@ public class GameView : Window
 
         _tickTimer = Application.MainLoop.AddTimeout(TickInterval, _ =>
         {
+            // Pause facility ticks while the inline split editor is open so
+            // the player can read/adjust without the world advancing under them
+            // (matches the parity the old modal dialog had via its blocking loop).
+            if (_controller.Session.SplitMode is not null)
+                return true;
+
             var result = _controller.Tick();
             if (result.Handled)
                 UpdateUI();
