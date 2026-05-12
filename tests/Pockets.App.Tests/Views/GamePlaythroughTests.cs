@@ -187,6 +187,49 @@ public class GamePlaythroughTests : IDisposable
     }
 
     [Fact]
+    public void InlineSplit_HashEntersMode_ArrowAdjusts_EnterCommits()
+    {
+        // Regression test for Stage 2: the inline split mode replaces
+        // ShowModalSplitDialog. Pressing # while cursor sits on a stack
+        // of 5 enters split mode (GrabCount=2 by default for 5/2). The
+        // command strip shows the editor. ← drops GrabCount, Enter commits
+        // the split into hand.
+        var state = MakeTestState();  // Rock x5 at (0,0)
+        var gameView = SetupGame(state);
+
+        // Enter split mode via # (Shift-3)
+        SendKey(gameView, (Key)'#');
+
+        var dumpInMode = _harness!.DumpBuffer();
+        Assert.Contains("Split:", dumpInMode);
+        Assert.Contains("grab 2", dumpInMode);  // 5 / 2 = 2
+
+        // ← drops GrabCount to 1, leftCount becomes 4
+        SendKey(gameView, Key.CursorLeft);
+
+        var dumpAfterAdjust = _harness.DumpBuffer();
+        Assert.Contains("grab 1", dumpAfterAdjust);
+        Assert.Contains("leave 4", dumpAfterAdjust);
+
+        // Enter commits the split
+        SendKey(gameView, Key.Enter);
+
+        // The inline editor (which uses "←/→ adjust") must be gone. Note the
+        // action log will show a "Split: 5 Rock → 4/1" entry, so we look for
+        // an editor-specific token, not bare "Split:".
+        var dumpAfterCommit = _harness.DumpBuffer();
+        Assert.DoesNotContain("←/→ adjust", dumpAfterCommit);
+
+        // 4 Rocks stay at (0,0), 1 Rock now in hand
+        var controllerField = gameView.GetType()
+            .GetField("_controller",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var ctrl = (GameController)controllerField!.GetValue(gameView)!;
+        Assert.Equal(4, ctrl.Session.Current.RootBag.Grid.GetCell(0).Stack!.Count);
+        Assert.Equal(1, ctrl.Session.Current.HandItems[0].Count);
+    }
+
+    [Fact]
     public void EnteringNestedBagOfDifferentHeight_RepositionsDescriptionView()
     {
         // Regression test for Fix 1 (RootBag → ActiveBag in GridPanel layout).

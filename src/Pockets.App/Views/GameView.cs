@@ -126,10 +126,13 @@ public class GameView : Window
             (Key)'1' or (Key)'e' or (Key)'E' => GameKey.Primary,
             (Key)'2' => GameKey.Secondary,
             (Key)'3' => GameKey.QuickSplit,
+            (Key)'#' => GameKey.BeginSplit,
             (Key)'4' => GameKey.Sort,
             (Key)'5' => GameKey.AcquireRandom,
             (Key)'r' or (Key)'R' => GameKey.CycleRecipe,
             (Key)'q' or (Key)'Q' => GameKey.LeaveBag,
+            Key.Enter => GameKey.Confirm,
+            Key.Esc => GameKey.Cancel,
             Key.Tab => GameKey.FocusNext,
             Key.BackTab => GameKey.FocusPrev,
             _ => null
@@ -138,16 +141,19 @@ public class GameView : Window
 
     public override bool ProcessKey(KeyEvent keyEvent)
     {
-        // Shift-3 (#) = Modal Split dialog
-        if (keyEvent.Key == (Key)'#')
-        {
-            ShowModalSplitDialog();
-            return true;
-        }
-
         var gameKey = MapKey(keyEvent);
         if (gameKey is null)
             return base.ProcessKey(keyEvent);
+
+        // While SplitMode is active, swallow keys at the controller layer.
+        // Outside split mode, Enter/Esc shouldn't be handled by us — Terminal.Gui
+        // may need them for focus or other defaults — so only route them when
+        // the controller is in split mode.
+        if (_controller.Session.SplitMode is null &&
+            (gameKey == GameKey.Confirm || gameKey == GameKey.Cancel))
+        {
+            return base.ProcessKey(keyEvent);
+        }
 
         var result = _controller.HandleKey(gameKey.Value, _rng);
         if (result.Handled)
@@ -280,44 +286,4 @@ public class GameView : Window
         }
     }
 
-    private void ShowModalSplitDialog()
-    {
-        var cell = _controller.Session.Current.CurrentCell;
-        if (cell.IsEmpty || cell.Stack!.Count <= 1)
-            return;
-
-        var stack = cell.Stack;
-        var max = stack.Count - 1;
-
-        var dialog = new Dialog("Split", 40, 8);
-        var label = new Label($"Grab how many {stack.ItemType.Name}? (1-{max})")
-        {
-            X = 1, Y = 0
-        };
-        var input = new TextField("")
-        {
-            X = 1, Y = 1, Width = 10
-        };
-        var okButton = new Button("OK");
-        okButton.Clicked += () =>
-        {
-            if (int.TryParse(input.Text.ToString(), out var grabCount))
-            {
-                var leftCount = stack.Count - grabCount;
-                var newSession = _controller.Session.ExecuteModalSplit(leftCount);
-                _controller.SetSession(newSession);
-                UpdateUI();
-            }
-            Application.RequestStop();
-        };
-        var cancelButton = new Button("Cancel");
-        cancelButton.Clicked += () => Application.RequestStop();
-
-        dialog.AddButton(okButton);
-        dialog.AddButton(cancelButton);
-        dialog.Add(label, input);
-        input.SetFocus();
-
-        Application.Run(dialog);
-    }
 }
