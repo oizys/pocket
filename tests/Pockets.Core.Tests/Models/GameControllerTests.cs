@@ -188,6 +188,89 @@ public class GameControllerTests
         Assert.Equal(1, result.Session.Current.ActiveBag.Grid.GetCell(0).Stack!.Count);
     }
 
+    // ==================== Inline Split Mode (Stage 2) ====================
+
+    [Fact]
+    public void HandleKey_BeginSplit_EntersModeWithHalfStack()
+    {
+        var ctrl = ControllerFor("[Rck8]*[    ] [    ] [    ]");
+        var result = ctrl.HandleKey(GameKey.BeginSplit);
+
+        Assert.True(result.Handled);
+        Assert.NotNull(result.Session.SplitMode);
+        Assert.Equal(4, result.Session.SplitMode!.GrabCount);
+        Assert.Equal(8, result.Session.SplitMode.StackTotal);
+    }
+
+    [Fact]
+    public void HandleKey_BeginSplit_OnEmptyCell_DoesNotEnterMode()
+    {
+        var ctrl = ControllerFor("[    ]*[    ] [    ] [    ]");
+        var result = ctrl.HandleKey(GameKey.BeginSplit);
+
+        Assert.True(result.Handled);
+        Assert.Null(result.Session.SplitMode);
+    }
+
+    [Fact]
+    public void HandleKey_InSplitMode_LeftRightAdjustGrabCount()
+    {
+        var ctrl = ControllerFor("[Rck8]*[    ] [    ] [    ]");
+        ctrl.HandleKey(GameKey.BeginSplit);
+
+        ctrl.HandleKey(GameKey.Right);
+        Assert.Equal(5, ctrl.Session.SplitMode!.GrabCount);
+        ctrl.HandleKey(GameKey.Left);
+        ctrl.HandleKey(GameKey.Left);
+        Assert.Equal(3, ctrl.Session.SplitMode!.GrabCount);
+    }
+
+    [Fact]
+    public void HandleKey_InSplitMode_NonSplitKeysAreSwallowed()
+    {
+        var ctrl = ControllerFor("[Rck8]*[    ] [    ] [    ]");
+        ctrl.HandleKey(GameKey.BeginSplit);
+        var grabBefore = ctrl.Session.SplitMode!.GrabCount;
+
+        // Sort would normally rearrange the bag; in split mode it must be a no-op
+        // on game state. Mode still active, GrabCount unchanged.
+        ctrl.HandleKey(GameKey.Sort);
+        Assert.NotNull(ctrl.Session.SplitMode);
+        Assert.Equal(grabBefore, ctrl.Session.SplitMode!.GrabCount);
+        // Stack unchanged
+        Assert.Equal(8, ctrl.Session.Current.ActiveBag.Grid.GetCell(0).Stack!.Count);
+    }
+
+    [Fact]
+    public void HandleKey_InSplitMode_ConfirmCommitsAndClearsMode()
+    {
+        var ctrl = ControllerFor("[Rck8]*[    ] [    ] [    ]");
+        ctrl.HandleKey(GameKey.BeginSplit);  // GrabCount=4
+        ctrl.HandleKey(GameKey.Left);        // GrabCount=3, leftCount=5
+        var result = ctrl.HandleKey(GameKey.Confirm);
+
+        Assert.True(result.Handled);
+        Assert.Null(result.Session.SplitMode);
+        Assert.Equal(5, result.Session.Current.RootBag.Grid.GetCell(0).Stack!.Count);
+        Assert.Equal(3, result.Session.Current.HandItems[0].Count);
+    }
+
+    [Fact]
+    public void HandleKey_InSplitMode_CancelExitsWithoutChange()
+    {
+        var ctrl = ControllerFor("[Rck8]*[    ] [    ] [    ]");
+        ctrl.HandleKey(GameKey.BeginSplit);
+        ctrl.HandleKey(GameKey.Right);
+        var before = ctrl.Session.Current;
+
+        var result = ctrl.HandleKey(GameKey.Cancel);
+
+        Assert.True(result.Handled);
+        Assert.Null(result.Session.SplitMode);
+        Assert.Equal(before, result.Session.Current);
+        Assert.False(result.Session.Current.HasItemsInHand);
+    }
+
     // ==================== Sort ====================
 
     [Fact]

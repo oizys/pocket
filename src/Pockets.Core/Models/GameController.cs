@@ -37,6 +37,43 @@ public class GameController
     /// </summary>
     public ControllerResult HandleKey(GameKey key, Random? rng = null)
     {
+        // Inline split mode owns its keys: ←/→ adjust, Enter commit, Esc cancel.
+        // Every other key is swallowed while in split mode so it behaves like a
+        // focused mini-mode without being a true modal.
+        if (_session.SplitMode is not null)
+        {
+            switch (key)
+            {
+                case GameKey.Left:
+                    _session = _session.AdjustSplit(-1);
+                    return ControllerResult.Handle(_session, $"Split: grab {_session.SplitMode?.GrabCount}");
+                case GameKey.Right:
+                    _session = _session.AdjustSplit(+1);
+                    return ControllerResult.Handle(_session, $"Split: grab {_session.SplitMode?.GrabCount}");
+                case GameKey.Confirm:
+                    _session = _session.CommitSplit();
+                    return ControllerResult.Handle(_session, "Split: commit");
+                case GameKey.Cancel:
+                    _session = _session.CancelSplit();
+                    return ControllerResult.Handle(_session, "Split: cancel");
+                default:
+                    return ControllerResult.Handle(_session, "Split: in progress (←/→ adjust, Enter, Esc)");
+            }
+        }
+
+        // Begin inline split for the focused cursor cell.
+        if (key == GameKey.BeginSplit)
+        {
+            var maybeNew = _session.BeginSplit(_focus);
+            if (maybeNew.SplitMode is not null)
+            {
+                _session = maybeNew;
+                return ControllerResult.Handle(_session,
+                    $"Split: grab {_session.SplitMode!.GrabCount} / {_session.SplitMode.StackTotal}");
+            }
+            return ControllerResult.Handle(_session, "Split: nothing to split");
+        }
+
         // Focus cycling
         if (key == GameKey.FocusNext)
         {

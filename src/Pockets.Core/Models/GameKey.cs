@@ -19,7 +19,10 @@ public enum GameKey
     LeaveBag,       // Q
     Undo,           // Ctrl-Z
     FocusNext,      // Tab
-    FocusPrev       // Shift-Tab
+    FocusPrev,      // Shift-Tab
+    BeginSplit,     // Shift-3 / # — enter inline split mode for cursor cell
+    Confirm,        // Enter — commits inline split / other context-confirm verbs
+    Cancel          // Esc — cancels inline split / other context-cancel verbs
 }
 
 /// <summary>
