@@ -8,23 +8,22 @@ namespace Pockets.App.Rendering;
 /// Shared cell-drawing routine for the 5×3 envelope (3×2 content + 2-col left
 /// gap + 1-row top gap). The gap is reserved for future cursor / selection /
 /// frame badges; its chars and attrs must never be reused for cell content.
+///
+/// Colors flow through PaletteColor (RGB) and are quantized to the current
+/// driver's ANSI 16 via ColorRenderer at attribute-build time. The whole
+/// cell-rendering pipeline never touches Terminal.Gui's Color enum directly,
+/// so swapping to truecolor later is a single-file change in ColorRenderer.
 /// </summary>
 public static class CellDrawing
 {
     /// <summary>
     /// Renders a single cell envelope at the given view-local coordinates.
-    /// The cell envelope is CellRenderer.CellWidth × CellRenderer.CellHeight
-    /// (5×3) starting at (x, y). The gap rows/cols are cleared to bg=black; the
-    /// cell content (glyph + count, frame pattern) is painted at the
-    /// (+GapLeft, +GapTop) offset within the envelope.
     /// </summary>
     public static void Draw(View target, int x, int y, Cell cell, bool isCursor)
     {
         var driver = Application.Driver;
 
-        // Gap: slightly-off-black bg (DarkGray) so the moat is visibly distinct
-        // from both pure-black empty cells and category-colored filled cells.
-        // Reserved for cursor / selection / frame-badge overlays later.
+        // Gap: slightly-off-black moat reserved for future overlays.
         driver.SetAttribute(GapAttr());
         for (int gy = 0; gy < CellRenderer.GapTop; gy++)
         {
@@ -41,11 +40,14 @@ public static class CellDrawing
 
         // Content area: category-colored bg, white fg (or inverted for cursor).
         var bg = cell.IsEmpty
-            ? Color.Black
-            : CategoryColors.GetBackground(cell.Stack!.ItemType.Category);
+            ? PaletteColor.Black
+            : Palette.CategoryBackground(cell.Stack!.ItemType.Category);
+        var fg = cell.IsEmpty
+            ? PaletteColor.White
+            : Palette.CellForeground(cell.Stack!.ItemType.Category);
         var contentAttr = isCursor
-            ? driver.MakeAttribute(Color.Black, Color.BrightYellow)
-            : driver.MakeAttribute(Color.White, bg);
+            ? ColorRenderer.MakeAttribute(Palette.CursorForeground, Palette.CursorBackground)
+            : ColorRenderer.MakeAttribute(fg, bg);
 
         var cx = x + CellRenderer.GapLeft;
         var cy = y + CellRenderer.GapTop;
@@ -59,18 +61,16 @@ public static class CellDrawing
         // Row 2: frame pattern (frame-specific fg when present and not cursor)
         var row2Attr = contentAttr;
         if (cell.HasFrame && !isCursor)
-            row2Attr = driver.MakeAttribute(CategoryColors.GetFrameForeground(cell.Frame), bg);
+            row2Attr = ColorRenderer.MakeAttribute(Palette.FrameForeground(cell.Frame), bg);
         driver.SetAttribute(row2Attr);
         target.Move(cx, cy + 1);
         foreach (var ch in GlyphRenderer.Row2(cell))
             driver.AddRune(ch);
     }
 
-    /// <summary>
-    /// Attribute used for every gap pixel: spaces with a slightly-off-black bg.
-    /// </summary>
+    /// <summary>Attribute used for every gap pixel.</summary>
     public static Terminal.Gui.Attribute GapAttr() =>
-        Application.Driver.MakeAttribute(Color.DarkGray, Color.DarkGray);
+        ColorRenderer.MakeAttribute(Palette.GapForeground, Palette.GapBackground);
 
     /// <summary>
     /// Fills a rectangular region of the view with the gap attribute (spaces).
