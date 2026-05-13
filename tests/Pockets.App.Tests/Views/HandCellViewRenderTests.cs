@@ -49,32 +49,36 @@ public class HandCellViewRenderTests : IDisposable
         _harness?.Dispose();
     }
 
+    private const int ContentX0 = CellRenderer.GapLeft;
+    private const int ContentY0 = CellRenderer.GapTop;
+    private const int W = CellRenderer.ContentWidth;
+
     [Fact]
-    public void EmptyHand_RendersThreeSpaces_TwoRows()
+    public void EmptyHand_ContentArea_IsSpaces()
     {
         SetupHandView(EmptyHandState());
-        Assert.Equal("   ", _harness!.GetText(0, 0, 3));
-        Assert.Equal("   ", _harness.GetText(0, 1, 3));
+        Assert.Equal("   ", _harness!.GetText(ContentX0, ContentY0, W));
+        Assert.Equal("   ", _harness.GetText(ContentX0, ContentY0 + 1, W));
     }
 
     [Fact]
     public void HoldingItem_RendersGlyphAndCount()
     {
         SetupHandView(HoldingState());
-        Assert.Equal("R 5", _harness!.GetText(0, 0, 3));
-        Assert.Equal("   ", _harness.GetText(0, 1, 3));
+        Assert.Equal("R 5", _harness!.GetText(ContentX0, ContentY0, W));
+        Assert.Equal("   ", _harness.GetText(ContentX0, ContentY0 + 1, W));
     }
 
     [Fact]
     public void HoldingItem_HasDifferentAttributeThanEmpty()
     {
         var view = SetupHandView(EmptyHandState());
-        var emptyAttr = _harness!.GetAttribute(0, 0);
+        var emptyAttr = _harness!.GetAttribute(ContentX0, ContentY0);
 
         view.UpdateState(HoldingState());
         _harness.Render();
 
-        var holdingAttr = _harness.GetAttribute(0, 0);
+        var holdingAttr = _harness.GetAttribute(ContentX0, ContentY0);
         Assert.NotEqual(emptyAttr, holdingAttr);
     }
 }

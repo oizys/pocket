@@ -42,16 +42,21 @@ public class GridViewRenderTests : IDisposable
 
     // ==================== 3×2 Glyph Cells ====================
 
+    // Each cell envelope is 5×3 (CellRenderer.CellWidth × CellHeight); the 3×2
+    // content area sits at (+GapLeft, +GapTop) = (+2, +1) within each envelope.
+    private const int ContentX0 = CellRenderer.GapLeft;
+    private const int ContentY0 = CellRenderer.GapTop;
+    private const int W = CellRenderer.ContentWidth;
+
     [Fact]
-    public void EmptyCell_RendersThreeSpaces_TwoRows()
+    public void EmptyCell_ContentArea_IsSpaces()
     {
         var grid = Grid.Create(1, 1);
         var state = MakeState(grid, new Position(0, 0));
         SetupGridView(state);
 
-        // Cell width = 3, cell height = 2; entire 3x2 area is spaces for an empty cell.
-        Assert.Equal("   ", _harness!.GetText(0, 0, 3));
-        Assert.Equal("   ", _harness.GetText(0, 1, 3));
+        Assert.Equal("   ", _harness!.GetText(ContentX0, ContentY0, W));
+        Assert.Equal("   ", _harness.GetText(ContentX0, ContentY0 + 1, W));
     }
 
     [Fact]
@@ -63,9 +68,9 @@ public class GridViewRenderTests : IDisposable
         SetupGridView(state);
 
         // Row 1: glyph (R) + right-aligned count (" 5") = "R 5"
-        Assert.Equal("R 5", _harness!.GetText(0, 0, 3));
+        Assert.Equal("R 5", _harness!.GetText(ContentX0, ContentY0, W));
         // Row 2: no frame, so 3 spaces
-        Assert.Equal("   ", _harness.GetText(0, 1, 3));
+        Assert.Equal("   ", _harness.GetText(ContentX0, ContentY0 + 1, W));
     }
 
     [Fact]
@@ -76,7 +81,7 @@ public class GridViewRenderTests : IDisposable
         var state = MakeState(grid, new Position(0, 0));
         SetupGridView(state);
 
-        Assert.Equal("R12", _harness!.GetText(0, 0, 3));
+        Assert.Equal("R12", _harness!.GetText(ContentX0, ContentY0, W));
     }
 
     [Fact]
@@ -87,8 +92,27 @@ public class GridViewRenderTests : IDisposable
         var state = MakeState(grid, new Position(0, 0));
         SetupGridView(state);
 
-        // Unique items don't show a count
-        Assert.Equal("S  ", _harness!.GetText(0, 0, 3));
+        Assert.Equal("S  ", _harness!.GetText(ContentX0, ContentY0, W));
+    }
+
+    [Fact]
+    public void Gap_AroundCellContent_IsSpaces()
+    {
+        // The left gap (cols 0..GapLeft-1) and top gap (row 0) must be blank
+        // even when the cell is occupied. This space is reserved for future
+        // cursor / selection / frame badges.
+        var cells = new Cell[] { new(new ItemStack(Rock, 5)) };
+        var grid = new Grid(1, 1, cells.ToImmutableArray());
+        var state = MakeState(grid, new Position(0, 0));
+        SetupGridView(state);
+
+        // Top gap row
+        for (int x = 0; x < CellRenderer.CellWidth; x++)
+            Assert.Equal(' ', _harness!.GetChar(x, 0));
+        // Left gap cols at content rows
+        for (int gx = 0; gx < CellRenderer.GapLeft; gx++)
+        for (int y = ContentY0; y < ContentY0 + CellRenderer.ContentHeight; y++)
+            Assert.Equal(' ', _harness!.GetChar(gx, y));
     }
 
     // ==================== Multi-Cell Grid ====================
@@ -105,9 +129,8 @@ public class GridViewRenderTests : IDisposable
         var state = MakeState(grid, new Position(0, 0));
         SetupGridView(state);
 
-        // Cell 0 at cols 0-2, cell 1 at cols 3-5
-        Assert.Equal("R 3", _harness!.GetText(0, 0, 3));
-        Assert.Equal("S  ", _harness.GetText(CellRenderer.CellWidth, 0, 3));
+        Assert.Equal("R 3", _harness!.GetText(ContentX0, ContentY0, W));
+        Assert.Equal("S  ", _harness.GetText(CellRenderer.CellWidth + ContentX0, ContentY0, W));
     }
 
     [Fact]
@@ -122,9 +145,8 @@ public class GridViewRenderTests : IDisposable
         var state = MakeState(grid, new Position(0, 0));
         SetupGridView(state);
 
-        // Cell 0 at rows 0-1, cell 1 at rows 2-3
-        Assert.Equal("R 7", _harness!.GetText(0, 0, 3));
-        Assert.Equal("S  ", _harness.GetText(0, CellRenderer.CellHeight, 3));
+        Assert.Equal("R 7", _harness!.GetText(ContentX0, ContentY0, W));
+        Assert.Equal("S  ", _harness.GetText(ContentX0, CellRenderer.CellHeight + ContentY0, W));
     }
 
     // ==================== Cursor Rendering ====================
@@ -141,8 +163,8 @@ public class GridViewRenderTests : IDisposable
         var state = MakeState(grid, new Position(0, 0));
         SetupGridView(state);
 
-        var cursorAttr = _harness!.GetAttribute(0, 0);
-        var normalAttr = _harness.GetAttribute(CellRenderer.CellWidth, 0);
+        var cursorAttr = _harness!.GetAttribute(ContentX0, ContentY0);
+        var normalAttr = _harness.GetAttribute(CellRenderer.CellWidth + ContentX0, ContentY0);
         Assert.NotEqual(cursorAttr, normalAttr);
     }
 
@@ -156,7 +178,7 @@ public class GridViewRenderTests : IDisposable
         var state1 = MakeState(grid1, new Position(0, 0));
         var gridView = SetupGridView(state1);
 
-        Assert.Equal("R 3", _harness!.GetText(0, 0, 3));
+        Assert.Equal("R 3", _harness!.GetText(ContentX0, ContentY0, W));
 
         var cells2 = new Cell[] { new(new ItemStack(Sword, 1)) };
         var grid2 = new Grid(1, 1, cells2.ToImmutableArray());
@@ -164,6 +186,6 @@ public class GridViewRenderTests : IDisposable
         gridView.UpdateState(state2);
         _harness.Render();
 
-        Assert.Equal("S  ", _harness.GetText(0, 0, 3));
+        Assert.Equal("S  ", _harness.GetText(ContentX0, ContentY0, W));
     }
 }
