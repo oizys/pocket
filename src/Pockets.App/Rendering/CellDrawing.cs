@@ -22,10 +22,10 @@ public static class CellDrawing
     {
         var driver = Application.Driver;
 
-        // Gap: bg=black, fg=dim. Always neutral so cells of the same category
-        // color don't blend into each other.
-        var gapAttr = driver.MakeAttribute(Color.DarkGray, Color.Black);
-        driver.SetAttribute(gapAttr);
+        // Gap: slightly-off-black bg (DarkGray) so the moat is visibly distinct
+        // from both pure-black empty cells and category-colored filled cells.
+        // Reserved for cursor / selection / frame-badge overlays later.
+        driver.SetAttribute(GapAttr());
         for (int gy = 0; gy < CellRenderer.GapTop; gy++)
         {
             target.Move(x, y + gy);
@@ -64,5 +64,27 @@ public static class CellDrawing
         target.Move(cx, cy + 1);
         foreach (var ch in GlyphRenderer.Row2(cell))
             driver.AddRune(ch);
+    }
+
+    /// <summary>
+    /// Attribute used for every gap pixel: spaces with a slightly-off-black bg.
+    /// </summary>
+    public static Terminal.Gui.Attribute GapAttr() =>
+        Application.Driver.MakeAttribute(Color.DarkGray, Color.DarkGray);
+
+    /// <summary>
+    /// Fills a rectangular region of the view with the gap attribute (spaces).
+    /// Used to paint the trailing right/bottom gap around the grid.
+    /// </summary>
+    public static void FillGap(View target, int x, int y, int width, int height)
+    {
+        var driver = Application.Driver;
+        driver.SetAttribute(GapAttr());
+        for (int row = 0; row < height; row++)
+        {
+            target.Move(x, y + row);
+            for (int col = 0; col < width; col++)
+                driver.AddRune(' ');
+        }
     }
 }

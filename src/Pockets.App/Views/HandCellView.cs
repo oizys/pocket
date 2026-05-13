@@ -14,8 +14,8 @@ public class HandCellView : View
     public HandCellView(GameState state)
     {
         _state = state;
-        Width = CellRenderer.CellWidth;
-        Height = CellRenderer.CellHeight;
+        Width = CellRenderer.CellWidth + CellRenderer.GapRight;
+        Height = CellRenderer.CellHeight + CellRenderer.GapBottom;
     }
 
     public void UpdateState(GameState state)
@@ -26,8 +26,10 @@ public class HandCellView : View
 
     public override void Redraw(Rect bounds)
     {
-        var hand = _state.HandBag;
-        // Map the hand's first slot to a Cell for CellDrawing.
+        // Pre-fill with gap color so the trailing right/bottom edges show the
+        // same moat as the per-cell gap.
+        CellDrawing.FillGap(this, 0, 0, bounds.Width, bounds.Height);
+
         var stack = _state.HasItemsInHand ? _state.HandItems[0] : null;
         var cell = stack is null ? new Cell() : new Cell(stack);
         CellDrawing.Draw(this, 0, 0, cell, isCursor: false);

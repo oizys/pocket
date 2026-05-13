@@ -15,8 +15,8 @@ public class BackButtonView : View
 
     public BackButtonView()
     {
-        Width = CellRenderer.CellWidth;
-        Height = CellRenderer.CellHeight;
+        Width = CellRenderer.CellWidth + CellRenderer.GapRight;
+        Height = CellRenderer.CellHeight + CellRenderer.GapBottom;
         WantMousePositionReports = true;
     }
 
@@ -38,17 +38,21 @@ public class BackButtonView : View
 
     public override void Redraw(Rect bounds)
     {
+        // Match grid styling: gap-filled envelope with content at (+GapLeft, +GapTop)
+        CellDrawing.FillGap(this, 0, 0, bounds.Width, bounds.Height);
+
         var driver = Application.Driver;
         var attr = _enabled
             ? driver.MakeAttribute(Color.BrightCyan, Color.Black)
             : driver.MakeAttribute(Color.DarkGray, Color.Black);
         driver.SetAttribute(attr);
 
-        Move(0, 0);
+        var cx = CellRenderer.GapLeft;
+        var cy = CellRenderer.GapTop;
+        Move(cx, cy);
         foreach (var ch in _enabled ? " ← " : "   ")
             driver.AddRune(ch);
-
-        Move(0, 1);
+        Move(cx, cy + 1);
         foreach (var ch in "   ")
             driver.AddRune(ch);
     }

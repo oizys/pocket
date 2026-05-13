@@ -33,4 +33,10 @@ public static class CellRenderer
 
     /// <summary>Top gap (preceding the cell content).</summary>
     public const int GapTop = 1;
+
+    /// <summary>Right gap appended to the trailing edge of the grid as a whole.</summary>
+    public const int GapRight = GapLeft;
+
+    /// <summary>Bottom gap appended to the trailing edge of the grid as a whole.</summary>
+    public const int GapBottom = GapTop;
 }

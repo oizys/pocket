@@ -22,18 +22,25 @@ public class GridView : View
     public GridView(GameState state)
     {
         _state = state;
-        Width = CellRenderer.CellWidth * state.ActiveBag.Grid.Columns;
-        Height = CellRenderer.CellHeight * state.ActiveBag.Grid.Rows;
+        Width = GridPixelWidth(state);
+        Height = GridPixelHeight(state);
         WantMousePositionReports = true;
     }
 
     public void UpdateState(GameState state)
     {
         _state = state;
-        Width = CellRenderer.CellWidth * state.ActiveBag.Grid.Columns;
-        Height = CellRenderer.CellHeight * state.ActiveBag.Grid.Rows;
+        Width = GridPixelWidth(state);
+        Height = GridPixelHeight(state);
         SetNeedsDisplay();
     }
+
+    /// <summary>Total grid width: per-cell envelopes + trailing right gap for symmetric padding.</summary>
+    private static int GridPixelWidth(GameState state) =>
+        CellRenderer.CellWidth * state.ActiveBag.Grid.Columns + CellRenderer.GapRight;
+
+    private static int GridPixelHeight(GameState state) =>
+        CellRenderer.CellHeight * state.ActiveBag.Grid.Rows + CellRenderer.GapBottom;
 
     private Position? MouseToGridPosition(int x, int y)
     {
@@ -71,16 +78,11 @@ public class GridView : View
 
     public override void Redraw(Rect bounds)
     {
-        var driver = Application.Driver;
-        var bg = driver.MakeAttribute(Color.White, Color.Black);
-
-        driver.SetAttribute(bg);
-        for (int row = 0; row < bounds.Height; row++)
-        {
-            Move(0, row);
-            for (int col = 0; col < bounds.Width; col++)
-                driver.AddRune(' ');
-        }
+        // Pre-fill the entire grid area with the gap attribute. The per-cell
+        // gaps and the trailing right/bottom edges are then visible as the
+        // uniform moat color; CellDrawing overwrites the content rectangle of
+        // each cell. The result is symmetric padding around the whole grid.
+        CellDrawing.FillGap(this, 0, 0, bounds.Width, bounds.Height);
 
         var grid = _state.ActiveBag.Grid;
         var cursorPos = _state.Cursor.Position;

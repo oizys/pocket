@@ -43,9 +43,9 @@ public class BagPanelView : View
 
         if (bag is not null)
         {
-            // +2 for outer border (1 char on each side)
-            Width = CellRenderer.CellWidth * bag.Grid.Columns + 2;
-            Height = CellRenderer.CellHeight * bag.Grid.Rows + 2;
+            // Outer border (1 char each side) + trailing gap for symmetric padding.
+            Width = CellRenderer.CellWidth * bag.Grid.Columns + CellRenderer.GapRight + 2;
+            Height = CellRenderer.CellHeight * bag.Grid.Rows + CellRenderer.GapBottom + 2;
             Visible = true;
         }
         else
@@ -140,7 +140,12 @@ public class BagPanelView : View
 
         if (_bag is null) return;
 
-        // Draw cells inside the border
+        // Fill the interior (inside the border) with gap color so per-cell and
+        // trailing gaps share the same moat.
+        var innerW = bounds.Width - 2;
+        var innerH = bounds.Height - 2;
+        CellDrawing.FillGap(this, 1, 1, innerW, innerH);
+
         var grid = _bag.Grid;
         for (int row = 0; row < grid.Rows; row++)
         {
