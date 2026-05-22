@@ -480,6 +480,9 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+# WSL/NTFS download-zone metadata (Mark-of-the-Web sidecar files)
+*:Zone.Identifier
+
 # Vim temporary swap files
 *.swp
 
