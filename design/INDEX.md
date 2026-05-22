@@ -25,3 +25,4 @@
 | -- | Godot Quirks (WSL2 / Dev Issues) | -- | Reference | [godot-quirks.md](godot-quirks.md) |
 | 19 | Conveyors / Belts / Arms (Automation Primitives) | Mid | Proposed | [conveyors.md](conveyors.md) |
 | 20 | TUI Cleanup & Redesign (Glyph Cells, No Modals, Focus-Following Panes) | Early | Proposed | [tui-redesign.md](tui-redesign.md) |
+| -- | Entropy Design Context (Plaque, Lints, Theme Curve) | -- | Reference | [entropy-design-context.md](entropy-design-context.md) |
