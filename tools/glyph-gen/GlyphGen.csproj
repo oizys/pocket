@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Asset generator for the 8+4 entropy glyph matrix. Deliberately NOT part of
+    Pockets.sln: it pulls in SkiaSharp native binaries only needed to rasterize
+    the contact-sheet PNG. The game (Pockets.Core) owns the data, geometry, and
+    SVG emission with zero external dependencies; this tool just writes files.
+    Run it with tools/glyph-gen/generate.sh.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Pockets.GlyphGen</RootNamespace>
+    <AssemblyName>glyph-gen</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="2.88.8" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="2.88.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Pockets.Core/Pockets.Core.csproj" />
+  </ItemGroup>
+
+</Project>
