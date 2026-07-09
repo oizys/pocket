@@ -32,20 +32,16 @@ public sealed record GlyphParams
     public double BasisRowGap { get; init; } = 20;
 
     // ---- Parent "wifi rainbow" (4 flips) ----
-
-    /// <summary>Number of concentric arcs in the wifi-rainbow, before flipping.</summary>
-    public int ArcCount { get; init; } = 3;
-
-    /// <summary>Radius of the innermost arc, measured from the quadrant corner anchor.</summary>
-    public double ArcInnerRadius { get; init; } = 15;
-
-    /// <summary>Radius increment between adjacent arcs.</summary>
-    public double ArcRadiusStep { get; init; } = 13;
+    //
+    // The parent has no radius knobs of its own: it draws one concentric quarter-arc
+    // per staircase row (so ArcCount == 3 rows) and each arc's radius is derived from
+    // that row's position (r = anchor − row), which is what makes the arc ends land on
+    // the children's lines. Only the corner anchor distance is free.
 
     /// <summary>
     /// Distance from the viewBox center to the quadrant corner anchor the arcs
     /// radiate from, along each axis. Larger values push the rainbow further into
-    /// its corner.
+    /// its corner; the derived arc radii grow with it.
     /// </summary>
     public double ParentAnchorOffset { get; init; } = 34;
 

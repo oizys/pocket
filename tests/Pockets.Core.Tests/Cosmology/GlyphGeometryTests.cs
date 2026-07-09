@@ -12,6 +12,15 @@ public class GlyphGeometryTests
 {
     private static readonly GlyphParams P = GlyphParams.Default;
 
+    // Compares doubles within an absolute tolerance, for set/sequence assertions.
+    private sealed class DoubleComparer : IEqualityComparer<double>
+    {
+        private readonly double _eps;
+        public DoubleComparer(double eps) => _eps = eps;
+        public bool Equals(double a, double b) => Math.Abs(a - b) <= _eps;
+        public int GetHashCode(double v) => 0; // force Equals-based comparison
+    }
+
     private static IEnumerable<Pt> Points(IEnumerable<Primitive> prims) =>
         prims.SelectMany(prim => prim switch
         {
@@ -61,11 +70,14 @@ public class GlyphGeometryTests
     }
 
     [Fact]
-    public void Parent_ArcCount_TracksKnob()
+    public void Parent_HasOneArcPerStaircaseRow()
     {
-        Assert.Equal(3, GlyphGeometry.Parent(Quadrant.Quiet, P with { ArcCount = 3 }).Length);
-        Assert.Equal(5, GlyphGeometry.Parent(Quadrant.Quiet, P with { ArcCount = 5 }).Length);
-        Assert.All(GlyphGeometry.Parent(Quadrant.Quiet, P), prim => Assert.IsType<Arc>(prim));
+        // The parent bridges its children row-for-row, so it carries exactly one arc
+        // per basis staircase line (3), all arcs.
+        var basisRows = GlyphGeometry.Basis(Orientation.Identity, P).Length;
+        var arcs = GlyphGeometry.Parent(Quadrant.Quiet, P);
+        Assert.Equal(basisRows, arcs.Length);
+        Assert.All(arcs, prim => Assert.IsType<Arc>(prim));
     }
 
     [Theory]
@@ -85,11 +97,86 @@ public class GlyphGeometryTests
     }
 
     [Fact]
-    public void Parent_ArcsAreConcentric_RadiiFollowKnobs()
+    public void Parent_ArcRadii_DerivedFromChildRows()
     {
+        // Each arc's radius is anchor − rowValue, so the radii are the corner-anchor
+        // distance minus each staircase row position — nothing is a free knob.
+        double center = P.ViewBox / 2;
+        double anchor = center + P.ParentAnchorOffset;
+        var expected = GlyphGeometry.BasisRows(center, P).Select(v => anchor - v).OrderBy(r => r);
+        var actual = GlyphGeometry.Parent(Quadrant.Quiet, P).Cast<Arc>().Select(a => a.Radius).OrderBy(r => r);
+        Assert.Equal(expected, actual, new DoubleComparer(1e-6));
+    }
+
+    // ---- Endpoint alignment: the parent's arc ends coincide with its children's
+    // line geometry (Aaron's contact-sheet adjustment), for all four quadrants. ----
+
+    // Perpendicular distance from a point to the infinite line carrying a segment.
+    private static double DistanceToLine(Pt pt, Segment seg)
+    {
+        double dx = seg.B.X - seg.A.X, dy = seg.B.Y - seg.A.Y;
+        double len = Math.Sqrt(dx * dx + dy * dy);
+        // Signed area of the parallelogram / base length = perpendicular height.
+        double cross = Math.Abs((pt.X - seg.A.X) * dy - (pt.Y - seg.A.Y) * dx);
+        return cross / len;
+    }
+
+    // True when the arc ends can be matched one-to-one with the child lines such that
+    // each chosen end lies on its matched line's supporting line (within epsilon).
+    private static bool EndsAlignToChildLines(
+        IEnumerable<Pt> arcEnds, IReadOnlyList<Segment> childLines, double eps)
+    {
+        var ends = arcEnds.ToList();
+        if (ends.Count != childLines.Count) return false;
+        var used = new bool[childLines.Count];
+        foreach (var end in ends)
+        {
+            int match = Enumerable.Range(0, childLines.Count)
+                .FirstOrDefault(j => !used[j] && DistanceToLine(end, childLines[j]) <= eps, -1);
+            if (match < 0) return false;
+            used[match] = true;
+        }
+        return true;
+    }
+
+    [Theory]
+    [InlineData(Quadrant.Quiet)]
+    [InlineData(Quadrant.Gloam)]
+    [InlineData(Quadrant.Flux)]
+    [InlineData(Quadrant.Jitter)]
+    public void Parent_ArcEnds_AlignWithChildLineGeometry(Quadrant quadrant)
+    {
+        const double eps = 1e-6;
+        var arcs = GlyphGeometry.Parent(quadrant, P).Cast<Arc>().ToList();
+
+        // The quadrant's two children: the "+" staircase and its axis-transpose "−".
+        var plusChild = GlyphGeometry.Basis(EntropyMatrix.Positive(quadrant).Zone, P)
+            .Cast<Segment>().ToList();
+        var minusChild = GlyphGeometry.Basis(EntropyMatrix.Negative(quadrant).Zone, P)
+            .Cast<Segment>().ToList();
+
+        // One arc end coincides with a "+" child line, the other with a "−" child line.
+        Assert.True(
+            EndsAlignToChildLines(arcs.Select(a => a.End), plusChild, eps),
+            $"{quadrant}: arc ends do not align with the + child's lines");
+        Assert.True(
+            EndsAlignToChildLines(arcs.Select(a => a.Start), minusChild, eps),
+            $"{quadrant}: arc starts do not align with the − child's lines");
+    }
+
+    [Fact]
+    public void Parent_AlignmentIsExact_ForCanonicalQuiet()
+    {
+        // Concrete pin for the canonical quadrant: arc END y-values are the "+" child
+        // line heights and arc START x-values are the "−" child line x-positions.
         var arcs = GlyphGeometry.Parent(Quadrant.Quiet, P).Cast<Arc>().ToList();
-        for (int i = 0; i < arcs.Count; i++)
-            Assert.Equal(P.ArcInnerRadius + i * P.ArcRadiusStep, arcs[i].Radius, 6);
+        var plusHeights = GlyphGeometry.Basis(EntropyMatrix.Positive(Quadrant.Quiet).Zone, P)
+            .Cast<Segment>().Select(s => s.A.Y).OrderBy(v => v).ToList();
+        var minusXs = GlyphGeometry.Basis(EntropyMatrix.Negative(Quadrant.Quiet).Zone, P)
+            .Cast<Segment>().Select(s => s.A.X).OrderBy(v => v).ToList();
+
+        Assert.Equal(plusHeights, arcs.Select(a => a.End.Y).OrderBy(v => v), new DoubleComparer(1e-6));
+        Assert.Equal(minusXs, arcs.Select(a => a.Start.X).OrderBy(v => v), new DoubleComparer(1e-6));
     }
 
     [Fact]

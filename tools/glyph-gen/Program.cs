@@ -13,7 +13,7 @@ using Pockets.GlyphGen;
 string repoRoot = RepoLocator.FindRepoRoot();
 string svgOut = GetArg("--svg-out") ?? Path.Combine(repoRoot, "assets", "glyphs");
 string sheetOut = GetArg("--sheet")
-    ?? "/home/oizys/obsid/paths/projects/pockets/assets/glyphs-contact-sheet-v1.png";
+    ?? "/home/oizys/obsid/paths/projects/pockets/assets/glyphs-contact-sheet-v2.png";
 bool emitSheet = !args.Contains("--no-sheet");
 
 var glyphParams = GlyphParams.Default;

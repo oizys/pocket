@@ -1,6 +1,6 @@
 # Entropy Glyph Generator (8+4 Symbol Matrix)
 
-**Status:** Implemented (v1) — data + geometry + SVG in `Pockets.Core`, PNG tool in `tools/glyph-gen`.
+**Status:** Implemented (v2) — data + geometry + SVG in `Pockets.Core`, PNG tool in `tools/glyph-gen`.
 **Phase:** Early (asset foundation). **Consumers:** asset generation, narrative, mechanics.
 
 ## Concept
@@ -15,8 +15,11 @@ turns that matrix into **deterministic, Godot-ready vector glyphs**:
   line, medium middle, short bottom, all left-aligned). A zone's chirality is the
   *reading direction* of its flip.
 - **4 parent icons** — the 4 flips of a "wifi rainbow" (concentric quarter-arcs)
-  that hugs each quadrant's corner, motivated as connecting the aligned edges of
-  the quadrant's two children.
+  that hugs each quadrant's corner. Each parent is the **literal bridge** between
+  its two children: it carries one arc per staircase row, and that arc's two ends
+  land on the row-matched lines of the quadrant's "+" (horizontal) and "−"
+  (vertical) children. The arc radii are therefore *derived from the child line
+  positions* (`r = anchor − row`), not free knobs — see the alignment note below.
 
 ## Cohesion
 
@@ -91,8 +94,9 @@ tools/glyph-gen/generate.sh --svg-out DIR --sheet PATH.png
 Outputs:
 - `assets/glyphs/{basis-<quadrant>-<aspect>,parent-<quadrant>}.svg` — 12 files,
   `viewBox="0 0 100 100"`, single black stroke, `fill="none"` (modulate color in Godot).
-- `~/obsid/paths/projects/pockets/assets/glyphs-contact-sheet-v1.png` — all 12,
-  labeled, light+dark, for phone review.
+- `~/obsid/paths/projects/pockets/assets/glyphs-contact-sheet-v2.png` — the 4
+  parent/child family overlays plus all 12 glyphs, labeled, light+dark, for phone
+  review. (`glyphs-contact-sheet-v1.png` kept alongside for comparison.)
 
 ## Parameter knobs (`GlyphParams`)
 
@@ -105,10 +109,14 @@ Everywhere the sketches are ambiguous, the shape is a knob, not a guess:
 | `StrokeLineCap` | round | cap style |
 | `BasisLongLength` | 60 | longest staircase line |
 | `BasisMidRatio` / `BasisShortRatio` | 0.62 / 0.30 | mid/short line lengths |
-| `BasisRowGap` | 20 | vertical spacing of the 3 lines |
-| `ArcCount` | 3 | wifi-rainbow arc count |
-| `ArcInnerRadius` / `ArcRadiusStep` | 15 / 13 | rainbow radii |
+| `BasisRowGap` | 20 | vertical spacing of the 3 lines (also sets the 3 arc radii) |
 | `ParentAnchorOffset` | 34 | how far the rainbow sits into its corner |
+
+The parent has **no radius knobs of its own**: it emits one concentric quarter-arc
+per staircase row (so the arc count is always the 3 basis rows), and each radius is
+`r = anchor − row`. That is what makes an arc end coincide with the child line it
+bridges, so the rainbow re-tunes automatically whenever `BasisRowGap` or
+`ParentAnchorOffset` change.
 
 ## Sketch-ambiguity notes (flagged for Aaron's contact-sheet review)
 
@@ -116,8 +124,14 @@ Everywhere the sketches are ambiguous, the shape is a knob, not a guess:
   shows the staircase but not exact proportions — tune via the knobs above.
 - **Wifi-rainbow interpretation:** rendered as concentric quarter-arcs anchored at
   the quadrant corner opening toward the Core. Aaron's sheet explores triangle+arc
-  and dot-marked variants (right column); v1 commits to the clean nested-arc read.
-  `ArcCount`/radii/offset are knobs if the count or curvature should change.
+  and dot-marked variants (right column); v1 committed to the clean nested-arc read.
+- **Parent↔child alignment (v2, Aaron's contact-sheet note):** *"adjust the 4 parent
+  glyphs so their ends line up with the respective 3 horizontal and 3 vertical
+  sub-entropies."* Implemented literally — arc *i*'s ends land on the "+" child's
+  horizontal line *i* (matching its height) and the "−" child's vertical line *i*
+  (matching its x), per-quadrant chirality. Asserted for all 4 quadrants in
+  `GlyphGeometryTests.Parent_ArcEnds_AlignWithChildLineGeometry`, and shown as
+  overlay **family panels** in `glyphs-contact-sheet-v2.png` (v1 kept for compare).
 - **Stroke weight & caps** are single knobs so the whole set re-weights at once.
 
 ## Methodology fit
@@ -146,6 +160,8 @@ pictographic base and the shared orientation data they will extend.
 ## Status / next
 
 - [x] 8+4 data table, chirality math, geometry, deterministic SVG, contact sheet, tests.
+- [x] v2: parent arc ends derived from + aligned to child line geometry (all 4
+  quadrants), endpoint-alignment tests, family-overlay contact sheet.
 - [ ] Godot import pass (SVG → `Texture2D`, modulate per zone palette).
 - [ ] Script-evolution tiers (half-pictographic, phonetic) per VecGlypher.
-- [ ] Aaron review of v1 sheet → confirm/adjust knobs and rainbow interpretation.
+- [ ] Aaron review of v2 sheet → confirm parent/child alignment reads right.

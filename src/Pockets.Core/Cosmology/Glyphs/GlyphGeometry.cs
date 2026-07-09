@@ -24,20 +24,28 @@ public static class GlyphGeometry
         double center = p.ViewBox / 2;
         double longLen = p.BasisLongLength;
         double xLeft = center - longLen / 2;          // horizontally centered long line
-        double yTop = center - p.BasisRowGap;         // three rows centered vertically
-        double yMid = center;
-        double yBot = center + p.BasisRowGap;
 
+        var rows = BasisRows(center, p);              // the 3 canonical row heights
         var lines = ImmutableArray.Create<Primitive>(
-            Row(xLeft, yTop, longLen),
-            Row(xLeft, yMid, longLen * p.BasisMidRatio),
-            Row(xLeft, yBot, longLen * p.BasisShortRatio));
+            Row(xLeft, rows[0], longLen),
+            Row(xLeft, rows[1], longLen * p.BasisMidRatio),
+            Row(xLeft, rows[2], longLen * p.BasisShortRatio));
 
         return lines.Select(s => s.Transform(orientation, center)).ToImmutableArray();
 
         static Segment Row(double x, double y, double len) =>
             new(new Pt(x, y), new Pt(x + len, y));
     }
+
+    /// <summary>
+    /// The 3 canonical staircase row positions, centered on the viewBox. Under the
+    /// identity these are the heights of the "+" child's horizontal lines; under the
+    /// axis-transpose (its "−" sibling) the same values are the x-positions of the
+    /// vertical lines. The parent arcs derive their radii from exactly these values
+    /// so an arc end lands on each child line — see <see cref="Parent(Orientation, GlyphParams)"/>.
+    /// </summary>
+    public static double[] BasisRows(double center, GlyphParams p) =>
+        new[] { center - p.BasisRowGap, center, center + p.BasisRowGap };
 
     /// <summary>
     /// The 4 parent "wifi rainbow" glyphs for a quadrant. Canonical form (Quiet):
@@ -50,22 +58,38 @@ public static class GlyphGeometry
         return Parent(orientation, p);
     }
 
-    /// <summary>The wifi-rainbow under an explicit orientation.</summary>
+    /// <summary>
+    /// The wifi-rainbow under an explicit orientation. Per Aaron's contact-sheet
+    /// note, the parent is the literal bridge between its two children's strokes: it
+    /// carries one concentric quarter-arc per staircase row, and each arc's two ends
+    /// land on the row-matched lines of the quadrant's children.
+    ///
+    /// <para>
+    /// Canonical (Quiet, identity): the anchor <c>A</c> is the bottom-right quadrant
+    /// corner. For each staircase row value <c>v</c> (a <see cref="BasisRows"/> entry)
+    /// the arc runs from <c>(v, A)</c> — on the bottom wall, so its x aligns with the
+    /// "−" child's vertical line at <c>x = v</c> — round to <c>(A, v)</c> — on the
+    /// right wall, so its y aligns with the "+" child's horizontal line at <c>y = v</c>.
+    /// The radius <c>r = A − v</c> is therefore <b>derived from the child line
+    /// geometry</b>, not a free knob, which is what makes the ends coincide. The four
+    /// parents stay exact flips of this one construction via <paramref name="orientation"/>.
+    /// </para>
+    /// </summary>
     public static ImmutableArray<Primitive> Parent(Orientation orientation, GlyphParams p)
     {
         double center = p.ViewBox / 2;
-        double ax = center + p.ParentAnchorOffset;    // canonical anchor: bottom-right corner
-        double ay = center + p.ParentAnchorOffset;
+        double anchor = center + p.ParentAnchorOffset;   // canonical anchor: bottom-right corner
         const double invSqrt2 = 0.70710678118654752;
 
         var arcs = ImmutableArray.CreateBuilder<Primitive>();
-        for (int i = 0; i < p.ArcCount; i++)
+        foreach (double v in BasisRows(center, p))       // one arc per staircase row
         {
-            double r = p.ArcInnerRadius + i * p.ArcRadiusStep;
-            // Quarter arc from left-of-anchor to above-anchor, opening toward the core.
-            var start = new Pt(ax - r, ay);
-            var mid = new Pt(ax - r * invSqrt2, ay - r * invSqrt2);
-            var end = new Pt(ax, ay - r);
+            double r = anchor - v;                       // radius derived from the child line position
+            // Quarter arc from the bottom wall (x = v) round to the right wall (y = v),
+            // opening toward the core. Its start.X and end.Y are the child line anchors.
+            var start = new Pt(v, anchor);
+            var mid = new Pt(anchor - r * invSqrt2, anchor - r * invSqrt2);
+            var end = new Pt(anchor, v);
             arcs.Add(new Arc(start, mid, end, r));
         }
 
