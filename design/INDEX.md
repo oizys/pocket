@@ -29,3 +29,4 @@
 | 21 | Entropy Glyph Generator (8+4 Symbol Matrix) | Early | Implemented | [glyphs.md](glyphs.md) |
 | -- | First-5-Minutes Pacing Research (Cross-Game Survey) | -- | Reference | [pockets-early-pacing-research.md](pockets-early-pacing-research.md) |
 | -- | First-5-Minutes Pacing Research — Extension Set 2 | -- | Reference | [pockets-early-pacing-research-extension.md](pockets-early-pacing-research-extension.md) |
+| 22 | Depth-Recipe Progression (Navigation-is-Crafting Data Spine) | Early-Mid | Implemented | [depth-recipes.md](depth-recipes.md) |

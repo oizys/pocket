@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Design/analysis tool for the depth-recipe progression graph. Deliberately NOT
+    part of Pockets.sln: the game (Pockets.Core) owns the recipe data, reachability
+    projection, and validation with ZERO external dependencies; this tool only
+    (a) prints the progression frontier from a state, and (b) rasterizes the
+    labeled progression-graph PNG for Aaron's review (SkiaSharp native, same posture
+    as tools/glyph-gen). Run it with tools/depth-recipes/generate.sh.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Pockets.DepthRecipes</RootNamespace>
+    <AssemblyName>depth-recipes</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System.Collections.Immutable" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="2.88.8" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="2.88.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Pockets.Core/Pockets.Core.csproj" />
+  </ItemGroup>
+
+</Project>
