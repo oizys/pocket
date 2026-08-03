@@ -31,11 +31,18 @@ public class GameView : Window
     /// <summary>X offset where all bag panels start (after H hand cell + gap).</summary>
     private const int PanelXOffset = CellRenderer.CellWidth + 4;
 
+    /// <summary>
+    /// The game controller driving this view. Exposed so headless harnesses (the journey
+    /// runner's TUI driver) can read the session view-model without reflection.
+    /// </summary>
+    public GameController Controller => _controller;
+
     public GameView(
         GameState initialState,
         ImmutableArray<Recipe> recipes = default,
         ImmutableDictionary<string, ImmutableArray<string>>? facilityRecipeMap = null,
-        bool enableTickTimer = true) : base("Pockets")
+        bool enableTickTimer = true,
+        TickMode tickMode = TickMode.Realtime) : base("Pockets")
     {
         _enableTickTimer = enableTickTimer;
         X = 0;
@@ -52,10 +59,10 @@ public class GameView : Window
         };
 
         var session = facilityRecipeMap is not null
-            ? GameSession.New(initialState, recipes, facilityRecipeMap)
+            ? GameSession.New(initialState, recipes, facilityRecipeMap, tickMode)
             : recipes.IsDefaultOrEmpty
                 ? GameSession.New(initialState)
-                : GameSession.New(initialState, recipes);
+                : GameSession.New(initialState, recipes, tickMode);
 
         _controller = new GameController(session);
 

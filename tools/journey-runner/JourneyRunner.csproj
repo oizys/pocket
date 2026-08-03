@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The parity journey runner. Drives ONE journey script against a pluggable frontend
+    driver (tui | godot | mock-godot) and emits a diffable view-model checkpoint stream,
+    running the invariant pack after every step. Deliberately NOT part of Pockets.sln
+    (same posture as tools/depth-recipes and tools/glyph-gen) so `dotnet test Pockets.sln`
+    stays focused on the shipping suites; `make parity` builds and runs it directly.
+
+    References Pockets.App for the real headless TUI driver (GameView under FakeDriver)
+    and Pockets.Core for the shared serializer / debug command handler / invariant pack.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Pockets.JourneyRunner</RootNamespace>
+    <AssemblyName>journey-runner</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Terminal.Gui" Version="1.19.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Pockets.Core/Pockets.Core.csproj" />
+    <ProjectReference Include="../../src/Pockets.App/Pockets.App.csproj" />
+  </ItemGroup>
+
+</Project>

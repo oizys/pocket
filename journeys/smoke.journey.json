@@ -1,0 +1,44 @@
+{
+  "name": "smoke",
+  "description": "Slice 0 parity smoke (~2 min of play): cursor move+wrap, pick up, drop, enter/exit a bag (Workshop container panel), and one full craft (Workbench). Same file drives every --driver; checkpoint streams must diff clean and the invariant pack must stay green after every step. Coordinates are pinned to the deterministic demo profile (GameInitializer.DemoSeed); a content change that shifts them is a deliberate script update (append-only history).",
+  "steps": [
+    { "checkpoint": "move-left-wrap", "key": "Left", "assertViewModel": { "cursor": { "row": 0, "col": 7 } }, "assertRender": "Pockets" },
+    { "checkpoint": "move-right-wrap", "key": "Right", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
+    { "checkpoint": "move-down", "key": "Down", "assertViewModel": { "cursor": { "row": 1, "col": 0 } } },
+    { "checkpoint": "move-up", "key": "Up", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
+
+    { "comment": "PICK UP — navigate to Plain Rock at (0,2) and grab it", "key": "Right" },
+    { "key": "Right", "assertViewModel": { "cursor": { "row": 0, "col": 2 } } },
+    { "checkpoint": "pickup", "key": "Primary", "assertViewModel": { "handEmpty": false }, "assertRender": "Inventory" },
+
+    { "comment": "DROP — move the cursor and drop the stack back onto its cell", "key": "Down" },
+    { "key": "Up", "assertViewModel": { "cursor": { "row": 0, "col": 2 } } },
+    { "checkpoint": "drop", "key": "Primary", "assertViewModel": { "handEmpty": true } },
+
+    { "comment": "ENTER a bag — open the Workshop as a container panel", "key": "Left" },
+    { "key": "Left", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
+    { "checkpoint": "enter-bag", "key": "Primary", "assertViewModel": { "openPanels": { "C": "Workshop" } } },
+    { "checkpoint": "exit-bag", "back": true, "assertViewModel": { "openPanels": { "T": "Toolbar" } } },
+
+    { "comment": "CRAFT — deliver Plain Rock + Rough Wood into the Workshop and let it tick to a Workbench" },
+    { "checkpoint": "craft-open", "key": "Primary", "conserves": false, "assertViewModel": { "openPanels": { "C": "Workshop" } } },
+    { "key": "FocusNext", "conserves": false },
+    { "key": "Right", "conserves": false },
+    { "key": "Right", "conserves": false },
+    { "checkpoint": "craft-grab-rock", "key": "Primary", "conserves": false, "assertViewModel": { "handEmpty": false } },
+    { "key": "FocusPrev", "conserves": false },
+    { "checkpoint": "craft-drop-rock", "key": "Primary", "conserves": false, "assertViewModel": { "handEmpty": true } },
+    { "key": "FocusNext", "conserves": false },
+    { "key": "Right", "conserves": false, "comment": "B cursor (0,2)->(0,3) Rough Wood" },
+    { "checkpoint": "craft-grab-wood", "key": "Primary", "conserves": false, "assertViewModel": { "handEmpty": false } },
+    { "key": "FocusPrev", "conserves": false },
+    { "key": "Right", "conserves": false },
+    { "checkpoint": "craft-drop-wood", "key": "Primary", "conserves": false, "assertViewModel": { "handEmpty": true } },
+    { "tick": 1, "conserves": false },
+    { "tick": 1, "conserves": false },
+    { "tick": 1, "conserves": false },
+    { "tick": 1, "conserves": false },
+    { "tick": 1, "conserves": false },
+    { "checkpoint": "crafted", "tick": 1, "conserves": false }
+  ]
+}

@@ -55,16 +55,15 @@ public partial class GameSceneController : Control
         while (dir is not null && !System.IO.Directory.Exists(System.IO.Path.Combine(dir.FullName, "data")))
             dir = dir.Parent;
 
-        GameState gameState;
-        ImmutableArray<Recipe> recipes;
-        ImmutableDictionary<string, ImmutableArray<string>>? facilityRecipeMap = null;
+        GameSession session;
 
         if (dir is not null)
         {
             var dataPath = System.IO.Path.Combine(dir.FullName, "data");
             var registry = ContentLoader.LoadFromDirectory(dataPath);
-            (gameState, recipes) = GameInitializer.CreateFromRegistry(registry, _rng);
-            facilityRecipeMap = registry.BuildFacilityRecipeMap();
+            // Shared, seeded demo profile — identical to the TUI build's start state and
+            // tick mode (see Pockets.Core.GameInitializer.CreateDemoProfile).
+            session = GameInitializer.CreateDemoProfile(registry).NewSession();
         }
         else
         {
@@ -77,17 +76,15 @@ public partial class GameSceneController : Control
                 new ItemType("Healing Salve", Category.Medicine, true),
                 new ItemType("Stone Axe", Category.Weapon, false)
             );
-            gameState = GameInitializer.CreateRandomStage1Game(types, _rng);
-            recipes = ImmutableArray<Recipe>.Empty;
+            var gameState = GameInitializer.CreateRandomStage1Game(types, _rng);
+            session = GameSession.New(gameState, ImmutableArray<Recipe>.Empty, TickMode.Rogue);
         }
 
-        var session = facilityRecipeMap is not null
-            ? GameSession.New(gameState, recipes, facilityRecipeMap, TickMode.Rogue)
-            : GameSession.New(gameState, recipes, TickMode.Rogue);
         _controller = new Core.Models.GameController(session);
 
-        GD.Print($"Game initialized: {gameState.ActiveBag.Grid.Columns}x{gameState.ActiveBag.Grid.Rows} grid, " +
-                 $"{gameState.ItemTypes.Length} item types");
+        var activeGrid = session.Current.ActiveBag.Grid;
+        GD.Print($"Game initialized: {activeGrid.Columns}x{activeGrid.Rows} grid, " +
+                 $"{session.Current.ItemTypes.Length} item types");
     }
 
     private void BuildUI()

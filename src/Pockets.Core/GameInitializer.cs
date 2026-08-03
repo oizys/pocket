@@ -5,11 +5,52 @@ using Pockets.Core.Models;
 namespace Pockets.Core;
 
 /// <summary>
+/// A fully-specified starting point both frontends load identically: the initial state,
+/// its recipe set + facility→recipe map, and the tick mode. Produced by
+/// <see cref="GameInitializer.CreateDemoProfile"/> from a fixed seed so the TUI and Godot
+/// builds begin in byte-identical game state — the parity baseline for the journey runner.
+/// </summary>
+public record DemoProfile(
+    GameState State,
+    ImmutableArray<Recipe> Recipes,
+    ImmutableDictionary<string, ImmutableArray<string>> FacilityRecipeMap,
+    TickMode TickMode)
+{
+    /// <summary>
+    /// Builds the session both frontends run. Centralizing this guarantees the tick mode
+    /// (and thus per-action tick semantics) is identical across TUI and Godot.
+    /// </summary>
+    public GameSession NewSession() =>
+        GameSession.New(State, Recipes, FacilityRecipeMap, TickMode);
+}
+
+/// <summary>
 /// Creates initial game states with random item placement.
 /// All created bags are registered in the BagStore.
 /// </summary>
 public static class GameInitializer
 {
+    /// <summary>
+    /// Fixed seed for the demo profile. Date-derived (2026-08-03) and pinned so both
+    /// frontends — and repeated runner passes — produce identical starting states.
+    /// </summary>
+    public const int DemoSeed = 20260803;
+
+    /// <summary>
+    /// The shared demo-profile initializer used by BOTH the TUI and Godot builds.
+    /// Wraps <see cref="CreateFromRegistry"/> with a fixed RNG seed and pins
+    /// <see cref="TickMode.Rogue"/> (deterministic per-action ticks, no wall-clock timer),
+    /// reconciling the two previously-divergent init paths (unseeded RNG on both;
+    /// TUI defaulted to Realtime while Godot pinned Rogue). See design/parity-drift-report.md.
+    /// </summary>
+    public static DemoProfile CreateDemoProfile(ContentRegistry registry, int? seed = null)
+    {
+        var rng = new Random(seed ?? DemoSeed);
+        var (state, recipes) = CreateFromRegistry(registry, rng);
+        var facilityRecipeMap = registry.BuildFacilityRecipeMap();
+        return new DemoProfile(state, recipes, facilityRecipeMap, TickMode.Rogue);
+    }
+
     /// <summary>
     /// Creates a Stage 1 game with 4-10 random item stacks from the given item types.
     /// </summary>
@@ -201,9 +242,11 @@ public static class GameInitializer
             if (lootTemplate is null)
                 continue;
 
-            var generators = GeneratorBuiltins.GetAll(byName);
+            // Thread the caller's (possibly seeded) rng into wilderness generation so the
+            // demo profile is reproducible — the built-in generator otherwise spins up its
+            // own unseeded Random, which broke TUI↔Godot start-state parity.
             var wildernessBag = GeneratorBuiltins.Wilderness(null,
-                new object[] { gridTemplate, lootTemplate, byName });
+                new object[] { gridTemplate, lootTemplate, byName }, random);
 
             if (wildernessBag is BagValue bv)
             {

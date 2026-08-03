@@ -33,13 +33,14 @@ public static class GeneratorBuiltins
     /// choosing items by weighted random selection from the loot table entries.
     /// Returns a BagValue.
     /// </summary>
-    public static PipelineValue Wilderness(PipelineValue? input, IReadOnlyList<object> templateArgs)
+    public static PipelineValue Wilderness(PipelineValue? input, IReadOnlyList<object> templateArgs,
+        Random? rng = null)
     {
         var gridTemplate = (GridTemplate)templateArgs[0];
         var lootTable = (LootTableTemplate)templateArgs[1];
         var items = (ImmutableDictionary<string, ItemType>)templateArgs[2];
 
-        var rng = new Random();
+        rng ??= new Random();
         var totalWeight = lootTable.Entries.Sum(e => e.Weight);
         var cellCount = gridTemplate.Columns * gridTemplate.Rows;
 
@@ -93,7 +94,8 @@ public static class GeneratorBuiltins
     /// Randomizes the positions of all non-empty cells in the bag's grid, preserving all stacks.
     /// Returns a BagValue with the shuffled grid.
     /// </summary>
-    public static PipelineValue Shuffle(PipelineValue? input, IReadOnlyList<object> templateArgs)
+    public static PipelineValue Shuffle(PipelineValue? input, IReadOnlyList<object> templateArgs,
+        Random? rng = null)
     {
         var bag = ((BagValue)input!).Bag;
         var cellCount = bag.Grid.Columns * bag.Grid.Rows;
@@ -104,7 +106,7 @@ public static class GeneratorBuiltins
             .Select(c => c.Stack!)
             .ToList();
 
-        var rng = new Random();
+        rng ??= new Random();
         var positions = Enumerable.Range(0, cellCount)
             .OrderBy(_ => rng.Next())
             .Take(nonEmptyStacks.Count)
@@ -162,7 +164,7 @@ public static class GeneratorBuiltins
             .Add("bag", Bag)
             .Add("wilderness", (input, args) => Wilderness(input, args.Append(items).ToList()))
             .Add("attach-bag", AttachBag)
-            .Add("shuffle", Shuffle)
+            .Add("shuffle", (input, args) => Shuffle(input, args))
             .Add("attach-facility", (input, args) =>
                 AttachFacility(input, args, getRecipes ?? (() => null)));
 }
