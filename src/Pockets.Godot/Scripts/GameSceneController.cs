@@ -257,18 +257,27 @@ public partial class GameSceneController : Control
         _handPanel.SetState(state.HandBag.Grid, new Position(0, 0));
         _handLabel.Text = RenderHelpers.FormatHandSummary(state);
 
+        // Chrome-as-state: each rendered element draws only when its UiLedger flag is on.
+        // Non-demo profiles are everything-on (UiLedger.AllPresent) so this is identical to
+        // before; the demo profile grows chrome in through gameplay triggers. (The C/W look-in
+        // panels are not rendered by this frontend yet — see design/parity-drift-report.md #4;
+        // the ledger already governs their existence for when they land.)
+
         // Breadcrumbs + back button
         var crumbs = state.BreadcrumbPath;
         _breadcrumbLabel.Text = string.Join(" > ", crumbs);
+        _breadcrumbLabel.Visible = state.Ui.Has(ChromeElement.Breadcrumbs);
         _backButton.Visible = state.IsNested;
 
         // Description
         _descriptionLabel.Text = RenderHelpers.DescribeCursorItem(state);
+        _descriptionLabel.Visible = state.Ui.Has(ChromeElement.DescriptionPane);
 
         // Toolbar
         _toolbarLabel.Text = state.HasItemsInHand
             ? "[1]Grab [2]Drop [3]Split [4]Sort [5]Acquire  |  [E]Enter [Q]Leave [Ctrl-Z]Undo"
             : "[1]Grab [2]Drop [3]Split [4]Sort [5]Acquire  |  [E]Enter [Q]Leave [Ctrl-Z]Undo";
+        _toolbarLabel.Visible = state.Ui.Has(ChromeElement.Toolbar);
 
         // Action log (last 8 entries)
         var logEntries = _controller.Session.ActionLog.TakeLast(8);

@@ -48,7 +48,44 @@ public static class GameInitializer
         var rng = new Random(seed ?? DemoSeed);
         var (state, recipes) = CreateFromRegistry(registry, rng);
         var facilityRecipeMap = registry.BuildFacilityRecipeMap();
+
+        state = WithDemoLedgerFixtures(state);
+
         return new DemoProfile(state, recipes, facilityRecipeMap, TickMode.Rogue);
+    }
+
+    /// <summary>
+    /// Demo-profile-only fixtures for the progressive-UI ledger:
+    ///   • starts chrome at <see cref="UiLedger.DemoInitial"/> (grid + cursor only — journey 0:45);
+    ///   • adds a plain, enterable Belt Pouch bag in a free root cell so the journey can fire a
+    ///     real first-enter (breadcrumb push) trigger. Facility/wilderness bags open as look-in
+    ///     panels (C/W) instead of pushing breadcrumbs, so a plain bag is the only end-to-end
+    ///     way to exercise FirstEnter → Breadcrumbs.
+    /// Placed at a fixed free index so it never shifts the smoke journey's pinned coordinates.
+    /// Non-demo profiles are untouched — this lives only in the demo profile.
+    /// </summary>
+    private static GameState WithDemoLedgerFixtures(GameState state)
+    {
+        // First free root cell after the generated layout (0-7 filled, 28-29 planters); a plain
+        // 4×2 pouch with a non-wilderness EnvironmentType so it enters via breadcrumbs.
+        const int pouchCellIndex = 8;
+
+        var pouchType = new ItemType("Belt Pouch", Category.Bag, IsStackable: false);
+        var pouchBag = new Bag(Grid.Create(4, 2), "Pouch");
+
+        var rootGrid = state.RootBag.Grid;
+        if (!rootGrid.GetCell(pouchCellIndex).IsEmpty)
+            return state with { Ui = UiLedger.DemoInitial }; // defensive: layout changed; skip the pouch, keep the ledger
+
+        rootGrid = rootGrid.SetCell(pouchCellIndex,
+            new Cell(Stack: new ItemStack(pouchType, 1, ContainedBagId: pouchBag.Id)));
+
+        return state with
+        {
+            ItemTypes = state.ItemTypes.Contains(pouchType) ? state.ItemTypes : state.ItemTypes.Add(pouchType),
+            Store = state.Store.Add(pouchBag).Set(state.RootBagId, state.RootBag with { Grid = rootGrid }),
+            Ui = UiLedger.DemoInitial
+        };
     }
 
     /// <summary>

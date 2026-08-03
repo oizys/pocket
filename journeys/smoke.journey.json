@@ -1,24 +1,24 @@
 {
   "name": "smoke",
-  "description": "Slice 0 parity smoke (~2 min of play): cursor move+wrap, pick up, drop, enter/exit a bag (Workshop container panel), and one full craft (Workbench). Same file drives every --driver; checkpoint streams must diff clean and the invariant pack must stay green after every step. Coordinates are pinned to the deterministic demo profile (GameInitializer.DemoSeed); a content change that shifts them is a deliberate script update (append-only history).",
+  "description": "Slice 0 parity smoke + Slice 1 UiLedger checkpoints (~2 min of play): cursor move+wrap, pick up, drop, look into a bag (Workshop container panel), one full craft (Workbench), then a real breadcrumb enter (Belt Pouch). Same file drives every --driver; checkpoint streams must diff clean and the invariant pack must stay green after every step. The 'ui' asserts pin the progressive-UI ledger's absent→present transitions through real gameplay triggers: toolbar on first pickup, look-in overlay on first peek, breadcrumbs on first enter. Coordinates are pinned to the deterministic demo profile (GameInitializer.DemoSeed); a content change that shifts them is a deliberate script update (append-only history).",
   "steps": [
-    { "checkpoint": "move-left-wrap", "key": "Left", "assertViewModel": { "cursor": { "row": 0, "col": 7 } }, "assertRender": "Pockets" },
+    { "checkpoint": "move-left-wrap", "key": "Left", "assertViewModel": { "cursor": { "row": 0, "col": 7 }, "ui": { "grid": true, "toolbar": false, "lookInOverlay": false, "breadcrumbs": false } }, "assertRender": "Pockets" },
     { "checkpoint": "move-right-wrap", "key": "Right", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
     { "checkpoint": "move-down", "key": "Down", "assertViewModel": { "cursor": { "row": 1, "col": 0 } } },
     { "checkpoint": "move-up", "key": "Up", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
 
-    { "comment": "PICK UP — navigate to Plain Rock at (0,2) and grab it", "key": "Right" },
-    { "key": "Right", "assertViewModel": { "cursor": { "row": 0, "col": 2 } } },
-    { "checkpoint": "pickup", "key": "Primary", "assertViewModel": { "handEmpty": false }, "assertRender": "Inventory" },
+    { "comment": "PICK UP — navigate to Plain Rock at (0,2) and grab it; the toolbar is born (FirstPickup)", "key": "Right" },
+    { "key": "Right", "assertViewModel": { "cursor": { "row": 0, "col": 2 }, "ui": { "toolbar": false } } },
+    { "checkpoint": "pickup", "key": "Primary", "assertViewModel": { "handEmpty": false, "ui": { "toolbar": true } }, "assertRender": "Inventory" },
 
     { "comment": "DROP — move the cursor and drop the stack back onto its cell", "key": "Down" },
     { "key": "Up", "assertViewModel": { "cursor": { "row": 0, "col": 2 } } },
-    { "checkpoint": "drop", "key": "Primary", "assertViewModel": { "handEmpty": true } },
+    { "checkpoint": "drop", "key": "Primary", "assertViewModel": { "handEmpty": true, "ui": { "lookInOverlay": false, "breadcrumbs": false } } },
 
-    { "comment": "ENTER a bag — open the Workshop as a container panel", "key": "Left" },
+    { "comment": "LOOK IN — open the Workshop as a container panel; the look-in overlay materializes (FirstPeek)", "key": "Left" },
     { "key": "Left", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
-    { "checkpoint": "enter-bag", "key": "Primary", "assertViewModel": { "openPanels": { "C": "Workshop" } } },
-    { "checkpoint": "exit-bag", "back": true, "assertViewModel": { "openPanels": { "T": "Toolbar" } } },
+    { "checkpoint": "enter-bag", "key": "Primary", "assertViewModel": { "openPanels": { "C": "Workshop" }, "ui": { "lookInOverlay": true } } },
+    { "checkpoint": "exit-bag", "back": true, "assertViewModel": { "openPanels": { "T": "Toolbar" }, "ui": { "lookInOverlay": true } } },
 
     { "comment": "CRAFT — deliver Plain Rock + Rough Wood into the Workshop and let it tick to a Workbench" },
     { "checkpoint": "craft-open", "key": "Primary", "conserves": false, "assertViewModel": { "openPanels": { "C": "Workshop" } } },
@@ -39,6 +39,11 @@
     { "tick": 1, "conserves": false },
     { "tick": 1, "conserves": false },
     { "tick": 1, "conserves": false },
-    { "checkpoint": "crafted", "tick": 1, "conserves": false }
+    { "checkpoint": "crafted", "tick": 1, "conserves": false },
+
+    { "comment": "BREADCRUMBS — enter the plain Belt Pouch at (1,0). Unlike the Workshop/Forest look-in panels (C/W), a plain bag pushes a breadcrumb — the FirstEnter trigger that materializes the breadcrumb line. Click positions the B cursor and enters in one gameplay action." },
+    { "checkpoint": "before-enter-pouch", "assertViewModel": { "isNested": false, "ui": { "breadcrumbs": false } } },
+    { "checkpoint": "enter-pouch", "click": { "row": 1, "col": 0, "button": "Primary" }, "assertViewModel": { "isNested": true, "breadcrumbs": [ "Default", "Belt Pouch" ], "ui": { "breadcrumbs": true } } },
+    { "checkpoint": "exit-pouch", "key": "LeaveBag", "assertViewModel": { "isNested": false, "ui": { "breadcrumbs": true } } }
   ]
 }

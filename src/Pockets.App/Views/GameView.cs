@@ -221,8 +221,11 @@ public class GameView : Window
 
     private void UpdateUI()
     {
-        _gridPanel.UpdateState(_controller.Session.Current);
-        _focusedDescription.UpdateState(_controller.Session.Current, _controller.Focus);
+        var state = _controller.Session.Current;
+        _gridPanel.UpdateState(state);
+        _focusedDescription.UpdateState(state, _controller.Focus);
+        // Chrome-as-state: the description pane draws only when the ledger says it exists.
+        _focusedDescription.Visible = state.Ui.Has(ChromeElement.DescriptionPane);
         _rightPanel.UpdateLog(_controller.Session.ActionLog);
         _commandStrip.Update(_controller.Session);
         UpdatePanelLayout();
@@ -240,7 +243,11 @@ public class GameView : Window
         // Update B panel focus border
         _gridPanel.Title = focus == LocationId.B ? "► Inventory" : "  Inventory";
 
-        // Container panel (C) — above B
+        // Chrome-as-state: each panel draws only when its ledger flag is on (AllPresent for
+        // non-demo profiles → identical to before; the demo profile grows these in via triggers).
+        var lookInOn = state.Ui.Has(ChromeElement.LookInOverlay);
+
+        // Container panel (C) — above B (a look-in overlay)
         var cLoc = state.Locations.TryGet(LocationId.C);
         if (cLoc is not null)
         {
@@ -252,8 +259,9 @@ public class GameView : Window
         {
             _containerPanel.UpdatePanel(null, null, false);
         }
+        _containerPanel.Visible &= lookInOn;
 
-        // World panel (W) — below B
+        // World panel (W) — below B (a look-in overlay)
         var wLoc = state.Locations.TryGet(LocationId.W);
         if (wLoc is not null)
         {
@@ -265,6 +273,7 @@ public class GameView : Window
         {
             _worldPanel.UpdatePanel(null, null, false);
         }
+        _worldPanel.Visible &= lookInOn;
 
         // Toolbar panel (T) — at bottom
         var tLoc = state.Locations.TryGet(LocationId.T);
@@ -274,6 +283,7 @@ public class GameView : Window
             _toolbarPanel.Title = "Toolbar";
             _toolbarPanel.UpdatePanel(tBag, tLoc.Cursor, focus == LocationId.T);
         }
+        _toolbarPanel.Visible = tLoc is not null && state.Ui.Has(ChromeElement.Toolbar);
 
         // Position panels vertically in left column
         var y = 0;

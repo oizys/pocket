@@ -56,6 +56,29 @@ public class ViewModelSerializerTests
     }
 
     [Fact]
+    public void Serialize_ExposesUiLedger_AsCamelCaseBoolFlags()
+    {
+        // The demo profile starts chrome-off (grid + cursor only), so the ledger field must
+        // report grid=true and the disclosed-later elements false — the absent side of every
+        // absent→present journey assertion.
+        var session = Profile().NewSession();
+        var ui = ViewModelSerializer.Serialize(session)["ui"]!.AsObject();
+
+        Assert.True(ui["grid"]!.GetValue<bool>());
+        Assert.False(ui["toolbar"]!.GetValue<bool>());
+        Assert.False(ui["breadcrumbs"]!.GetValue<bool>());
+        Assert.False(ui["lookInOverlay"]!.GetValue<bool>());
+        Assert.False(ui["fullnessPips"]!.GetValue<bool>());
+
+        // Every ChromeElement is present as a flag (stable, exhaustive keys).
+        foreach (var element in Enum.GetValues<ChromeElement>())
+        {
+            var key = char.ToLowerInvariant(element.ToString()[0]) + element.ToString()[1..];
+            Assert.True(ui.ContainsKey(key), $"ui.{key} missing from view-model");
+        }
+    }
+
+    [Fact]
     public void Serialize_ReflectsStateChange_AfterCursorMove()
     {
         var session = Profile().NewSession();

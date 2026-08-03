@@ -98,6 +98,13 @@ public static class ViewModelSerializer
             openPanels[id.ToString()] = bag?.EnvironmentType ?? "";
         }
 
+        // UiLedger (chrome-as-state): every ChromeElement as a bool, in enum order (stable and
+        // independent of the underlying set's iteration order) so the field is diff-clean across
+        // drivers and journey steps can subset-assert individual flags (e.g. {"toolbar": true}).
+        var ui = new JsonObject();
+        foreach (var element in Enum.GetValues<ChromeElement>())
+            ui[ToCamel(element.ToString())] = state.Ui.Has(element);
+
         var log = new JsonArray();
         foreach (var entry in session.ActionLog.TakeLast(ActionLogTail))
             log.Add(entry);
@@ -117,6 +124,7 @@ public static class ViewModelSerializer
             ["handEmpty"] = !state.HasItemsInHand,
             ["breadcrumbs"] = breadcrumbs,
             ["openPanels"] = openPanels,
+            ["ui"] = ui,
             ["isNested"] = state.IsNested,
             ["tickMode"] = session.TickMode.ToString(),
             ["tickCount"] = session.TickCount,
@@ -136,6 +144,10 @@ public static class ViewModelSerializer
     /// </summary>
     public static string SerializeToPretty(GameSession session) =>
         Serialize(session).ToJsonString(PrettyOptions);
+
+    /// <summary>Lower-cases the first character (PascalCase enum name → camelCase JSON key).</summary>
+    private static string ToCamel(string s) =>
+        string.IsNullOrEmpty(s) ? s : char.ToLowerInvariant(s[0]) + s[1..];
 
     private static readonly JsonSerializerOptions PrettyOptions = new()
     {

@@ -10,6 +10,24 @@ public record GameState(
     LocationMap Locations,
     ImmutableArray<ItemType> ItemTypes)
 {
+    /// <summary>
+    /// Chrome-as-state: which UI elements exist right now. Defaults to everything-on so non-demo
+    /// profiles (and every existing stage/test) see no behavior change. The demo profile starts
+    /// this near-empty and grows it through gameplay triggers. Mutated only via
+    /// <see cref="FireUiTrigger"/> / <see cref="UiLedger.Fire"/>, never by a frontend.
+    /// </summary>
+    public UiLedger Ui { get; init; } = UiLedger.AllPresent;
+
+    /// <summary>
+    /// Fires a UI trigger, materializing any chrome it reveals. Returns the same instance when
+    /// nothing changes (idempotent), so it never manufactures a spurious state change.
+    /// </summary>
+    public GameState FireUiTrigger(UiTrigger trigger)
+    {
+        var updated = Ui.Fire(trigger);
+        return ReferenceEquals(updated, Ui) ? this : this with { Ui = updated };
+    }
+
     // ==================== Location accessors ====================
 
     /// <summary>

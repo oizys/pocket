@@ -525,6 +525,12 @@ public record GameSession(
             (newState, completionLogs) = (result.State, ImmutableList<string>.Empty);
         }
 
+        // Chrome-as-state: detect the gameplay transitions that reveal UI and fire their
+        // triggers on the ledger. Centralized here because every state mutation (tool actions,
+        // panel open/close, enter/leave) flows through ApplyResult, so no per-tool wiring is
+        // needed and the demo profile's chrome grows identically on every frontend/driver.
+        newState = ApplyUiTriggers(Current, newState);
+
         var newStack = PushWithLimit(UndoStack, Current);
         var newLog = ActionLog.Add(formatLog());
         foreach (var log in completionLogs)
@@ -538,6 +544,35 @@ public record GameSession(
             TickCount = TickCount + 1
         };
     }
+
+    /// <summary>
+    /// Reveals chrome for the gameplay transitions between two states. Structural (not per-tool):
+    ///   • hand went empty → non-empty  ⇒ FirstPickup   (Toolbar)
+    ///   • breadcrumb depth increased    ⇒ FirstEnter    (Breadcrumbs)
+    ///   • a C/W look-in panel opened    ⇒ FirstPeek     (LookInOverlay)
+    /// Each Fire is idempotent, so this runs on every successful action and only the FIRST
+    /// occurrence flips a flag. Triggers for unbuilt mechanics (Shrine, compass, cores) have
+    /// plumbing + tests but no detector here yet — they wire up in their own slice.
+    /// </summary>
+    private static GameState ApplyUiTriggers(GameState before, GameState after)
+    {
+        var ui = after.Ui;
+
+        if (!before.HasItemsInHand && after.HasItemsInHand)
+            ui = ui.Fire(UiTrigger.FirstPickup);
+
+        if (after.BreadcrumbStack.Count() > before.BreadcrumbStack.Count())
+            ui = ui.Fire(UiTrigger.FirstEnter);
+
+        if (PanelNewlyOpen(before, after, LocationId.C) || PanelNewlyOpen(before, after, LocationId.W))
+            ui = ui.Fire(UiTrigger.FirstPeek);
+
+        return ReferenceEquals(ui, after.Ui) ? after : after with { Ui = ui };
+    }
+
+    /// <summary>True when <paramref name="panel"/> is absent in <paramref name="before"/> and present in <paramref name="after"/>.</summary>
+    private static bool PanelNewlyOpen(GameState before, GameState after, LocationId panel) =>
+        !before.Locations.Has(panel) && after.Locations.Has(panel);
 
     /// <summary>
     /// Ticks all facility bags found via the BagRegistry.
