@@ -14,7 +14,14 @@ public enum DialogueTriggerKind
     GameStart,
 
     /// <summary>Fires when the Nth unique item is inspected (cursor rests on a not-yet-seen item type).</summary>
-    NthUniqueInspect
+    NthUniqueInspect,
+
+    /// <summary>
+    /// Fires the first time a look-in peek (<c>C</c>) is refused because the target bag is
+    /// <see cref="Bag.EnterOnly"/> (journey 15:30 — "Can't just peek at this one."). The refused
+    /// peek itself is the teaching moment; the beat names it once. Threshold is unused.
+    /// </summary>
+    FirstFailedPeek
 }
 
 /// <summary>

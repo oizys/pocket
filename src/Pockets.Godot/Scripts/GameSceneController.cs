@@ -268,6 +268,7 @@ public partial class GameSceneController : Control
             Key.Key4 => GameKey.Sort,
             Key.Key5 => GameKey.AcquireRandom,
             Key.R => GameKey.CycleRecipe,
+            Key.C => GameKey.Peek,
             Key.Q => GameKey.LeaveBag,
             Key.Z when key.CtrlPressed => GameKey.Undo,
             _ => null
@@ -286,6 +287,11 @@ public partial class GameSceneController : Control
         if (result.Handled)
         {
             RefreshUI();
+            // Thin equivalent of the TUI shake/flash: on a refused enter-only peek, surface the cue on
+            // the status line for this frame (the next RefreshUI overwrites it). The fire-once
+            // FirstFailedPeek beat renders in the shared dialogue box; this fires on every refusal.
+            if (_controller.ConsumeFeedbackPulse() == FeedbackPulse.FailedPeek)
+                _statusLabel.Text = "✕ Enter-only — can't just peek. Press E to enter.\n" + _statusLabel.Text;
             GetViewport().SetInputAsHandled();
         }
     }

@@ -1,6 +1,6 @@
 {
   "name": "smoke",
-  "description": "Slice 0 parity smoke + Slice 1 UiLedger + Slice 2 dialogue-box/demo-opening + Slice 3 fixed-inventory checkpoints. Opens with the demo's frame-0 dialogue-only state (journey 0:00), dismisses the opening beat to materialize the grid (0:45), browses items so the description pane materializes on first cursor-rest (1:30) and the 3rd-unique-inspect fires the amnesia beat exactly once (a rapid re-scan proves no double-fire and no cursor leak), then repositions to (0,0). Slice 3 replaces the old grab-into-hand pickup/drop/craft (a deliberate mechanic change per the append-only-history rule): the toolbar is born on first pickup, slots fill 1→2→3 left-to-right (journey 4:00), the toolbar's contents are asserted depth-invariant across an enter/leave of the Belt Pouch, a 4th pickup overflows INTO the non-full Coin Pouch toolbar bag (bag-as-partial-empty, beat 5), then a look-in peek (FirstPeek) and a toolbar-sourced Workbench craft (grabbing from the toolbar panel proves grab-for-move still uses the hand). Same file drives every --driver; checkpoint streams must diff clean and the invariant pack must stay green after every step. Dialogue text is asserted straight from data/dialogue/opening.md. Coordinates are pinned to the deterministic demo profile (GameInitializer.DemoSeed); a content change that shifts them is a deliberate script update (append-only history).",
+  "description": "Slice 0 parity smoke + Slice 1 UiLedger + Slice 2 dialogue-box/demo-opening + Slice 3 fixed-inventory checkpoints. Opens with the demo's frame-0 dialogue-only state (journey 0:00), dismisses the opening beat to materialize the grid (0:45), browses items so the description pane materializes on first cursor-rest (1:30) and the 3rd-unique-inspect fires the amnesia beat exactly once (a rapid re-scan proves no double-fire and no cursor leak), then repositions to (0,0). Slice 3 replaces the old grab-into-hand pickup/drop/craft (a deliberate mechanic change per the append-only-history rule): the toolbar is born on first pickup, slots fill 1→2→3 left-to-right (journey 4:00), the toolbar's contents are asserted depth-invariant across an enter/leave of the Belt Pouch, a 4th pickup overflows INTO the non-full Coin Pouch toolbar bag (bag-as-partial-empty, beat 5), then a look-in peek (FirstPeek) and a toolbar-sourced Workbench craft (grabbing from the toolbar panel proves grab-for-move still uses the hand). Same file drives every --driver; checkpoint streams must diff clean and the invariant pack must stay green after every step. Dialogue text is asserted straight from data/dialogue/opening.md. Slice 4 appends the look-in-vs-enter section: C closes the post-craft look-in (close-on-C), then the demo's C-peek opens a one-deep overlay of a plain Chest WITHOUT entering (world untouched, breadcrumbs not pushed), a Chest item is carried out cross-container (hand → root) with the census conserved, and the enter-only Quiet Pocket refuses C — no overlay, cursor unmoved, the FirstFailedPeek beat fires exactly once (a second peek does not re-show it), while E crosses the threshold into it (breadcrumb push) and Q restores the cursor. Coordinates are pinned to the deterministic demo profile (GameInitializer.DemoSeed); a content change that shifts them is a deliberate script update (append-only history).",
   "steps": [
     { "comment": "DEMO OPENING (journey 0:00) — frame 0 is the dialogue box alone: grid ledger-off, opening beat active. Pure assert (no action).",
       "checkpoint": "frame-0",
@@ -94,6 +94,51 @@
     { "tick": 1, "conserves": false },
     { "tick": 1, "conserves": false },
     { "tick": 1, "conserves": false },
-    { "checkpoint": "crafted", "tick": 1, "conserves": false }
+    { "checkpoint": "crafted", "tick": 1, "conserves": false },
+
+    { "comment": "SLICE 4 — LOOK IN vs ENTER (journey 7:00 chest, 15:30 enter-only). From the post-craft state (focus on the Workshop look-in), C closes the focused overlay and returns focus to B (close-on-C). The Workshop is idle post-craft, so this and every Slice-4 action conserves.",
+      "checkpoint": "s4-close-craft-peek", "key": "Peek", "conserves": false,
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "isNested": false, "cursor": { "row": 0, "col": 0 } } },
+
+    { "comment": "Navigate B to the demo Chest at (1,1) — a plain, peekable carrying bag seeded at a free cell.", "key": "Down" },
+    { "checkpoint": "s4-at-chest", "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 1 } } },
+
+    { "comment": "THE DEMO'S C-PEEK (journey 7:00): C on the plain Chest opens a one-deep look-in overlay of its 4×2 grid WITHOUT entering — B stays at root, breadcrumbs are not pushed. FirstPeek → LookInOverlay materializes (idempotent; already lit earlier in this run).",
+      "checkpoint": "s4-peek-chest", "key": "Peek",
+      "assertViewModel": { "openPanels": { "C": "Chest", "T": "Toolbar" }, "ui": { "lookInOverlay": true, "breadcrumbs": true }, "isNested": false, "cursor": { "row": 1, "col": 1 } } },
+
+    { "comment": "CROSS-CONTAINER MOVE (arrange without being inside): focus is on the Chest overlay (C); grab its Smooth Pebble stack into the hand. Census is conserved — the item moves, nothing is created.",
+      "checkpoint": "s4-cross-grab", "key": "Primary",
+      "assertViewModel": { "handEmpty": false, "hand": [ { "item": "Smooth Pebble", "count": 3 } ] } },
+
+    { "comment": "C closes the focused Chest overlay (close-on-C); focus returns to B, the pebbles still in hand.",
+      "checkpoint": "s4-close-chest-peek", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "handEmpty": false } },
+
+    { "comment": "Complete the cross-container move: carry the pebbles to a free inventory cell and drop them there (Chest → hand → root). Navigate past the enter-only Quiet Pocket at (1,2) to the empty (1,3).", "key": "Right" },
+    { "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 3 } } },
+    { "checkpoint": "s4-cross-drop", "key": "Primary",
+      "assertViewModel": { "handEmpty": true, "cursor": { "row": 1, "col": 3 } } },
+
+    { "comment": "ENTER-ONLY, THE FAILED PEEK (journey 15:30). Move onto the Quiet Pocket at (1,2) and press C. It is enter-only: the peek is REFUSED — no overlay opens, the cursor and world are untouched — and the first-failed-peek beat fires (the only tell; no glyph, RATIFIED).", "key": "Left" },
+    { "checkpoint": "s4-failed-peek", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "isNested": false, "cursor": { "row": 1, "col": 2 },
+        "dialogue": { "beatId": "failed-peek", "index": 0, "line": "Can't just peek at this one.", "portrait": "wary" } },
+      "assertRender": "Can't just peek at this one" },
+
+    { "comment": "Dismiss the beat on Primary.", "checkpoint": "s4-failed-peek-dismissed", "key": "Primary",
+      "assertViewModel": { "dialogue": null, "cursor": { "row": 1, "col": 2 } } },
+
+    { "comment": "FIRE-ONCE: a second refused peek does NOT re-show the beat (the shake still fires, but that is a per-frontend affordance, not a checkpoint signal). Still no overlay, cursor unmoved.",
+      "checkpoint": "s4-failed-peek-no-refire", "key": "Peek",
+      "assertViewModel": { "dialogue": null, "openPanels": { "T": "Toolbar" }, "isNested": false, "cursor": { "row": 1, "col": 2 } } },
+
+    { "comment": "E WORKS WHERE C WON'T: Primary/E on the same enter-only bag crosses the threshold — a real breadcrumb push into the Quiet Pocket.",
+      "checkpoint": "s4-enter-only-entered", "key": "Primary",
+      "assertViewModel": { "isNested": true, "activeBag": "Quiet Pocket", "breadcrumbs": [ "Default", "Quiet Pocket" ], "ui": { "breadcrumbs": true } } },
+
+    { "comment": "Q leaves back to the parent, restoring the cursor to the Quiet Pocket cell (1,2).",
+      "checkpoint": "s4-enter-only-left", "key": "LeaveBag",
+      "assertViewModel": { "isNested": false, "cursor": { "row": 1, "col": 2 } } }
   ]
 }

@@ -64,6 +64,7 @@ public static class GameInitializer
 
         state = WithDemoLedgerFixtures(state);
         state = WithDemoToolbar(state) with { ToolbarPickup = true };
+        state = WithDemoSlice4Bags(state);
 
         // Frame 0 (journey 0:00): the dialogue box alone, world not yet materialized. Only applied
         // when the opening beat is available so bookless callers keep the grid-on Slice-1 baseline.
@@ -110,6 +111,59 @@ public static class GameInitializer
             ItemTypes = state.ItemTypes.Contains(pouchType) ? state.ItemTypes : state.ItemTypes.Add(pouchType),
             Store = state.Store.Add(pouchBag).Set(state.RootBagId, state.RootBag with { Grid = rootGrid }),
             Ui = UiLedger.DemoInitial
+        };
+    }
+
+    /// <summary>
+    /// Slice-4 demo content: the look-in-vs-enter pair the journey teaches.
+    ///   • a peekable <b>Chest</b> (4×2, a couple of resting items) at a fixed free cell — the demo's
+    ///     C-peek target (journey 7:00): look into and arrange it without entering.
+    ///   • an <b>enter-only</b> placeholder bag (<b>Quiet Pocket</b>) at the next free cell — a cheap,
+    ///     clearly-named stand-in for the Slice-6 wilderness. C is refused (the failed peek is the only
+    ///     tell — no glyph, RATIFIED); E enters it via breadcrumbs like any plain bag.
+    /// Both sit at pinned free indices (9, 10) so they never shift the smoke journey's earlier
+    /// coordinates. Defensive: if the layout has changed and those cells aren't free, this is skipped.
+    /// Non-demo profiles never call this — it lives only in the demo profile.
+    /// </summary>
+    private static GameState WithDemoSlice4Bags(GameState state)
+    {
+        const int chestCellIndex = 9;      // (1,1) — first free cell after the Belt Pouch at 8
+        const int enterOnlyCellIndex = 10; // (1,2)
+
+        var rootGrid = state.RootBag.Grid;
+        if (!rootGrid.GetCell(chestCellIndex).IsEmpty || !rootGrid.GetCell(enterOnlyCellIndex).IsEmpty)
+            return state; // layout changed; skip so we never overwrite content
+
+        // FirstOrDefault (not ToDictionary): the demo's ItemTypes can carry same-named duplicates
+        // (registry + fixture-added bag types), which a keyed dictionary would reject.
+        ItemStack? Seed(string name, int count) =>
+            state.ItemTypes.FirstOrDefault(t => t.Name == name) is { } t ? new ItemStack(t, count) : null;
+
+        // Chest — a plain, peekable carrying bag with a couple of finds inside.
+        var chestType = new ItemType("Chest", Category.Bag, IsStackable: false);
+        var (chestGrid, _) = Grid.Create(4, 2).AcquireItems(
+            new[] { Seed("Smooth Pebble", 3), Seed("Spring Water", 2) }.Where(s => s is not null).Select(s => s!));
+        var chestBag = new Bag(chestGrid, "Chest");
+
+        // Quiet Pocket — enter-only. A lone item inside gives the entered view something to show.
+        var pocketType = new ItemType("Quiet Pocket", Category.Bag, IsStackable: false);
+        var (pocketGrid, _) = Grid.Create(2, 2).AcquireItems(
+            new[] { Seed("Plain Rock", 1) }.Where(s => s is not null).Select(s => s!));
+        var pocketBag = new Bag(pocketGrid, "Quiet Pocket") { EnterOnly = true };
+
+        rootGrid = rootGrid
+            .SetCell(chestCellIndex, new Cell(Stack: new ItemStack(chestType, 1, ContainedBagId: chestBag.Id)))
+            .SetCell(enterOnlyCellIndex, new Cell(Stack: new ItemStack(pocketType, 1, ContainedBagId: pocketBag.Id)));
+
+        var itemTypes = state.ItemTypes;
+        if (!itemTypes.Contains(chestType)) itemTypes = itemTypes.Add(chestType);
+        if (!itemTypes.Contains(pocketType)) itemTypes = itemTypes.Add(pocketType);
+
+        return state with
+        {
+            ItemTypes = itemTypes,
+            Store = state.Store.Add(chestBag).Add(pocketBag)
+                .Set(state.RootBagId, state.RootBag with { Grid = rootGrid })
         };
     }
 

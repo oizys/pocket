@@ -16,6 +16,7 @@ public enum GameKey
     Sort,           // Key 4
     AcquireRandom,  // Key 5 (debug)
     CycleRecipe,    // R
+    Peek,           // C — look-in overlay (open/close) for a peekable bag; no-op + shake on enter-only
     LeaveBag,       // Q
     Undo,           // Ctrl-Z
     FocusNext,      // Tab

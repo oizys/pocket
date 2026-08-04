@@ -171,6 +171,7 @@ public class GameView : Window
             (Key)'4' => GameKey.Sort,
             (Key)'5' => GameKey.AcquireRandom,
             (Key)'r' or (Key)'R' => GameKey.CycleRecipe,
+            (Key)'c' or (Key)'C' => GameKey.Peek,
             (Key)'q' or (Key)'Q' => GameKey.LeaveBag,
             Key.Enter => GameKey.Confirm,
             Key.Esc => GameKey.Cancel,
@@ -253,6 +254,16 @@ public class GameView : Window
         }
 
         UpdatePanelLayout();
+
+        // One-shot presentation cues (consumed on read). The enter-only failed peek flashes the
+        // command strip — the TUI half of the shake/flash affordance. The first-failed-peek dialogue
+        // beat (shared chrome) handles the once-only teaching line; this fires on every refused peek.
+        switch (_controller.ConsumeFeedbackPulse())
+        {
+            case FeedbackPulse.FailedPeek:
+                _commandStrip.Flash("✕ Enter-only — can't just peek. Press E to enter.");
+                break;
+        }
     }
 
     /// <summary>

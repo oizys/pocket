@@ -178,6 +178,28 @@ public record GameSession(
     }
 
     /// <summary>
+    /// Fires the first-failed-peek narrative hook: enqueues every
+    /// <see cref="DialogueTriggerKind.FirstFailedPeek"/> beat not yet fired (id-ordered, deterministic).
+    /// Monotonic and NOT undoable — same posture as <see cref="EvaluateCursorRest"/>: dialogue never
+    /// rewinds and fire-once (<see cref="DialogueState.Enqueue"/> guards on <see cref="DialogueState.FiredBeats"/>)
+    /// means a second refused peek can't re-show the beat. Touches only the dialogue substate — the
+    /// world, cursor, panels, and item census are untouched, so a refused peek stays a true no-op.
+    /// Returns the same session when nothing changes (all such beats already fired, or none authored).
+    /// </summary>
+    public GameSession FireFailedPeek()
+    {
+        var state = Current;
+        if (state.Dialogue.IsActive)
+            return this; // a beat is already showing; the world (and this hook) is blocked
+
+        var dialogue = state.Dialogue;
+        foreach (var beat in Beats.WithTrigger(DialogueTriggerKind.FirstFailedPeek))
+            dialogue = dialogue.Enqueue(beat.Id);
+
+        return dialogue == state.Dialogue ? this : this with { Current = state with { Dialogue = dialogue } };
+    }
+
+    /// <summary>
     /// Advances the active dialogue by one line, or dismisses it when past the last line. On dismiss
     /// the beat may materialize chrome (the opening beat reveals the grid — the world fades in as the
     /// box drops). Not undoable: dialogue progression never rewinds. No-op when nothing is showing.

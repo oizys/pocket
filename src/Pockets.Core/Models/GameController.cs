@@ -1,6 +1,20 @@
 namespace Pockets.Core.Models;
 
 /// <summary>
+/// A transient, non-serialized presentation cue the frontends read after an input to play a
+/// one-shot affordance. NOT part of the game state or the parity view-model (so it never perturbs
+/// checkpoints/goldens) — it lives on the per-frontend <see cref="GameController"/> and is consumed
+/// on read (<see cref="GameController.ConsumeFeedbackPulse"/>). The demo's only pulse today is the
+/// enter-only <see cref="FailedPeek"/> shake/flash; the beat teaches the rule once, the pulse fires
+/// every time so the tell survives after the dialogue is spent.
+/// </summary>
+public enum FeedbackPulse
+{
+    None,
+    FailedPeek
+}
+
+/// <summary>
 /// Pure input→state pipeline for the game. Maps abstract GameKeys and mouse clicks
 /// to GameSession operations. No UI framework dependency — testable with xUnit.
 /// Tracks which panel has focus for input routing.
@@ -9,6 +23,7 @@ public class GameController
 {
     private GameSession _session;
     private LocationId _focus = LocationId.B;
+    private FeedbackPulse _feedbackPulse = FeedbackPulse.None;
 
     /// <summary>
     /// Order in which Tab cycles through panels.
@@ -32,11 +47,26 @@ public class GameController
     public LocationId Focus => _focus;
 
     /// <summary>
+    /// Reads and clears the pending one-shot presentation cue (see <see cref="FeedbackPulse"/>).
+    /// Frontends call this once per UI refresh; it returns <see cref="FeedbackPulse.None"/> when
+    /// there is nothing to play. Consume-on-read keeps the cue from leaking into a later frame.
+    /// </summary>
+    public FeedbackPulse ConsumeFeedbackPulse()
+    {
+        var pulse = _feedbackPulse;
+        _feedbackPulse = FeedbackPulse.None;
+        return pulse;
+    }
+
+    /// <summary>
     /// Handles a logical key press. Returns a ControllerResult with the updated session,
     /// a status message, and whether the key was handled.
     /// </summary>
     public ControllerResult HandleKey(GameKey key, Random? rng = null)
     {
+        // One-shot presentation cues are per-key: clear any un-consumed pulse before handling.
+        _feedbackPulse = FeedbackPulse.None;
+
         // Dialogue is modal-lite: while a beat is showing, Primary advances/dismisses it and every
         // other key is swallowed (handled, no state change) — the input's first job is turning pages,
         // before movement exists, and nothing leaks to the cursor underneath.
@@ -127,6 +157,12 @@ public class GameController
             }
             return ControllerResult.Handle(_session, "Nothing to undo");
         }
+
+        // Look-in peek (C) — a generic look-in overlay, one deep for the demo. Opens/closes the
+        // C container panel for the cursor bag (any peekable bag, plain chest included); on an
+        // enter-only bag it is refused with a failed-peek affordance instead of opening.
+        if (key == GameKey.Peek)
+            return ExecutePeek();
 
         // Leave/close — if focused on C or W, close that panel. Otherwise leave bag.
         if (key == GameKey.LeaveBag)
@@ -249,6 +285,82 @@ public class GameController
             return _session.ExecutePickupToToolbar();
 
         return _session.ExecutePrimary(_focus);
+    }
+
+    /// <summary>
+    /// Look-in peek (C): opens or closes a generic one-deep look-in overlay (the C container panel)
+    /// over the cursor bag. Distinct from Primary/E, which ENTERS a plain bag via breadcrumbs —
+    /// peek lets the player look into and arrange a bag without going anywhere (journey 7:00, the Chest).
+    /// Works on ANY peekable bag, plain chests included, so it isn't limited to the facility/wilderness
+    /// bags Primary already routes to C/W.
+    ///
+    /// Toggle + refusal rules:
+    ///   • focused on a look-in panel (C/W) → C closes it (mirrors Q);
+    ///   • cursor bag already peeked (open as C) → C closes it;
+    ///   • cursor bag is <see cref="Bag.EnterOnly"/> → the peek is REFUSED: no panel opens, the cursor
+    ///     and world are untouched, the first-failed-peek beat fires once, and a
+    ///     <see cref="FeedbackPulse.FailedPeek"/> shake/flash is queued for the frontends. The refused
+    ///     peek is the only tell (no glyph — RATIFIED). E still enters the bag normally.
+    ///   • otherwise → open the bag as a C look-in overlay (FirstPeek → LookInOverlay fires structurally
+    ///     in <see cref="GameSession.ApplyUiTriggers"/> when C newly opens), focus moves to C.
+    /// </summary>
+    private ControllerResult ExecutePeek()
+    {
+        var state = _session.Current;
+
+        // A focused look-in panel: C toggles it closed, same as Q.
+        if (_focus is LocationId.C or LocationId.W)
+        {
+            var closeResult = state.ClosePanel(_focus);
+            if (closeResult.Success)
+            {
+                var closed = _focus;
+                _session = _session.ApplyToolResult(closeResult, () => $"Close peek: {closed}");
+                _focus = LocationId.B;
+                return ControllerResult.Handle(_session, $"Peek: closed {closed}");
+            }
+            return ControllerResult.Handle(_session, "Peek: nothing to close");
+        }
+
+        var cell = ResolveFocusedCell(state);
+        if (!cell.HasBag)
+            return ControllerResult.Handle(_session, "Peek: nothing to look into");
+
+        var bagId = cell.Stack!.ContainedBagId!.Value;
+        var bag = state.Store.GetById(bagId);
+        if (bag is null)
+            return ControllerResult.Handle(_session, "Peek: bag not found");
+
+        // Enter-only: refuse the peek. The failed peek is the affordance — fire the beat once, queue
+        // the shake, and leave everything else exactly as it was (a true no-op on the world/cursor).
+        if (bag.EnterOnly)
+        {
+            _session = _session.FireFailedPeek();
+            _feedbackPulse = FeedbackPulse.FailedPeek;
+            return ControllerResult.Handle(_session, "Can't just peek at this one — press E to enter.");
+        }
+
+        // Cursor bag already peeked → toggle it closed.
+        if (state.Locations.TryGet(LocationId.C) is { } cLoc && cLoc.BagId == bagId)
+        {
+            var closeResult = state.ClosePanel(LocationId.C);
+            if (closeResult.Success)
+            {
+                _session = _session.ApplyToolResult(closeResult, () => $"Close peek: {bag.EnvironmentType}");
+                _focus = LocationId.B;
+                return ControllerResult.Handle(_session, $"Peek: closed {bag.EnvironmentType}");
+            }
+        }
+
+        // Open the generic look-in overlay.
+        var openResult = state.OpenAsContainer(bagId);
+        if (openResult.Success)
+        {
+            _session = _session.ApplyToolResult(openResult, () => $"Peek: {bag.EnvironmentType}");
+            _focus = LocationId.C;
+            return ControllerResult.Handle(_session, $"Peek: {bag.EnvironmentType}");
+        }
+        return ControllerResult.Handle(_session, "Peek: could not open");
     }
 
     /// <summary>

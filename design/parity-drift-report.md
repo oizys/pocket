@@ -164,9 +164,47 @@ Design notes ratified this slice (documented in code):
   wilderness bags are never descended into (you don't dump loose items into a crafting station or an
   enter-only world).
 
+## Slice 4 — look-in vs. enter; enter-only bags
+
+Landed the journey's `C`-peek / `E`-enter split and the enter-only property. Exercised by
+`make parity` (TUI + mock-godot, **75 checkpoints, diff-clean**) plus Core/App unit tests.
+
+Design notes ratified this slice (documented in code):
+- **`C` = generic peek (new `GameKey.Peek`)**: opens a **one-deep** look-in overlay (the C container
+  panel) over ANY peekable bag at the cursor — a plain **Chest** included, which `Primary`/`E` would
+  instead *enter*. Toggles closed on `C`; `Q` also closes. Reuses `OpenAsContainer` → `ApplyResult`,
+  so `FirstPeek → LookInOverlay` fires identically on both drivers. One-deep for the demo: peeking is
+  a top-of-cursor action; nested peeking is out of scope until a later slice needs it.
+  - *Worker's call (per brief latitude):* the existing `Primary`-opens-facility-as-C /
+    wilderness-as-W routes are left UNCHANGED (keeps the Slice-3 smoke green). `Peek` is an
+    additional, uniform route that always opens the cursor bag as a C look-in — the only path that
+    peeks a plain chest without entering.
+- **`Bag.EnterOnly`** (bool, default false, travels with the bag through the store): a peek is
+  **refused** — no panel, cursor/world untouched — surfacing a failed-peek affordance and firing a
+  fire-once `DialogueTriggerKind.FirstFailedPeek` beat ("Can't just peek at this one."). `E` still
+  enters via breadcrumbs. **No visible glyph/frame marks an enter-only bag** (RATIFIED 2026-08-03;
+  the failed peek is the only tell — the eyelid-shut glyph is a banked future Shrine unlock). The
+  property is deliberately **absent from the view-model** so no frontend can render a marker.
+- **Failed-peek affordance** = a non-serialized, consume-on-read `GameController.FeedbackPulse`
+  (`FailedPeek`) the frontends play each refusal: **TUI** flashes the command strip
+  ("✕ Enter-only — …"); **Godot thin equivalent** surfaces the cue on the status line + the shared
+  dialogue box renders the once-only beat, and `DebugCommandHandler` returns the same refusal in its
+  `status`. It never touches game state, so checkpoints/goldens are unperturbed.
+- **Demo content**: a peekable **Chest** (4×2, Smooth Pebble + Spring Water) at free cell 9 (1,1)
+  and an enter-only **Quiet Pocket** placeholder (a cheap Slice-6 wilderness stand-in) at cell 10
+  (1,2). Both at pinned free cells so earlier smoke coordinates don't shift; non-demo profiles are
+  untouched (suites prove).
+
+Godot render note (extends #4): the real Godot frontend still draws no C/W look-in panel, so a
+successful peek there opens the C location without a visible overlay — the same deferred render gap
+as the existing facility/wilderness panels (not new to this slice). The `C` key, the enter-only
+status cue, and the dialogue beat are wired; the overlay *render* rides the same Slice-1+ follow-up.
+
 ## Follow-ups for later slices
 - **Slice 1 (`UiLedger`)**: render C/W/T panels in Godot from ledger state; then the existing
   `openPanels` checkpoints assert render parity on both drivers.
+- **Enter-only glyph** (banked): the eyelid-shut frame + a "see enter-only property" reveal are
+  future Shrine feature unlocks, deliberately outside the 30-minute demo (RATIFIED).
 - **Keymap**: bring Godot's keyboard `MapKey` to TUI parity (bundle with Slice 1).
 - **Serializer**: expose open-panel interiors when a slice needs to assert inside them.
 - **Realtime**: the demo profile pins Rogue for a deterministic baseline; the journey's

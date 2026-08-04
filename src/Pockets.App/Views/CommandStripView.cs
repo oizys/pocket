@@ -18,7 +18,7 @@ public class CommandStripView : View
     private readonly Label _content;
 
     private const string DefaultHint =
-        "[1/E:Action] [2:Half] [3:QuickSplit] [#:Split] [4:Sort] [R:Recipe] [Q:Back] [^Z:Undo]";
+        "[1/E:Action] [C:Peek] [2:Half] [3:QuickSplit] [#:Split] [4:Sort] [R:Recipe] [Q:Back] [^Z:Undo]";
 
     public CommandStripView()
     {
@@ -53,6 +53,18 @@ public class CommandStripView : View
         {
             _content.Text = DefaultHint;
         }
+        _content.SetNeedsDisplay();
+        SetNeedsDisplay();
+    }
+
+    /// <summary>
+    /// Shows a one-shot cue in place of the hint for this frame — the TUI half of a
+    /// <see cref="FeedbackPulse"/> (e.g. the enter-only failed-peek shake/flash). The next
+    /// <see cref="Update"/> restores the default hint, so the cue is transient by construction.
+    /// </summary>
+    public void Flash(string message)
+    {
+        _content.Text = message;
         _content.SetNeedsDisplay();
         SetNeedsDisplay();
     }
