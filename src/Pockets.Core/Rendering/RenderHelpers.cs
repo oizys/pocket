@@ -91,4 +91,31 @@ public static class RenderHelpers
 
         return $"Hand: {string.Join(", ", items)}";
     }
+
+    /// <summary>
+    /// One-line summary of the toolbar's occupied slots (Slice 3): the fixed inventory as the bottom
+    /// bar. A slot holding a carrying bag shows its nested count (e.g. "Coin Pouch[1]"). Depth-invariant
+    /// — reads the T bag straight from the store, so it is identical no matter how deep B has navigated.
+    /// Used by the thin Godot bottom bar to align it to the same model the TUI T panel renders from.
+    /// </summary>
+    public static string FormatToolbarSummary(GameState state)
+    {
+        if (state.ToolbarBagId is not { } id || state.Store.GetById(id) is not { } toolbar)
+            return "Toolbar: —";
+
+        var slots = new List<string>();
+        foreach (var cell in toolbar.Grid.Cells)
+        {
+            if (cell.Stack is not { } stack) continue;
+            var label = FormatStack(stack);
+            if (stack.ContainedBagId is { } nestedId && state.Store.GetById(nestedId) is { } nested)
+            {
+                var used = nested.Grid.Cells.Count(c => !c.IsEmpty);
+                label += $"[{used}/{nested.Grid.Cells.Length}]";
+            }
+            slots.Add(label);
+        }
+
+        return slots.Count == 0 ? "Toolbar: empty" : $"Toolbar: {string.Join(" | ", slots)}";
+    }
 }

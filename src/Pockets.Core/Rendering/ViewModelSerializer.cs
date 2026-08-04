@@ -82,6 +82,45 @@ public static class ViewModelSerializer
             }
         }
 
+        // Toolbar (fixed inventory, Slice 3): the T bag's occupied slots, resolved straight from the
+        // store so the projection is depth-invariant — identical no matter how deep B has navigated.
+        // Each slot carries its index (so slot-fill order is diff-assertable) and, for a slot holding
+        // a carrying bag, one level of nested contents (so an overflow pickup's destination cell inside
+        // the nested bag is a first-class checkpoint signal). Absent when there is no toolbar.
+        var toolbar = new JsonArray();
+        if (state.ToolbarBagId is { } toolbarId && state.Store.GetById(toolbarId) is { } toolbarBag)
+        {
+            for (var i = 0; i < toolbarBag.Grid.Cells.Length; i++)
+            {
+                var cell = toolbarBag.Grid.Cells[i];
+                if (cell.IsEmpty) continue;
+                var slot = new JsonObject
+                {
+                    ["slot"] = i,
+                    ["item"] = cell.Stack!.ItemType.Name,
+                    ["count"] = cell.Stack.Count,
+                    ["hasBag"] = cell.Stack.ContainedBagId is not null
+                };
+                if (cell.Stack.ContainedBagId is { } nestedId && state.Store.GetById(nestedId) is { } nestedBag)
+                {
+                    var contents = new JsonArray();
+                    for (var j = 0; j < nestedBag.Grid.Cells.Length; j++)
+                    {
+                        var nc = nestedBag.Grid.Cells[j];
+                        if (nc.IsEmpty) continue;
+                        contents.Add(new JsonObject
+                        {
+                            ["slot"] = j,
+                            ["item"] = nc.Stack!.ItemType.Name,
+                            ["count"] = nc.Stack.Count
+                        });
+                    }
+                    slot["contents"] = contents;
+                }
+                toolbar.Add(slot);
+            }
+        }
+
         var breadcrumbs = new JsonArray();
         foreach (var crumb in state.BreadcrumbPath)
             breadcrumbs.Add(crumb);
@@ -139,6 +178,7 @@ public static class ViewModelSerializer
             },
             ["hand"] = hand,
             ["handEmpty"] = !state.HasItemsInHand,
+            ["toolbar"] = toolbar,
             ["breadcrumbs"] = breadcrumbs,
             ["openPanels"] = openPanels,
             ["ui"] = ui,

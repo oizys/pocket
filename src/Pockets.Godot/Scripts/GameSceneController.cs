@@ -319,10 +319,11 @@ public partial class GameSceneController : Control
         _descriptionLabel.Text = RenderHelpers.DescribeCursorItem(state);
         _descriptionLabel.Visible = state.Ui.Has(ChromeElement.DescriptionPane);
 
-        // Toolbar
-        _toolbarLabel.Text = state.HasItemsInHand
-            ? "[1]Grab [2]Drop [3]Split [4]Sort [5]Acquire  |  [E]Enter [Q]Leave [Ctrl-Z]Undo"
-            : "[1]Grab [2]Drop [3]Split [4]Sort [5]Acquire  |  [E]Enter [Q]Leave [Ctrl-Z]Undo";
+        // Toolbar (Slice 3) — the fixed inventory as the bottom bar. Aligned to the same model the TUI
+        // T panel renders from (RenderHelpers.FormatToolbarSummary over the depth-invariant T bag), so
+        // the demo's pickups appear here identically on both frontends. Only draws once FirstPickup has
+        // materialized the toolbar chrome (ledger-gated, like every other panel).
+        _toolbarLabel.Text = RenderHelpers.FormatToolbarSummary(state);
         _toolbarLabel.Visible = state.Ui.Has(ChromeElement.Toolbar);
 
         // Dialogue box — draw the active line (resolved from the beat book) or hide it.

@@ -241,8 +241,28 @@ public class GameController
             }
         }
 
+        // Fixed-inventory routing (Slice 3): in the demo profile a bare pickup in the inventory (B)
+        // flies to the toolbar instead of the hand. Gated on _focus == B so grabbing FROM the toolbar
+        // or a facility panel keeps the classic grab-into-hand (the "grab-for-move" cut buffer stays
+        // reachable). Non-demo profiles have ToolbarPickup == false → this is never taken.
+        if (_focus == LocationId.B && state.ToolbarPickup && IsBarePickup(state, focusedCell))
+            return _session.ExecutePickupToToolbar();
+
         return _session.ExecutePrimary(_focus);
     }
+
+    /// <summary>
+    /// A bare pickup = the contextual Primary would grab a resting item into the hand: a non-empty,
+    /// non-bag, non-output-slot cell with an empty hand at root depth. (A bag enters, an output slot
+    /// or nested cell has its own verb, a full hand drops/swaps — none of those are "picking up".)
+    /// Mirrors <see cref="GameState.ToolPrimary"/>'s grab branch so routing and semantics stay in lockstep.
+    /// </summary>
+    private static bool IsBarePickup(GameState state, Cell cell) =>
+        !state.HasItemsInHand
+        && !cell.IsEmpty
+        && !cell.HasBag
+        && cell.Frame is not OutputSlotFrame
+        && !state.IsNested;
 
     /// <summary>
     /// Resolves the cell at the focused panel's cursor.

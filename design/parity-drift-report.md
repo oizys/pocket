@@ -137,6 +137,33 @@ is unverified. **Action for Aaron:** on the Windows box, rebuild `src/Pockets.Go
 `make parity-godot` to confirm the live pass + eyeball the dialogue overlay (colored-rect portrait,
 grid hidden at frame 0, box drops on Primary → grid appears). Placeholder art only — no asset pipeline.
 
+## Slice 3 (fixed inventories) — Godot node needs a Windows Godot-runtime pass
+Same posture as Slices 0–2: the Godot-side edit (`GameSceneController` — the bottom-bar toolbar label
+now renders `RenderHelpers.FormatToolbarSummary(state)`, the depth-invariant T-bag contents, instead
+of a static hotkey hint; still ledger-gated on `ChromeElement.Toolbar`) is **mechanical and reviewed
+but not compiled here** (no Godot .NET SDK in this WSL). All Slice-3 mechanics are Core and fully
+exercised by `make parity` (TUI + mock-godot, **60 checkpoints, diff-clean**) plus Core/App unit tests:
+the toolbar as a real depth-invariant bag, pickup-to-first-toolbar-slot routing (demo-profile only —
+non-demo keeps grab-into-hand, suites prove it), and the bag-as-partial-empty recursive acquire
+(overflow into a non-full toolbar bag). The new `toolbar` view-model field (occupied slots + one level
+of nested contents) is emitted by the shared serializer, so both drivers diff it identically. **Action
+for Aaron:** on the Windows box, rebuild `src/Pockets.Godot`, launch, `make parity-godot` to confirm
+the live pass + eyeball the bottom bar (empty until first pickup, then Rock/Wood/Leather appear, with
+the Coin Pouch showing a nested `[n/2]` capacity readout).
+
+Design notes ratified this slice (documented in code):
+- **Demo toolbar size = 1×4** (a single row): three fillable slots + a seeded non-full **Coin Pouch**
+  carrying bag in slot 3. Sized to the demo's item variety so one short journey exercises both
+  slot-fill order AND capacity overflow. Non-demo profiles keep `CreateStage1`'s 10×1 toolbar.
+- **Pickup vs grab-for-move**: a *bare pickup* (Primary on a resting inventory item, empty hand, at
+  root depth) routes to the toolbar; the *hand* stays the in-flight cut buffer, still reached by
+  Primary on the toolbar/facility panels (routing is B-focus-only). The demo's craft delivers *from*
+  the toolbar, proving grab-for-move remains available.
+- **Acquire ordering**: within each bag, true-empty cells + mergeable same-type stacks fill first
+  (top-left), then any remainder descends into non-full **plain** sub-bags (top-left). Facility and
+  wilderness bags are never descended into (you don't dump loose items into a crafting station or an
+  enter-only world).
+
 ## Follow-ups for later slices
 - **Slice 1 (`UiLedger`)**: render C/W/T panels in Godot from ledger state; then the existing
   `openPanels` checkpoints assert render parity on both drivers.

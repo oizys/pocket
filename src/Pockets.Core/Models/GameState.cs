@@ -27,6 +27,16 @@ public record GameState(
     public DialogueState Dialogue { get; init; } = DialogueState.Empty;
 
     /// <summary>
+    /// Fixed-inventory routing rule (Slice 3). When true — the demo profile — a bare pickup in the
+    /// inventory (Primary on a resting item, empty hand, not a bag/output-slot, not nested) routes
+    /// the item to the first available <b>toolbar</b> slot instead of the hand: the toolbar is where
+    /// pickups land, the hand stays reserved as the in-flight cut buffer (grab-for-move, still reached
+    /// by Primary on the toolbar/facility panels). Defaults false so every non-demo profile keeps the
+    /// classic grab-into-hand behavior unchanged. Set only by <see cref="GameInitializer.CreateDemoProfile"/>.
+    /// </summary>
+    public bool ToolbarPickup { get; init; } = false;
+
+    /// <summary>
     /// Fires a UI trigger, materializing any chrome it reveals. Returns the same instance when
     /// nothing changes (idempotent), so it never manufactures a spurious state change.
     /// </summary>
@@ -138,6 +148,67 @@ public record GameState(
     /// </summary>
     public static Bag CreateHandBag(int handSize = 1) =>
         new Bag(Grid.Create(handSize, 1));
+
+    // ==================== Toolbar (fixed inventory) ====================
+
+    /// <summary>
+    /// The toolbar bag's Id, or null if no toolbar location is present. The toolbar is a real,
+    /// depth-invariant fixed inventory (its own <see cref="LocationId.T"/> bag), unaffected by how
+    /// deep the B cursor has navigated — the same slots are present at every depth.
+    /// </summary>
+    public Guid? ToolbarBagId => Locations.TryGet(LocationId.T)?.BagId;
+
+    /// <summary>
+    /// Store-aware acquisition of a single stack into the bag identified by <paramref name="bagId"/>,
+    /// implementing the <b>bag-as-partial-empty</b> rule (Slice 3, beat 5): a cell holding a non-full
+    /// plain bag counts as available space, and the item is then acquired <i>into</i> that bag
+    /// (recursive placement — the carrying-capacity mechanic).
+    ///
+    /// Ordering (documented + tested): within each bag, true-empty cells and mergeable same-type
+    /// stacks fill first (top-left, the classic <see cref="Grid.AcquireItems"/> pass); only then does
+    /// any remainder descend into non-full <i>plain</i> sub-bags (top-left). "Plain" excludes facility
+    /// and wilderness bags — you never dump loose items into a crafting station or an enter-only world.
+    /// The recursion applies the same empties-first-then-partial-bags rule at every level.
+    ///
+    /// This lives on <see cref="GameState"/> (not <see cref="Grid"/>) because descent needs the
+    /// <see cref="BagStore"/> to resolve a cell's <see cref="ItemStack.ContainedBagId"/> to its bag.
+    /// The store-blind <see cref="Grid.AcquireItems"/> is left untouched, so every existing
+    /// acquire/drop/sort path is byte-identical and non-demo behavior is unchanged.
+    /// Returns the updated state and any portion that could not be placed anywhere.
+    /// </summary>
+    public (GameState State, ItemStack? Unplaced) AcquireIntoBagRecursive(Guid bagId, ItemStack stack)
+    {
+        var bag = Store.GetById(bagId);
+        if (bag is null)
+            return (this, stack);
+
+        // Phase A — fill this bag's true-empty cells + mergeable same-type stacks (top-left).
+        var (grid, unplaced) = bag.Grid.AcquireItems(new[] { stack });
+        var state = this with { Store = Store.Set(bagId, bag with { Grid = grid }) };
+        var remaining = unplaced.Count > 0 ? unplaced[0] : null;
+        if (remaining is null)
+            return (state, null);
+
+        // Phase B — descend into non-full plain sub-bags (top-left), acquiring the remainder into them.
+        for (int i = 0; i < grid.Cells.Length && remaining is not null; i++)
+        {
+            if (grid.Cells[i].Stack?.ContainedBagId is not { } childId)
+                continue;
+            if (state.Store.GetById(childId) is not { } child || !IsDescendableBag(child))
+                continue;
+
+            (state, remaining) = state.AcquireIntoBagRecursive(childId, remaining);
+        }
+
+        return (state, remaining);
+    }
+
+    /// <summary>
+    /// A bag counts as available carrying space for the recursive acquire rule when it is a plain
+    /// carrying bag — not a facility (crafting station) and not a wilderness (enter-only world).
+    /// </summary>
+    public static bool IsDescendableBag(Bag bag) =>
+        bag.FacilityState is null && !IsWildernessType(bag.EnvironmentType);
 
     // ==================== Location mutation helpers ====================
 

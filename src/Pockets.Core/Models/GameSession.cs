@@ -278,6 +278,45 @@ public record GameSession(
     }
 
     /// <summary>
+    /// Fixed-inventory pickup (Slice 3): removes the resting item under the B cursor and acquires it
+    /// into the toolbar's first available slot — the demo's "pickup flies to the toolbar" routing.
+    /// Uses <see cref="GameState.AcquireIntoBagRecursive"/>, so once the toolbar's own slots are full a
+    /// pickup lands <i>inside</i> a non-full toolbar bag (the carrying-capacity mechanic). The hand is
+    /// untouched (it stays the in-flight cut buffer). Undoable; a full toolbar fails with the item left
+    /// in place. The <see cref="UiTrigger.FirstPickup"/> that materializes the toolbar fires
+    /// structurally in <see cref="ApplyUiTriggers"/> when the toolbar gains its first item.
+    /// </summary>
+    public GameSession ExecutePickupToToolbar()
+    {
+        var state = Current;
+        var cell = state.CurrentCell;
+        if (cell.IsEmpty || state.ToolbarBagId is not { } toolbarId)
+            return ApplyResult(ToolResult.Ok(state), () => "Pickup: no-op");
+
+        var item = cell.Stack!;
+        var (afterAcquire, remaining) = state.AcquireIntoBagRecursive(toolbarId, item);
+
+        var placed = item.Count - (remaining?.Count ?? 0);
+        if (placed == 0)
+            return ApplyResult(ToolResult.Fail(state, "Toolbar is full"),
+                () => $"Pickup: {item.ItemType.Name} → toolbar");
+
+        // Clear the source cell (or leave the unplaced remainder there when the toolbar only had room
+        // for part of the stack). The toolbar lives in a different bag, so the acquire above never
+        // touched B's active bag — we mutate it here on the post-acquire store.
+        var sourceBag = afterAcquire.ActiveBag;
+        var newCell = remaining is not null ? cell with { Stack = remaining } : cell with { Stack = null };
+        var clearedGrid = sourceBag.Grid.SetCell(state.Cursor.Position, newCell);
+        var newState = afterAcquire with
+        {
+            Store = afterAcquire.Store.Set(afterAcquire.ActiveBagId, sourceBag with { Grid = clearedGrid })
+        };
+
+        return ApplyResult(ToolResult.Ok(newState),
+            () => $"Pickup: {placed} {item.ItemType.Name} → toolbar");
+    }
+
+    /// <summary>
     /// Secondary action routed via the focused location when not B.
     /// </summary>
     public GameSession ExecuteSecondary(LocationId loc) => RunAt(loc, s => s.ExecuteSecondary());
@@ -620,18 +659,20 @@ public record GameSession(
 
     /// <summary>
     /// Reveals chrome for the gameplay transitions between two states. Structural (not per-tool):
-    ///   • hand went empty → non-empty  ⇒ FirstPickup   (Toolbar)
-    ///   • breadcrumb depth increased    ⇒ FirstEnter    (Breadcrumbs)
-    ///   • a C/W look-in panel opened    ⇒ FirstPeek     (LookInOverlay)
+    ///   • hand OR toolbar gained an item ⇒ FirstPickup   (Toolbar)
+    ///   • breadcrumb depth increased     ⇒ FirstEnter    (Breadcrumbs)
+    ///   • a C/W look-in panel opened     ⇒ FirstPeek     (LookInOverlay)
     /// Each Fire is idempotent, so this runs on every successful action and only the FIRST
-    /// occurrence flips a flag. Triggers for unbuilt mechanics (Shrine, compass, cores) have
-    /// plumbing + tests but no detector here yet — they wire up in their own slice.
+    /// occurrence flips a flag. The toolbar arm makes the demo's pickup-to-toolbar routing
+    /// (Slice 3) light the toolbar the same way a classic grab-into-hand does. Triggers for
+    /// unbuilt mechanics (Shrine, compass, cores) have plumbing + tests but no detector here yet.
     /// </summary>
     private static GameState ApplyUiTriggers(GameState before, GameState after)
     {
         var ui = after.Ui;
 
-        if (!before.HasItemsInHand && after.HasItemsInHand)
+        if ((!before.HasItemsInHand && after.HasItemsInHand)
+            || ToolbarItemCount(after) > ToolbarItemCount(before))
             ui = ui.Fire(UiTrigger.FirstPickup);
 
         if (after.BreadcrumbStack.Count() > before.BreadcrumbStack.Count())
@@ -646,6 +687,12 @@ public record GameSession(
     /// <summary>True when <paramref name="panel"/> is absent in <paramref name="before"/> and present in <paramref name="after"/>.</summary>
     private static bool PanelNewlyOpen(GameState before, GameState after, LocationId panel) =>
         !before.Locations.Has(panel) && after.Locations.Has(panel);
+
+    /// <summary>Number of occupied top-level toolbar slots (0 when there is no toolbar).</summary>
+    private static int ToolbarItemCount(GameState state) =>
+        state.ToolbarBagId is { } id && state.Store.GetById(id) is { } bag
+            ? bag.Grid.Cells.Count(c => !c.IsEmpty)
+            : 0;
 
     /// <summary>
     /// Ticks all facility bags found via the BagRegistry.

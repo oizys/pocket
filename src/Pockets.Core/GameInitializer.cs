@@ -63,6 +63,7 @@ public static class GameInitializer
         var book = dialogue ?? DialogueBook.Empty;
 
         state = WithDemoLedgerFixtures(state);
+        state = WithDemoToolbar(state) with { ToolbarPickup = true };
 
         // Frame 0 (journey 0:00): the dialogue box alone, world not yet materialized. Only applied
         // when the opening beat is available so bookless callers keep the grid-on Slice-1 baseline.
@@ -109,6 +110,37 @@ public static class GameInitializer
             ItemTypes = state.ItemTypes.Contains(pouchType) ? state.ItemTypes : state.ItemTypes.Add(pouchType),
             Store = state.Store.Add(pouchBag).Set(state.RootBagId, state.RootBag with { Grid = rootGrid }),
             Ui = UiLedger.DemoInitial
+        };
+    }
+
+    /// <summary>
+    /// Replaces the demo profile's toolbar (fixed inventory, Slice 3) with a single row of 4 slots:
+    /// three fillable slots plus a seeded, non-full <b>Coin Pouch</b> carrying bag in the last slot.
+    /// The size is deliberate and documented — small enough that one short journey can exhaustively
+    /// exercise both the slot-fill order (pickups land 1→2→3, journey 4:00) AND capacity overflow
+    /// (a 4th distinct pickup, with every plain slot full, acquires <i>into</i> the Coin Pouch —
+    /// the bag-as-partial-empty rule). CreateStage1's wider 10×1 toolbar is kept for non-demo
+    /// profiles, so this touches only the demo. Depth-invariance is intrinsic: the toolbar is its own
+    /// <see cref="LocationId.T"/> bag, unchanged by how deep B navigates.
+    /// </summary>
+    private static GameState WithDemoToolbar(GameState state)
+    {
+        var pouchType = new ItemType("Coin Pouch", Category.Bag, IsStackable: false);
+        var pouchBag = new Bag(Grid.Create(2, 1), "Pouch");
+
+        var toolbarGrid = Grid.Create(4, 1)
+            .SetCell(3, new Cell(Stack: new ItemStack(pouchType, 1, ContainedBagId: pouchBag.Id)));
+        var toolbarBag = new Bag(toolbarGrid, "Toolbar");
+
+        var store = state.Store.Add(toolbarBag).Add(pouchBag);
+        if (state.ToolbarBagId is { } oldToolbarId)
+            store = store.Remove(oldToolbarId); // drop CreateStage1's placeholder 10×1 toolbar
+
+        return state with
+        {
+            Store = store,
+            Locations = state.Locations.Set(LocationId.T, Location.AtOrigin(toolbarBag.Id)),
+            ItemTypes = state.ItemTypes.Contains(pouchType) ? state.ItemTypes : state.ItemTypes.Add(pouchType)
         };
     }
 
