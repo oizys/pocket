@@ -35,7 +35,15 @@ public enum DialogueTriggerKind
     /// "…Oh. Now I can see."): the resolution line paired with the eye-of-fullness unlock.
     /// Threshold unused.
     /// </summary>
-    CoreSlotted
+    CoreSlotted,
+
+    /// <summary>
+    /// Fires when the player has bumped an unnavigable tree cell exactly <see cref="DialogueTrigger.Threshold"/>
+    /// times (Slice 6, journey 15:30 — "Solid. If I had an axe— …did I used to have an axe?"): verbs-by-
+    /// absence, plus an amnesia thread. Deterministic counter (<see cref="DialogueState.TreeBumpCount"/>),
+    /// fire-once — a later bump never re-shows it.
+    /// </summary>
+    NthTreeBump
 }
 
 /// <summary>

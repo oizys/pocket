@@ -122,10 +122,22 @@ public record GameSession(
     /// <summary>
     /// Moves the cursor one step at the given location. Not undoable, not logged.
     /// </summary>
-    public GameSession MoveCursorAt(LocationId locId, Direction direction)
+    public GameSession MoveCursorAt(LocationId locId, Direction direction) =>
+        TryMoveCursorAt(locId, direction).Session;
+
+    /// <summary>
+    /// Moves the cursor one step at the given location, returning whether the move was refused by an
+    /// unnavigable tree cell (Slice 6). A move whose target is a <see cref="TreeFrame"/> cell leaves the
+    /// cursor exactly where it was (position unchanged — the checkpoint assert) and records a bump: the
+    /// <see cref="DialogueState.TreeBumpCount"/> counter advances and any <see cref="DialogueTriggerKind.NthTreeBump"/>
+    /// beat whose threshold the new count reaches fires once. The <c>TreeBumped</c> flag lets the
+    /// controller queue the one-shot <see cref="FeedbackPulse.Bump"/> — the same split the failed-peek
+    /// affordance uses (transient cue on the controller, monotonic dialogue on the session). Not undoable.
+    /// </summary>
+    public (GameSession Session, bool TreeBumped) TryMoveCursorAt(LocationId locId, Direction direction)
     {
         var loc = Current.Locations.TryGet(locId);
-        if (loc is null) return this;
+        if (loc is null) return (this, false);
 
         // Resolve the active bag for this location (follow breadcrumbs)
         var bagId = loc.BagId;
@@ -139,16 +151,58 @@ public record GameSession(
         }
 
         var activeBag = Current.Store.GetById(bagId);
-        if (activeBag is null) return this;
+        if (activeBag is null) return (this, false);
 
         var newCursor = loc.Cursor.Move(direction, activeBag.Grid.Rows, activeBag.Grid.Columns);
+
+        // Unnavigable (tree) target: refuse the move. The cursor stays put; a bump is recorded and the
+        // axe-absence beat fires on the Nth bump. Guard on an actual position change so a wrap no-op on a
+        // 1-wide/1-tall grid is never mistaken for a bump.
+        if (newCursor.Position != loc.Cursor.Position
+            && activeBag.Grid.GetCell(newCursor.Position).IsUnnavigable)
+            return (RecordTreeBump(), true);
+
         var newLoc = loc with { Cursor = newCursor };
         var moved = this with { Current = Current with { Locations = Current.Locations.Set(locId, newLoc) } };
 
         // Inspecting = the inventory (B) cursor resting on an item. It reveals the description pane
         // (first rest) and feeds the Nth-unique-inspect dialogue condition. Not undoable — moves
         // never are — and inert while a dialogue is blocking the world.
-        return locId == LocationId.B ? moved.EvaluateCursorRest() : moved;
+        return (locId == LocationId.B ? moved.EvaluateCursorRest() : moved, false);
+    }
+
+    /// <summary>
+    /// Records a tree bump: advances <see cref="DialogueState.TreeBumpCount"/> and enqueues any
+    /// <see cref="DialogueTriggerKind.NthTreeBump"/> beat whose threshold the new count reaches (id-ordered,
+    /// fire-once). Touches only the dialogue substate — the cursor and world are untouched, so a refused
+    /// move stays a true no-op on the census. Inert while a beat is already showing (movement is swallowed
+    /// then anyway). Same monotonic posture as <see cref="EvaluateCursorRest"/> / <see cref="FireFailedPeek"/>.
+    /// </summary>
+    private GameSession RecordTreeBump()
+    {
+        var state = Current;
+        if (state.Dialogue.IsActive)
+            return this;
+
+        var dialogue = state.Dialogue.Bump();
+        dialogue = EnqueueThresholdBeats(dialogue, DialogueTriggerKind.NthTreeBump, dialogue.TreeBumpCount);
+
+        return this with { Current = state with { Dialogue = dialogue } };
+    }
+
+    /// <summary>
+    /// Enqueues every beat of a threshold-counter trigger whose <see cref="DialogueTrigger.Threshold"/>
+    /// the counter has just reached and which hasn't already fired — the shared "fire the beat once the
+    /// Nth event lands, once" idiom behind both <see cref="DialogueTriggerKind.NthUniqueInspect"/> and
+    /// <see cref="DialogueTriggerKind.NthTreeBump"/>. Id-ordered (deterministic) and fire-once via
+    /// <see cref="DialogueState.Enqueue"/>.
+    /// </summary>
+    private DialogueState EnqueueThresholdBeats(DialogueState dialogue, DialogueTriggerKind kind, int count)
+    {
+        foreach (var beat in Beats.WithTrigger(kind))
+            if (beat.Trigger.Threshold == count && !dialogue.HasFired(beat.Id))
+                dialogue = dialogue.Enqueue(beat.Id);
+        return dialogue;
     }
 
     /// <summary>
@@ -179,11 +233,7 @@ public record GameSession(
         if (!dialogue.InspectedItems.Contains(typeName))
         {
             dialogue = dialogue.Inspect(typeName);
-            foreach (var beat in Beats.WithTrigger(DialogueTriggerKind.NthUniqueInspect))
-            {
-                if (beat.Trigger.Threshold == dialogue.UniqueInspectCount && !dialogue.HasFired(beat.Id))
-                    dialogue = dialogue.Enqueue(beat.Id);
-            }
+            dialogue = EnqueueThresholdBeats(dialogue, DialogueTriggerKind.NthUniqueInspect, dialogue.UniqueInspectCount);
         }
 
         if (ReferenceEquals(ui, state.Ui) && dialogue == state.Dialogue)
@@ -703,6 +753,10 @@ public record GameSession(
         // here (instance) because enqueuing a beat needs the session's beat book; the UI-flag arm of
         // the same transitions is fired inside ApplyUiTriggers.
         newState = FireStructuralDialogue(Current, newState);
+        // Known-recipes registry (Slice 6): any recipe-as-item that has reached the player's fixed
+        // inventories (hand/toolbar) teaches its recipe. Runs on every action so it catches a pickup
+        // however it routed (grab-into-hand, pickup-to-toolbar, overflow-into-bag). Monotonic + idempotent.
+        newState = RegisterKnownRecipes(newState);
 
         var newStack = PushWithLimit(UndoStack, Current);
         var newLog = ActionLog.Add(formatLog());
@@ -764,6 +818,47 @@ public record GameSession(
         foreach (var beat in Beats.WithTrigger(DialogueTriggerKind.CoreSlotted))
             dialogue = dialogue.Enqueue(beat.Id);
         return dialogue == after.Dialogue ? after : after with { Dialogue = dialogue };
+    }
+
+    /// <summary>
+    /// Adds to <see cref="GameState.KnownRecipes"/> the recipe id of every recipe-as-item currently held
+    /// in the player's fixed inventories — the hand and the toolbar (one level into a toolbar carrying
+    /// bag, where an overflow pickup lands). A recipe item is any <see cref="ItemStack"/> carrying a
+    /// <see cref="GameState.RecipeItemProperty"/>. Idempotent (a set) and monotonic: learning is permanent,
+    /// so dropping the card later never un-learns it. Returns the same state when nothing new is learned.
+    /// </summary>
+    private static GameState RegisterKnownRecipes(GameState state)
+    {
+        var known = state.KnownRecipes;
+        foreach (var stack in HeldRecipeCarriers(state))
+            if (stack.GetString(GameState.RecipeItemProperty) is { } recipeId)
+                known = known.Add(recipeId); // ImmutableHashSet.Add returns the same instance when present
+
+        return ReferenceEquals(known, state.KnownRecipes) ? state : state with { KnownRecipes = known };
+    }
+
+    /// <summary>
+    /// Every stack the player is carrying in their fixed inventories — the hand plus the toolbar,
+    /// including one level into a toolbar carrying bag (where an overflow pickup lands, matching the VM
+    /// serializer's toolbar-nesting depth). This is the principled "in the player's possession" set a
+    /// recipe must reach to be learned; it deliberately excludes world bags a card merely rests in.
+    /// </summary>
+    private static IEnumerable<ItemStack> HeldRecipeCarriers(GameState state)
+    {
+        foreach (var s in state.HandItems)
+            yield return s;
+
+        if (state.ToolbarBagId is { } id && state.Store.GetById(id) is { } toolbar)
+        {
+            foreach (var cell in toolbar.Grid.Cells)
+            {
+                if (cell.Stack is not { } s) continue;
+                yield return s;
+                if (s.ContainedBagId is { } nestedId && state.Store.GetById(nestedId) is { } nested)
+                    foreach (var nc in nested.Grid.Cells)
+                        if (nc.Stack is { } ns) yield return ns;
+            }
+        }
     }
 
     /// <summary>True when the active bag just became the Shrine (a fresh entry, not a re-render).</summary>

@@ -90,8 +90,11 @@ public class GridPanel : FrameView
         _handLabel.X = GridXOffset + gridWidth + 2;
         _handCell.X = GridXOffset + gridWidth + 2;
 
-        // Breadcrumb trail — chrome-as-state: draws only when the ledger says it exists.
-        _breadcrumbs.Text = string.Join(" > ", state.BreadcrumbPath);
+        // Breadcrumb trail — chrome-as-state: draws only when the ledger says it exists. The env header
+        // (palette + Quiet+ glyph approximation for the Quiet 1 wilderness; empty for ordinary bags) is
+        // appended unconditionally — FormatEnvHeader carries its own leading separator.
+        _breadcrumbs.Text = string.Join(" > ", state.BreadcrumbPath)
+            + Pockets.Core.Rendering.RenderHelpers.FormatEnvHeader(state.ActiveBag);
         _breadcrumbs.Visible = state.Ui.Has(ChromeElement.Breadcrumbs);
 
         // Status bar: hand contents (detailed text below the hand cell)

@@ -204,11 +204,10 @@ public class ShrineTests
     }
 
     [Fact]
-    public void DemoProfile_SeedsEyeCore_InTheChest()
+    public void DemoProfile_EyeCore_NoLongerInTheChest()
     {
+        // Slice 6 relocated the eye core out of the Chest into the wilderness ruin (journey 15:30).
         var chest = BagAt(DemoState(), 9)!;
-        var core = chest.Grid.Cells.Select(c => c.Stack).FirstOrDefault(s => s?.ItemType.Name == "Eye Core");
-        Assert.NotNull(core);
-        Assert.Equal("eye", core!.GetString(FeatureSlotFrame.GlyphProperty));
+        Assert.DoesNotContain(chest.Grid.Cells, c => c.Stack?.ItemType.Name == "Eye Core");
     }
 }

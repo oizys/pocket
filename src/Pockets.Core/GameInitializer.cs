@@ -65,6 +65,7 @@ public static class GameInitializer
         state = WithDemoLedgerFixtures(state);
         state = WithDemoToolbar(state) with { ToolbarPickup = true };
         state = WithDemoSlice4Bags(state);
+        state = WithDemoWilderness(state);
         state = WithDemoShrine(state);
 
         // Frame 0 (journey 0:00): the dialogue box alone, world not yet materialized. Only applied
@@ -116,23 +117,21 @@ public static class GameInitializer
     }
 
     /// <summary>
-    /// Slice-4 demo content: the look-in-vs-enter pair the journey teaches.
+    /// Slice-4 demo content: the look-in target the journey teaches.
     ///   • a peekable <b>Chest</b> (4×2, a couple of resting items) at a fixed free cell — the demo's
     ///     C-peek target (journey 7:00): look into and arrange it without entering.
-    ///   • an <b>enter-only</b> placeholder bag (<b>Quiet Pocket</b>) at the next free cell — a cheap,
-    ///     clearly-named stand-in for the Slice-6 wilderness. C is refused (the failed peek is the only
-    ///     tell — no glyph, RATIFIED); E enters it via breadcrumbs like any plain bag.
-    /// Both sit at pinned free indices (9, 10) so they never shift the smoke journey's earlier
-    /// coordinates. Defensive: if the layout has changed and those cells aren't free, this is skipped.
-    /// Non-demo profiles never call this — it lives only in the demo profile.
+    /// The enter-only teaching (journey 15:30) is now carried by the <b>Quiet 1</b> wilderness itself
+    /// (<see cref="WithDemoWilderness"/>) — Slice 6 upgraded the throwaway "Quiet Pocket" placeholder
+    /// into the real wilderness, so a single enter-only bag serves both the failed-peek tell and the
+    /// exploration payoff. The eye core moved out of the Chest into the wilderness ruin (Slice 6).
+    /// Pinned to a free index (9); defensive if the layout shifts. Demo profile only.
     /// </summary>
     private static GameState WithDemoSlice4Bags(GameState state)
     {
         const int chestCellIndex = 9;      // (1,1) — first free cell after the Belt Pouch at 8
-        const int enterOnlyCellIndex = 10; // (1,2)
 
         var rootGrid = state.RootBag.Grid;
-        if (!rootGrid.GetCell(chestCellIndex).IsEmpty || !rootGrid.GetCell(enterOnlyCellIndex).IsEmpty)
+        if (!rootGrid.GetCell(chestCellIndex).IsEmpty)
             return state; // layout changed; skip so we never overwrite content
 
         // FirstOrDefault (not ToDictionary): the demo's ItemTypes can carry same-named duplicates
@@ -140,39 +139,128 @@ public static class GameInitializer
         ItemStack? Seed(string name, int count) =>
             state.ItemTypes.FirstOrDefault(t => t.Name == name) is { } t ? new ItemStack(t, count) : null;
 
-        // Chest — a plain, peekable carrying bag with a couple of finds inside, plus the temporarily
-        // seeded eye core (Slice 5). The eye core is a glyph-tagged core (Glyph = "eye") matching the
-        // Shrine's empty eye slot. It rides here in the demo purely so it is reachable; Slice 6
-        // relocates it to the wilderness ruin (journey 15:30) where it belongs.
-        var eyeCoreType = new ItemType("Eye Core", Category.Tool, IsStackable: false,
-            Description: "A cold lens of stone, an eye-glyph cut deep. [Slice-6 TODO: move to the wilderness ruin.]");
-        var eyeCore = new ItemStack(eyeCoreType, 1)
-            .WithProperty(FeatureSlotFrame.GlyphProperty, new StringValue(FeatureSlotFrame.EyeGlyph));
-
+        // Chest — a plain, peekable carrying bag with a couple of finds inside. (The eye core used to
+        // ride here as a Slice-5 stopgap; Slice 6 relocated it to the wilderness ruin, journey 15:30.)
         var chestType = new ItemType("Chest", Category.Bag, IsStackable: false);
         var (chestGrid, _) = Grid.Create(4, 2).AcquireItems(
-            new[] { Seed("Smooth Pebble", 3), Seed("Spring Water", 2), eyeCore }.Where(s => s is not null).Select(s => s!));
+            new[] { Seed("Smooth Pebble", 3), Seed("Spring Water", 2) }.Where(s => s is not null).Select(s => s!));
         var chestBag = new Bag(chestGrid, "Chest");
 
-        // Quiet Pocket — enter-only. A lone item inside gives the entered view something to show.
-        var pocketType = new ItemType("Quiet Pocket", Category.Bag, IsStackable: false);
-        var (pocketGrid, _) = Grid.Create(2, 2).AcquireItems(
-            new[] { Seed("Plain Rock", 1) }.Where(s => s is not null).Select(s => s!));
-        var pocketBag = new Bag(pocketGrid, "Quiet Pocket") { EnterOnly = true };
-
         rootGrid = rootGrid
-            .SetCell(chestCellIndex, new Cell(Stack: new ItemStack(chestType, 1, ContainedBagId: chestBag.Id)))
-            .SetCell(enterOnlyCellIndex, new Cell(Stack: new ItemStack(pocketType, 1, ContainedBagId: pocketBag.Id)));
+            .SetCell(chestCellIndex, new Cell(Stack: new ItemStack(chestType, 1, ContainedBagId: chestBag.Id)));
 
         var itemTypes = state.ItemTypes;
         if (!itemTypes.Contains(chestType)) itemTypes = itemTypes.Add(chestType);
-        if (!itemTypes.Contains(pocketType)) itemTypes = itemTypes.Add(pocketType);
-        if (!itemTypes.Contains(eyeCoreType)) itemTypes = itemTypes.Add(eyeCoreType);
 
         return state with
         {
             ItemTypes = itemTypes,
-            Store = state.Store.Add(chestBag).Add(pocketBag)
+            Store = state.Store.Add(chestBag)
+                .Set(state.RootBagId, state.RootBag with { Grid = rootGrid })
+        };
+    }
+
+    /// <summary>Fixed-seed offset for the wilderness type-scatter — deterministic yet independent of
+    /// the profile RNG already consumed by <see cref="CreateFromRegistry"/> (order-decoupled).</summary>
+    private const int WildernessSeed = DemoSeed + 6;
+
+    /// <summary>The demo wilderness's EnvironmentType, palette (Dust), and Quiet+ entropy glyph slug.</summary>
+    public const string WildernessEnvironment = "Quiet 1";
+    public const string WildernessPalette = "Dust";
+    public const string WildernessGlyph = "quiet-positive"; // Quiet+ basis glyph (design/glyphs.md)
+
+    /// <summary>The recipe id the ruin's "another Quiet 1" card teaches on pickup (Slice 6 explorer path).</summary>
+    public const string AnotherQuiet1RecipeId = "another-quiet-1";
+
+    /// <summary>
+    /// Slice-6 demo content: the <b>Quiet 1 wilderness</b> — the enter-only, Dust-palette, Quiet+-glyphed
+    /// bag that replaces the Slice-4 "Quiet Pocket" placeholder at the same home-room cell (10). Its 6×4
+    /// grid is a <b>fixed, deterministic layout</b> (the demo's "fixed placements", build-plan Slice 6 —
+    /// the conditional loot-table director stays deferred): open ground, seven <b>unnavigable trees</b>
+    /// (<see cref="TreeFrame"/> + a Standing Tree item so both frontends render them), and scattered
+    /// harvestables (Dry Grass / Bone Chips / sticks=Rough Wood / rocks=Plain Rock). Harvestable <i>types</i>
+    /// away from the entrance are chosen by a fixed-seed RNG (<see cref="WildernessSeed"/>) — a genuine
+    /// seeded scatter that is still 100% reproducible, so checkpoints stay stable. The entrance cell (0,0)
+    /// is a fixed Dry Grass so the harvest checkpoint has a known target, and (0,1) is a tree so a player
+    /// entering at (0,0) can bump it (the axe-absence beat).
+    ///
+    /// Deeper in sits a peekable <b>ruin</b> bag (C works on it — only the wilderness itself resists the
+    /// peek) holding the three ruin finds: a <b>Scrawled Note</b> (half-pictographic scrap flavor), the
+    /// <b>"another Quiet 1" recipe</b> card (a <see cref="GameState.RecipeItemProperty"/>-tagged item that
+    /// teaches <see cref="AnotherQuiet1RecipeId"/> on pickup), and the relocated <b>eye core</b> (glyph
+    /// "eye", matching the Shrine's empty slot). Pinned to cell 10; defensive if the layout shifts.
+    /// </summary>
+    private static GameState WithDemoWilderness(GameState state)
+    {
+        const int wildernessCellIndex = 10; // (1,2) — the cell the Slice-4 Quiet Pocket used to occupy
+
+        var rootGrid = state.RootBag.Grid;
+        if (!rootGrid.GetCell(wildernessCellIndex).IsEmpty)
+            return state; // layout changed; skip so we never overwrite content
+
+        ItemType Type(string name) =>
+            state.ItemTypes.FirstOrDefault(t => t.Name == name)
+            ?? new ItemType(name, Category.Material, IsStackable: true);
+
+        // --- The ruin bag (peekable) — note, recipe, eye core, in a 3×1 row. ---
+        var noteStack = new ItemStack(Type("Scrawled Note"), 1);
+        var recipeStack = new ItemStack(Type("Quiet Recipe"), 1)
+            .WithProperty(GameState.RecipeItemProperty, new StringValue(AnotherQuiet1RecipeId));
+        var eyeCoreType = new ItemType("Eye Core", Category.Tool, IsStackable: false,
+            Description: "A cold lens of stone, an eye-glyph cut deep. It watches nothing, or everything.");
+        var eyeCore = new ItemStack(eyeCoreType, 1)
+            .WithProperty(FeatureSlotFrame.GlyphProperty, new StringValue(FeatureSlotFrame.EyeGlyph));
+
+        var ruinGrid = Grid.Create(3, 1)
+            .SetCell(0, new Cell(Stack: noteStack))
+            .SetCell(1, new Cell(Stack: recipeStack))
+            .SetCell(2, new Cell(Stack: eyeCore));
+        var ruinBag = new Bag(ruinGrid, "Ruin");
+        var ruinType = new ItemType("Ruin", Category.Structure, IsStackable: false,
+            Description: "A collapsed shape of stone, half-swallowed by dust. Something was kept here.");
+
+        // --- The wilderness grid (6×4). Trees are unnavigable; the ruin sits at (2,0). ---
+        var treeType = new ItemType("Standing Tree", Category.Structure, IsStackable: false,
+            Description: "A grey trunk, hard as the day it stopped growing. No way through — not without an edge.");
+        var treeCells = new HashSet<int> { 1, 3, 8, 11, 15, 19, 23 };
+        const int ruinCellIndex = 12;
+
+        // Harvestable positions (fixed) and the seeded type pool. Cell 0 is a fixed Dry Grass entrance.
+        var harvestCells = new[] { 0, 4, 7, 10, 14, 17, 20, 22 };
+        var pool = new[] { "Dry Grass", "Bone Chips", "Rough Wood", "Plain Rock" };
+        var rng = new Random(WildernessSeed);
+
+        var wildGrid = Grid.Create(6, 4);
+        foreach (var i in treeCells)
+            wildGrid = wildGrid.SetCell(i, new Cell(Stack: new ItemStack(treeType, 1), Frame: new TreeFrame()));
+        wildGrid = wildGrid.SetCell(ruinCellIndex,
+            new Cell(Stack: new ItemStack(ruinType, 1, ContainedBagId: ruinBag.Id)));
+        foreach (var i in harvestCells)
+        {
+            // Entrance stays a fixed Dry Grass (stable harvest target); the rest are a seeded scatter.
+            var name = i == 0 ? "Dry Grass" : pool[rng.Next(pool.Length)];
+            wildGrid = wildGrid.SetCell(i, new Cell(Stack: new ItemStack(Type(name), i == 0 ? 2 : 1)));
+        }
+
+        var wildernessBag = new Bag(wildGrid, WildernessEnvironment, WildernessPalette)
+        {
+            EnterOnly = true,
+            Glyph = WildernessGlyph
+        };
+        var wildernessType = new ItemType(WildernessEnvironment, Category.Bag, IsStackable: false,
+            Description: "Dark inside. No bottom that you can see. You could fit — but you could not just look.");
+
+        rootGrid = rootGrid.SetCell(wildernessCellIndex,
+            new Cell(Stack: new ItemStack(wildernessType, 1, ContainedBagId: wildernessBag.Id)));
+
+        var itemTypes = state.ItemTypes;
+        foreach (var t in new[] { eyeCoreType, ruinType, treeType, wildernessType })
+            if (!itemTypes.Contains(t)) itemTypes = itemTypes.Add(t);
+
+        return state with
+        {
+            ItemTypes = itemTypes,
+            Store = state.Store.Add(ruinBag).Add(wildernessBag)
                 .Set(state.RootBagId, state.RootBag with { Grid = rootGrid })
         };
     }

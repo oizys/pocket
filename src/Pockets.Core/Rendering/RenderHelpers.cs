@@ -79,6 +79,30 @@ public static class RenderHelpers
     }
 
     /// <summary>
+    /// The environment header suffix for a bag that carries an entropy glyph (Slice 6): the Quiet 1
+    /// wilderness shows its palette + a text approximation of the Quiet+ staircase glyph, with a leading
+    /// separator so callers can append the result to the breadcrumb line <b>unconditionally</b>. Empty
+    /// (no separator) for ordinary bags. The ASCII staircase <c>=== == =</c> stands in for the real SVG
+    /// (<c>assets/glyphs/basis-quiet-positive.svg</c>); the Godot SVG→Texture2D import is the deferred
+    /// glyph pass (design/glyphs.md). Cross-driver the authoritative signal is the VM <c>env</c> fields —
+    /// this string is the shallow "is it drawn" tell.
+    /// </summary>
+    public static string FormatEnvHeader(Bag bag)
+    {
+        if (string.IsNullOrEmpty(bag.Glyph)) return "";
+        return $"   [{bag.EnvironmentType} · {GlyphArt(bag.Glyph)} · {bag.ColorScheme}]";
+    }
+
+    /// <summary>A compact ASCII approximation of an entropy glyph for the text frontends.</summary>
+    private static string GlyphArt(string glyph) => glyph switch
+    {
+        // Quiet+ is the descending "sort by ascending" staircase (long / mid / short) — evoked as three
+        // decreasing runs of '='.
+        "quiet-positive" => "=== == =",
+        _ => glyph
+    };
+
+    /// <summary>
     /// Summarizes the hand state as a single line.
     /// </summary>
     public static string FormatHandSummary(GameState state)

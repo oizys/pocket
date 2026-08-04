@@ -11,7 +11,14 @@ namespace Pockets.Core.Models;
 public enum FeedbackPulse
 {
     None,
-    FailedPeek
+    FailedPeek,
+
+    /// <summary>
+    /// A cursor move refused by an unnavigable tree cell (Slice 6, journey 15:30). Fired every time
+    /// the player bumps a tree — "solid, no path" — while the fire-once axe-absence beat only plays
+    /// on the Nth bump. The frontends play a one-shot shake/flash, same posture as <see cref="FailedPeek"/>.
+    /// </summary>
+    Bump
 }
 
 /// <summary>
@@ -182,7 +189,11 @@ public class GameController
 
         if (direction is not null)
         {
-            _session = _session.MoveCursorAt(_focus, direction.Value);
+            var (moved, treeBumped) = _session.TryMoveCursorAt(_focus, direction.Value);
+            _session = moved;
+            // A move refused by an unnavigable tree queues the one-shot bump shake/flash (the fire-once
+            // axe-absence beat is handled inside the session; this cue fires on every bump).
+            if (treeBumped) _feedbackPulse = FeedbackPulse.Bump;
             return ControllerResult.Handle(_session, $"Move: {direction.Value} ({_focus})");
         }
 

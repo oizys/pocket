@@ -42,6 +42,12 @@ public record Cell(ItemStack? Stack = null, Category? CategoryFilter = null, Cel
     public bool IsLockedFeatureSlot => Frame is FeatureSlotFrame { IsLocked: true };
 
     /// <summary>
+    /// True when the cursor cannot enter this cell (Slice 6): an unnavigable <see cref="TreeFrame"/>.
+    /// A directional move whose target is unnavigable is refused (cursor unchanged) with a bump cue.
+    /// </summary>
+    public bool IsUnnavigable => Frame is TreeFrame;
+
+    /// <summary>
     /// Returns true if the given item type is allowed in this cell.
     /// Checks both CategoryFilter and InputSlotFrame filter if present.
     ///

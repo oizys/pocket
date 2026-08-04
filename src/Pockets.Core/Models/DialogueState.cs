@@ -21,6 +21,14 @@ public record DialogueState(
     ImmutableHashSet<string> FiredBeats,
     ImmutableHashSet<string> InspectedItems)
 {
+    /// <summary>
+    /// How many times the cursor has been refused by an unnavigable tree cell (Slice 6). The counter
+    /// the <see cref="DialogueTriggerKind.NthTreeBump"/> condition reads. Init-only (not a positional
+    /// ctor arg) so existing 4-arg construction keeps compiling; included in record equality. Monotonic
+    /// and carried forward across undo like the rest of the dialogue substate (movement never rewinds).
+    /// </summary>
+    public int TreeBumpCount { get; init; } = 0;
+
     /// <summary>Nothing showing, nothing fired, nothing inspected.</summary>
     public static readonly DialogueState Empty = new(
         ImmutableList<string>.Empty, 0,
@@ -65,6 +73,13 @@ public record DialogueState(
         InspectedItems.Contains(itemName)
             ? this
             : this with { InspectedItems = InspectedItems.Add(itemName) };
+
+    /// <summary>
+    /// Records one tree bump, incrementing <see cref="TreeBumpCount"/> (Slice 6). Unlike
+    /// <see cref="Inspect"/> this always advances — every refused move is a distinct bump — so a
+    /// threshold beat fires on exactly the Nth bump.
+    /// </summary>
+    public DialogueState Bump() => this with { TreeBumpCount = TreeBumpCount + 1 };
 
     /// <summary>
     /// Advances the active beat by one line. If already on the last line, dismisses it (dequeues

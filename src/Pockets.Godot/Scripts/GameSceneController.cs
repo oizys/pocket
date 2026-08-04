@@ -299,8 +299,15 @@ public partial class GameSceneController : Control
             // Thin equivalent of the TUI shake/flash: on a refused enter-only peek, surface the cue on
             // the status line for this frame (the next RefreshUI overwrites it). The fire-once
             // FirstFailedPeek beat renders in the shared dialogue box; this fires on every refusal.
-            if (_controller.ConsumeFeedbackPulse() == FeedbackPulse.FailedPeek)
-                _statusLabel.Text = "✕ Enter-only — can't just peek. Press E to enter.\n" + _statusLabel.Text;
+            switch (_controller.ConsumeFeedbackPulse())
+            {
+                case FeedbackPulse.FailedPeek:
+                    _statusLabel.Text = "✕ Enter-only — can't just peek. Press E to enter.\n" + _statusLabel.Text;
+                    break;
+                case FeedbackPulse.Bump: // Slice 6: a cursor move refused by a tree (fires on every bump).
+                    _statusLabel.Text = "✕ A tree. Solid — no way through.\n" + _statusLabel.Text;
+                    break;
+            }
             GetViewport().SetInputAsHandled();
         }
     }
@@ -341,9 +348,13 @@ public partial class GameSceneController : Control
         // panels are not rendered by this frontend yet — see design/parity-drift-report.md #4;
         // the ledger already governs their existence for when they land.)
 
-        // Breadcrumbs + back button
+        // Breadcrumbs + back button. The env header (palette + Quiet+ glyph approximation for the Quiet 1
+        // wilderness; empty for ordinary bags) is appended unconditionally — FormatEnvHeader carries its
+        // own leading separator. This is a label/text placeholder for the real SVG texture (deferred
+        // Godot glyph import, design/glyphs.md).
         var crumbs = state.BreadcrumbPath;
-        _breadcrumbLabel.Text = string.Join(" > ", crumbs);
+        _breadcrumbLabel.Text = string.Join(" > ", crumbs)
+            + RenderHelpers.FormatEnvHeader(state.ActiveBag);
         _breadcrumbLabel.Visible = state.Ui.Has(ChromeElement.Breadcrumbs);
         _backButton.Visible = state.IsNested;
 

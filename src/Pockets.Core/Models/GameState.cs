@@ -37,6 +37,24 @@ public record GameState(
     public bool ToolbarPickup { get; init; } = false;
 
     /// <summary>
+    /// The known-recipe registry (Slice 6, journey 15:30 — the explorer path). Recipe ids the player
+    /// has learned by picking up recipe-as-item finds (an <see cref="ItemStack"/> carrying a
+    /// <see cref="RecipeItemProperty"/> naming its recipe). Grows monotonically as such items enter the
+    /// hand/toolbar (see <see cref="GameSession"/>); serialized in the VM (<c>knownRecipes</c>). The
+    /// "another Quiet 1" recipe proves the explorer path; wiring it to an actually-craftable
+    /// <see cref="Recipe"/> is a Slice-7 table-context concern — this slice only holds the state + item.
+    /// Defaults empty; every non-demo profile is unaffected.
+    /// </summary>
+    public ImmutableHashSet<string> KnownRecipes { get; init; } = ImmutableHashSet<string>.Empty;
+
+    /// <summary>
+    /// The per-item property key a recipe-as-item carries to name the recipe it teaches on pickup
+    /// (Slice 6). Data-driven like <see cref="FeatureSlotFrame.GlyphProperty"/>: the demo attaches it to
+    /// the ruin's "another Quiet 1" card.
+    /// </summary>
+    public const string RecipeItemProperty = "Recipe";
+
+    /// <summary>
     /// Fires a UI trigger, materializing any chrome it reveals. Returns the same instance when
     /// nothing changes (idempotent), so it never manufactures a spurious state change.
     /// </summary>
@@ -205,10 +223,12 @@ public record GameState(
 
     /// <summary>
     /// A bag counts as available carrying space for the recursive acquire rule when it is a plain
-    /// carrying bag — not a facility (crafting station) and not a wilderness (enter-only world).
+    /// carrying bag — not a facility (crafting station) and not a wilderness (enter-only world). The
+    /// <see cref="Bag.EnterOnly"/> guard (Slice 6) covers the demo's Quiet 1 wilderness, which uses a
+    /// non-<see cref="IsWildernessType"/> env name but is still a world you never dump loose items into.
     /// </summary>
     public static bool IsDescendableBag(Bag bag) =>
-        bag.FacilityState is null && !IsWildernessType(bag.EnvironmentType);
+        bag.FacilityState is null && !IsWildernessType(bag.EnvironmentType) && !bag.EnterOnly;
 
     // ==================== Location mutation helpers ====================
 

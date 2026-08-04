@@ -187,11 +187,29 @@ public static class ViewModelSerializer
         foreach (var entry in session.ActionLog.TakeLast(ActionLogTail))
             log.Add(entry);
 
+        // Environment header (Slice 6): the active bag's palette + entropy glyph, projected for every
+        // bag (deterministic — pure functions of the bag) so the Quiet 1 wilderness's Dust/Quiet+ header
+        // is a first-class cross-driver checkpoint signal. Ordinary bags read palette "Default", glyph "".
+        // The env type is the top-level `activeBag` field (not duplicated here).
+        var env = new JsonObject
+        {
+            ["palette"] = activeBag.ColorScheme,
+            ["glyph"] = activeBag.Glyph
+        };
+
+        // Known-recipes registry (Slice 6): the recipe ids the player has learned, sorted for a stable,
+        // diff-clean projection. Empty array before the first recipe-as-item pickup.
+        var knownRecipes = new JsonArray();
+        foreach (var id in state.KnownRecipes.OrderBy(r => r, StringComparer.Ordinal))
+            knownRecipes.Add(id);
+
         return new JsonObject
         {
             ["gridColumns"] = grid.Columns,
             ["gridRows"] = grid.Rows,
             ["activeBag"] = activeBag.EnvironmentType,
+            ["env"] = env,
+            ["knownRecipes"] = knownRecipes,
             ["cells"] = cells,
             ["cursor"] = new JsonObject
             {

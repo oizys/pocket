@@ -40,6 +40,17 @@ public sealed record OutputSlotFrame(
 public sealed record PlanterFrame(bool IsLocked = false) : CellFrame(IsLocked);
 
 /// <summary>
+/// An <b>unnavigable</b> cell (Slice 6, the Quiet 1 wilderness, journey 15:30): a standing tree the
+/// cursor <i>refuses to enter</i>. A directional move whose target is a tree cell leaves the cursor
+/// in place and queues a <see cref="FeedbackPulse.Bump"/> — the "solid, no path" tell. Repeated bumps
+/// feed the <see cref="DialogueTriggerKind.NthTreeBump"/> counter (the axe-absence beat). The frame
+/// carries the block; the cell may also hold a Standing Tree item so it renders as a tree. Locked
+/// (nothing about it is editable) — but the block itself is enforced in cursor movement, not the tool
+/// layer, since a tree is impassable rather than merely irremovable.
+/// </summary>
+public sealed record TreeFrame(bool IsLocked = true) : CellFrame(IsLocked);
+
+/// <summary>
 /// A Shrine feature slot (Slice 5, journey 12:00): a glyph-keyed slot that accepts only the
 /// matching-glyph core item and, once slotted, <b>locks irreversibly</b> (the core can never be
 /// removed). The glyph-filter variant of the Stage-3 <see cref="InputSlotFrame"/> pattern.

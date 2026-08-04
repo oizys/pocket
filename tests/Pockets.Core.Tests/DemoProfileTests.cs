@@ -65,12 +65,16 @@ public class DemoProfileTests
     }
 
     [Fact]
-    public void CreateDemoProfile_SeedsEnterOnlyPlaceholder_AtFreeCell10()
+    public void CreateDemoProfile_SeedsQuiet1Wilderness_AtFreeCell10()
     {
-        var pocket = BagAt(Profile().State, 10); // (1,2)
-        Assert.NotNull(pocket);
-        Assert.Equal("Quiet Pocket", pocket!.EnvironmentType);
-        Assert.True(pocket.EnterOnly);                    // C is refused; E enters
+        // Slice 6 upgraded the Slice-4 "Quiet Pocket" placeholder at this cell into the real
+        // enter-only Quiet 1 wilderness (Dust palette + Quiet+ glyph header).
+        var wild = BagAt(Profile().State, 10); // (1,2)
+        Assert.NotNull(wild);
+        Assert.Equal("Quiet 1", wild!.EnvironmentType);
+        Assert.True(wild.EnterOnly);                      // C is refused; E enters
+        Assert.Equal("Dust", wild.ColorScheme);
+        Assert.Equal("quiet-positive", wild.Glyph);
     }
 
     [Fact]

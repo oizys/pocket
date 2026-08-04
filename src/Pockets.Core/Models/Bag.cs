@@ -28,6 +28,15 @@ public record Bag(
     public bool EnterOnly { get; init; } = false;
 
     /// <summary>
+    /// The entropy-glyph slug shown on this bag's environment header (Slice 6). Empty for ordinary
+    /// bags; the Quiet 1 wilderness carries <c>"quiet-positive"</c> — the Quiet+ basis glyph
+    /// (design/glyphs.md; asset <c>assets/glyphs/basis-quiet-positive.svg</c>). Paired with
+    /// <see cref="ColorScheme"/> as the palette, this is the cross-driver env header both frontends
+    /// draw (VM <c>env</c> fields); the real SVG→Texture2D import is the deferred Godot pass.
+    /// </summary>
+    public string Glyph { get; init; } = "";
+
+    /// <summary>
     /// Places item stacks into this bag's grid. Returns a new Bag with the updated grid
     /// and any stacks that couldn't be placed. Optional skipIndices excludes specific cells.
     /// </summary>

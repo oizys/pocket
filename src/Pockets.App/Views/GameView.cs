@@ -298,6 +298,11 @@ public class GameView : Window
             case FeedbackPulse.FailedPeek:
                 _commandStrip.Flash("✕ Enter-only — can't just peek. Press E to enter.");
                 break;
+            // Slice 6: a cursor move refused by a tree. Fires on every bump (the fire-once axe-absence
+            // beat is the shared-chrome teaching line); this is the per-frame "solid, no path" flash.
+            case FeedbackPulse.Bump:
+                _commandStrip.Flash("✕ A tree. Solid — no way through.");
+                break;
         }
     }
 
