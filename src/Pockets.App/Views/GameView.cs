@@ -125,14 +125,37 @@ public class GameView : Window
         // at first render without requiring an input event.
         UpdateUI();
 
+        // Live builds drive the clock from the wall clock (Slice 5 "realtime mode"): inject a
+        // SystemGameClock and tick a once-a-second sync so the readout advances. The harness builds
+        // this view with enableTickTimer:false, so their controller keeps the deterministic
+        // VirtualGameClock and time moves only through scripted advanceTime — never the wall clock.
+        if (_enableTickTimer)
+            _controller.SetClock(new SystemGameClock());
+
         if (_enableTickTimer)
         {
             Application.MainLoop.AddIdle(() =>
             {
                 StartTickTimer();
+                StartClockTimer();
                 return false;
             });
         }
+    }
+
+    /// <summary>Refreshes the visible chrome from the current session (used after a non-key refresh).</summary>
+    public void RefreshUi() => UpdateUI();
+
+    private void StartClockTimer()
+    {
+        if (!_enableTickTimer)
+            return;
+        Application.MainLoop.AddTimeout(TickInterval, _ =>
+        {
+            _controller.SyncClock();
+            UpdateUI();
+            return true;
+        });
     }
 
     private void StartTickTimer()
@@ -238,6 +261,18 @@ public class GameView : Window
         // Chrome-as-state: the description pane draws only when the ledger says it exists.
         _focusedDescription.Visible = state.Ui.Has(ChromeElement.DescriptionPane);
         _rightPanel.UpdateLog(_controller.Session.ActionLog);
+        // Slice-5 chrome markers on the right panel's title bar (the TUI top-bar surface): each draws
+        // only once its ledger flag is on. This is the thin per-frontend render of ClockReadout
+        // ("⏱ mm:ss" — "it was always running"), ShrineView, and FullnessPips.
+        var ui = state.Ui;
+        var markers = "";
+        if (ui.Has(ChromeElement.ClockReadout))
+            markers += $"Clk {Pockets.Core.Rendering.ViewModelSerializer.FormatClock(_controller.Session.Elapsed)}  ";
+        if (ui.Has(ChromeElement.ShrineView))
+            markers += "Shrine  ";
+        if (ui.Has(ChromeElement.FullnessPips))
+            markers += "Pips";
+        _rightPanel.SetChromeMarkers(markers.TrimEnd());
         _commandStrip.Update(_controller.Session);
 
         // Dialogue box: draw the active line (resolved from the beat book) or hide it.
@@ -288,7 +323,7 @@ public class GameView : Window
         {
             var cBag = state.Store.GetById(cLoc.BagId);
             _containerPanel.Title = cBag?.EnvironmentType ?? "Container";
-            _containerPanel.UpdatePanel(cBag, cLoc.Cursor, focus == LocationId.C);
+            _containerPanel.UpdatePanel(cBag, cLoc.Cursor, focus == LocationId.C, state);
         }
         else
         {
@@ -302,7 +337,7 @@ public class GameView : Window
         {
             var wBag = state.Store.GetById(wLoc.BagId);
             _worldPanel.Title = wBag?.EnvironmentType ?? "World";
-            _worldPanel.UpdatePanel(wBag, wLoc.Cursor, focus == LocationId.W);
+            _worldPanel.UpdatePanel(wBag, wLoc.Cursor, focus == LocationId.W, state);
         }
         else
         {
@@ -316,7 +351,7 @@ public class GameView : Window
         {
             var tBag = state.Store.GetById(tLoc.BagId);
             _toolbarPanel.Title = "Toolbar";
-            _toolbarPanel.UpdatePanel(tBag, tLoc.Cursor, focus == LocationId.T);
+            _toolbarPanel.UpdatePanel(tBag, tLoc.Cursor, focus == LocationId.T, state);
         }
         _toolbarPanel.Visible = tLoc is not null && state.Ui.Has(ChromeElement.Toolbar);
 

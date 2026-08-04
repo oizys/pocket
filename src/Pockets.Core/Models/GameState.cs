@@ -372,6 +372,9 @@ public record GameState(
         return ToolResult.Ok(this with { Locations = Locations.Remove(panelId) });
     }
 
+    /// <summary>The EnvironmentType marking the demo Shrine bag (Slice 5, journey 12:00).</summary>
+    public const string ShrineEnvironment = "Shrine";
+
     /// <summary>
     /// Returns true if the given location is the EnvironmentType of a wilderness bag.
     /// Convention: wilderness bags have EnvironmentType containing nature-themed words.
@@ -565,6 +568,10 @@ public record GameState(
     /// </summary>
     public ToolResult ToolGrab()
     {
+        // A slotted core is irreversible (Slice 5): a locked feature slot never releases its item.
+        if (CurrentCell.IsLockedFeatureSlot)
+            return ToolResult.Fail(this, "A slotted core cannot be removed");
+
         if (CurrentCell.Frame is PlanterFrame && !CurrentCell.IsEmpty && PlantLogic.IsGrown(CurrentCell.Stack!))
             return ToolHarvestPlant();
 
@@ -631,6 +638,11 @@ public record GameState(
         var cursorCell = grid.GetCell(Cursor.Position);
         var firstItem = handItems[0];
 
+        // Feature slot (Slice 5): a drop onto a Shrine slot is a slotting attempt, glyph-checked and
+        // irreversible — routed away from the generic drop path (which never fills feature slots).
+        if (cursorCell.Frame is FeatureSlotFrame slot)
+            return ToolSlotCore(slot, cursorCell, handItems, activeBag, grid);
+
         if (!cursorCell.Accepts(firstItem.ItemType))
             return ToolResult.Fail(this, "Cannot drop: cell does not accept this item");
 
@@ -670,6 +682,33 @@ public record GameState(
         var emptyHand = CreateHandBag(HandBag.Grid.Columns);
         var newStore = Store
             .Set(ActiveBagId, activeBag with { Grid = grid })
+            .Set(HandBagId, emptyHand);
+        return ToolResult.Ok(this with { Store = newStore });
+    }
+
+    /// <summary>
+    /// Slots a core into a Shrine feature slot (Slice 5, journey 28:00). The slot accepts exactly one
+    /// matching-glyph core (see <see cref="FeatureSlotFrame.Accepts(ItemStack)"/>); on success the core
+    /// is placed and the frame LOCKS irreversibly (the click that can't be undone). Rejects with a
+    /// failure — the world untouched — when the slot is already locked/filled, the hand holds more than
+    /// a single unit, or the item's glyph doesn't fit (the wrong-item rejection the journey asserts).
+    /// </summary>
+    private ToolResult ToolSlotCore(FeatureSlotFrame slot, Cell cell, IReadOnlyList<ItemStack> handItems, Bag activeBag, Grid grid)
+    {
+        if (slot.IsLocked || !cell.IsEmpty)
+            return ToolResult.Fail(this, "Feature slot is already filled");
+        if (handItems.Count != 1 || handItems[0].Count != 1)
+            return ToolResult.Fail(this, "Only a single core can be slotted");
+
+        var core = handItems[0];
+        if (!slot.Accepts(core))
+            return ToolResult.Fail(this, "This item does not fit the slot's glyph");
+
+        var lockedCell = cell with { Stack = core, Frame = slot with { IsLocked = true } };
+        var newGrid = grid.SetCell(Cursor.Position, lockedCell);
+        var emptyHand = CreateHandBag(HandBag.Grid.Columns);
+        var newStore = Store
+            .Set(ActiveBagId, activeBag with { Grid = newGrid })
             .Set(HandBagId, emptyHand);
         return ToolResult.Ok(this with { Store = newStore });
     }
@@ -780,6 +819,9 @@ public record GameState(
             return ToolResult.Fail(this, "Not in a bag");
 
         var cell = CurrentCell;
+        // A slotted core is irreversible (Slice 5): harvesting a locked feature slot is refused.
+        if (cell.IsLockedFeatureSlot)
+            return ToolResult.Fail(this, "A slotted core cannot be removed");
         if (cell.IsEmpty)
             return ToolResult.Ok(this);
 

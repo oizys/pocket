@@ -65,6 +65,7 @@ public static class GameInitializer
         state = WithDemoLedgerFixtures(state);
         state = WithDemoToolbar(state) with { ToolbarPickup = true };
         state = WithDemoSlice4Bags(state);
+        state = WithDemoShrine(state);
 
         // Frame 0 (journey 0:00): the dialogue box alone, world not yet materialized. Only applied
         // when the opening beat is available so bookless callers keep the grid-on Slice-1 baseline.
@@ -139,10 +140,18 @@ public static class GameInitializer
         ItemStack? Seed(string name, int count) =>
             state.ItemTypes.FirstOrDefault(t => t.Name == name) is { } t ? new ItemStack(t, count) : null;
 
-        // Chest — a plain, peekable carrying bag with a couple of finds inside.
+        // Chest — a plain, peekable carrying bag with a couple of finds inside, plus the temporarily
+        // seeded eye core (Slice 5). The eye core is a glyph-tagged core (Glyph = "eye") matching the
+        // Shrine's empty eye slot. It rides here in the demo purely so it is reachable; Slice 6
+        // relocates it to the wilderness ruin (journey 15:30) where it belongs.
+        var eyeCoreType = new ItemType("Eye Core", Category.Tool, IsStackable: false,
+            Description: "A cold lens of stone, an eye-glyph cut deep. [Slice-6 TODO: move to the wilderness ruin.]");
+        var eyeCore = new ItemStack(eyeCoreType, 1)
+            .WithProperty(FeatureSlotFrame.GlyphProperty, new StringValue(FeatureSlotFrame.EyeGlyph));
+
         var chestType = new ItemType("Chest", Category.Bag, IsStackable: false);
         var (chestGrid, _) = Grid.Create(4, 2).AcquireItems(
-            new[] { Seed("Smooth Pebble", 3), Seed("Spring Water", 2) }.Where(s => s is not null).Select(s => s!));
+            new[] { Seed("Smooth Pebble", 3), Seed("Spring Water", 2), eyeCore }.Where(s => s is not null).Select(s => s!));
         var chestBag = new Bag(chestGrid, "Chest");
 
         // Quiet Pocket — enter-only. A lone item inside gives the entered view something to show.
@@ -158,11 +167,77 @@ public static class GameInitializer
         var itemTypes = state.ItemTypes;
         if (!itemTypes.Contains(chestType)) itemTypes = itemTypes.Add(chestType);
         if (!itemTypes.Contains(pocketType)) itemTypes = itemTypes.Add(pocketType);
+        if (!itemTypes.Contains(eyeCoreType)) itemTypes = itemTypes.Add(eyeCoreType);
 
         return state with
         {
             ItemTypes = itemTypes,
             Store = state.Store.Add(chestBag).Add(pocketBag)
+                .Set(state.RootBagId, state.RootBag with { Grid = rootGrid })
+        };
+    }
+
+    /// <summary>
+    /// Slice-5 demo content: the <b>Shrine</b> — a plain, enterable bag item placed in a free home-room
+    /// cell (reachable directly; a doorway/passage is unnecessary for the demo). Its 2×2 grid holds
+    /// three pre-slotted, LOCKED feature slots — <b>Menu</b> (a peekable bag of the Start/Esc actions),
+    /// the <b>Toolbar</b> representation, and the <b>Clock</b> (glyph-tagged so resting on it notices the
+    /// readout) — plus one <b>empty eye slot</b> (glyph "eye", unlocked) awaiting the eye core. Entering
+    /// the Shrine fires <see cref="UiTrigger.EnterShrine"/> (the ShrineView chrome row). Placed at a
+    /// pinned free index; defensive if the layout shifts. Demo profile only.
+    /// </summary>
+    private static GameState WithDemoShrine(GameState state)
+    {
+        const int shrineCellIndex = 12; // (1,4) — first free cell after the Slice-4 bags (8,9,10) + drop (11)
+
+        var rootGrid = state.RootBag.Grid;
+        if (!rootGrid.GetCell(shrineCellIndex).IsEmpty)
+            return state; // layout changed; skip so we never overwrite content
+
+        // Menu — a peekable bag whose contents represent the Start/Esc actions (simple named items).
+        var startType = new ItemType("Start", Category.Tool, IsStackable: false);
+        var escType = new ItemType("Esc", Category.Tool, IsStackable: false);
+        var (menuGrid, _) = Grid.Create(2, 1).AcquireItems(
+            new[] { new ItemStack(startType, 1), new ItemStack(escType, 1) });
+        var menuBag = new Bag(menuGrid, "Menu");
+        var menuType = new ItemType("Menu", Category.Bag, IsStackable: false);
+
+        // Toolbar representation — a portrait of the bar the player watched be born (empty stand-in bag).
+        var toolbarRepBag = new Bag(Grid.Create(2, 1), "Toolbar");
+        var toolbarRepType = new ItemType("Toolbar", Category.Bag, IsStackable: false);
+
+        // Clock — the ticking clock item; glyph-tagged so a cursor-rest fires NoticeClock.
+        var clockType = new ItemType("Clock", Category.Structure, IsStackable: false);
+        var clockStack = new ItemStack(clockType, 1)
+            .WithProperty(FeatureSlotFrame.GlyphProperty, new StringValue(FeatureSlotFrame.ClockGlyph));
+
+        // Shrine grid — three locked feature slots + one empty eye slot.
+        var shrineGrid = Grid.Create(2, 2)
+            .SetCell(0, new Cell(
+                Stack: new ItemStack(menuType, 1, ContainedBagId: menuBag.Id),
+                Frame: new FeatureSlotFrame(FeatureSlotFrame.MenuGlyph, IsLocked: true)))
+            .SetCell(1, new Cell(
+                Stack: new ItemStack(toolbarRepType, 1, ContainedBagId: toolbarRepBag.Id),
+                Frame: new FeatureSlotFrame(FeatureSlotFrame.ToolbarGlyph, IsLocked: true)))
+            .SetCell(2, new Cell(
+                Stack: clockStack,
+                Frame: new FeatureSlotFrame(FeatureSlotFrame.ClockGlyph, IsLocked: true)))
+            .SetCell(3, new Cell(
+                Frame: new FeatureSlotFrame(FeatureSlotFrame.EyeGlyph, IsLocked: false)));
+        var shrineBag = new Bag(shrineGrid, GameState.ShrineEnvironment);
+        var shrineType = new ItemType("Shrine", Category.Structure, IsStackable: false);
+
+        rootGrid = rootGrid.SetCell(shrineCellIndex,
+            new Cell(Stack: new ItemStack(shrineType, 1, ContainedBagId: shrineBag.Id)));
+
+        var itemTypes = state.ItemTypes;
+        foreach (var t in new[] { startType, escType, menuType, toolbarRepType, clockType, shrineType })
+            if (!itemTypes.Contains(t)) itemTypes = itemTypes.Add(t);
+
+        return state with
+        {
+            ItemTypes = itemTypes,
+            Store = state.Store.Add(menuBag).Add(toolbarRepBag).Add(shrineBag)
                 .Set(state.RootBagId, state.RootBag with { Grid = rootGrid })
         };
     }

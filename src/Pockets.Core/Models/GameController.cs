@@ -26,6 +26,14 @@ public class GameController
     private FeedbackPulse _feedbackPulse = FeedbackPulse.None;
 
     /// <summary>
+    /// The injected game clock (Slice 5). Defaults to a <see cref="VirtualGameClock"/> so every
+    /// controller — the parity harness included — is deterministic out of the box: game time moves
+    /// only through <see cref="AdvanceClock"/> (scripted). Live frontends inject a
+    /// <see cref="SystemGameClock"/> via <see cref="SetClock"/> and call <see cref="SyncClock"/>.
+    /// </summary>
+    private IGameClock _clock = new VirtualGameClock();
+
+    /// <summary>
     /// Order in which Tab cycles through panels.
     /// Only panels present in the current LocationMap are included.
     /// </summary>
@@ -45,6 +53,38 @@ public class GameController
     /// Which panel currently has focus for input routing.
     /// </summary>
     public LocationId Focus => _focus;
+
+    /// <summary>The injected game clock (Slice 5).</summary>
+    public IGameClock Clock => _clock;
+
+    /// <summary>
+    /// Injects a game clock (a live <see cref="SystemGameClock"/> for wall-clock frontends) and
+    /// immediately syncs its reading onto the session. Live builds call this once at startup.
+    /// </summary>
+    public void SetClock(IGameClock clock)
+    {
+        _clock = clock;
+        SyncClock();
+    }
+
+    /// <summary>Copies the injected clock's current reading onto the session (the clock-readout value).</summary>
+    public ControllerResult SyncClock()
+    {
+        _session = _session.WithElapsed(_clock.Elapsed);
+        return ControllerResult.Handle(_session, "Clock: sync");
+    }
+
+    /// <summary>
+    /// Advances the game clock by <paramref name="delta"/> and syncs it onto the session. This is the
+    /// scripted-advance path (the journey runner's <c>advanceTime</c> / the debug <c>advanceTime</c>
+    /// action) that keeps harness time fully deterministic. A no-op on a wall-clock
+    /// <see cref="SystemGameClock"/>, whose time is driven by <see cref="SyncClock"/> instead.
+    /// </summary>
+    public ControllerResult AdvanceClock(TimeSpan delta)
+    {
+        _clock.Advance(delta);
+        return SyncClock();
+    }
 
     /// <summary>
     /// Reads and clears the pending one-shot presentation cue (see <see cref="FeedbackPulse"/>).
@@ -358,6 +398,10 @@ public class GameController
         {
             _session = _session.ApplyToolResult(openResult, () => $"Peek: {bag.EnvironmentType}");
             _focus = LocationId.C;
+            // Capacity-absence beat (Slice 5): peering into a bag while the hand is carrying something
+            // fires the "look inside every single one" line once (deterministic, fire-once).
+            if (_session.Current.HasItemsInHand)
+                _session = _session.FirePeekWhileCarrying();
             return ControllerResult.Handle(_session, $"Peek: {bag.EnvironmentType}");
         }
         return ControllerResult.Handle(_session, "Peek: could not open");

@@ -86,6 +86,9 @@ public class GridView : View
 
         var grid = _state.ActiveBag.Grid;
         var cursorPos = _state.Cursor.Position;
+        // Fullness pips (Slice 5) draw on every bag cell once the eye core is slotted — Core decides
+        // the pip state per bag; this frontend only paints the glyph it computes.
+        var showPips = _state.Ui.Has(ChromeElement.FullnessPips);
 
         for (int row = 0; row < grid.Rows; row++)
         {
@@ -94,7 +97,10 @@ public class GridView : View
                 var pos = new Position(row, col);
                 var cell = grid.GetCell(pos);
                 var isCursor = row == cursorPos.Row && col == cursorPos.Col;
-                CellDrawing.Draw(this, col * CellRenderer.CellWidth, row * CellRenderer.CellHeight, cell, isCursor);
+                char? pip = showPips && !cell.IsEmpty && Fullness.Of(_state.Store, cell.Stack!) is { } p
+                    ? Fullness.Glyph(p)
+                    : null;
+                CellDrawing.Draw(this, col * CellRenderer.CellWidth, row * CellRenderer.CellHeight, cell, isCursor, pip);
             }
         }
     }

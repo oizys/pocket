@@ -13,6 +13,7 @@ public partial class GridDrawControl : Control
     private Grid _grid = Grid.Create(8, 4);
     private Position _cursorPos = new(0, 0);
     private int _hoveredCell = -1;
+    private System.Func<int, FullnessPip?>? _pipResolver;
 
     public float CellWidth { get; set; } = 80f;
     public float CellHeight { get; set; } = 56f;
@@ -30,6 +31,16 @@ public partial class GridDrawControl : Control
         _grid = grid;
         _cursorPos = cursorPos;
         CustomMinimumSize = new Vector2(Columns * CellWidth, Rows * CellHeight);
+        QueueRedraw();
+    }
+
+    /// <summary>
+    /// Sets the fullness-pip resolver (Slice 5): a per-cell-index lookup of the Core-computed pip
+    /// state, or null to draw no pips. Both frontends render only from this Core state.
+    /// </summary>
+    public void SetPips(System.Func<int, FullnessPip?>? pipResolver)
+    {
+        _pipResolver = pipResolver;
         QueueRedraw();
     }
 
@@ -111,6 +122,15 @@ public partial class GridDrawControl : Control
                 var markerSize = 6f;
                 var markerPos = new Vector2(rect.Position.X + cw - markerSize - 3, rect.Position.Y + 3);
                 DrawRect(new Rect2(markerPos, new Vector2(markerSize, markerSize)), frameColor);
+            }
+
+            // Fullness pip (Slice 5): drawn top-right on every bag cell once the eye core is slotted.
+            // Empty ○ / partial ◐ / full ● — the same glyphs the TUI paints, from the same Core state.
+            if (_pipResolver?.Invoke(i) is { } pip)
+            {
+                var pipText = Fullness.Glyph(pip).ToString();
+                var pipPos = new Vector2(rect.Position.X + cw - 14f, rect.Position.Y + fontSize + 2f);
+                DrawString(font, pipPos, pipText, HorizontalAlignment.Left, -1, fontSize, Colors.White);
             }
         }
     }

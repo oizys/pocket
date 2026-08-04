@@ -22,6 +22,7 @@ public partial class GameSceneController : Control
     private GridDrawControl _handPanel = null!;
     private Button _backButton = null!;
     private Label _breadcrumbLabel = null!;
+    private Label _clockLabel = null!;   // Slice 5: top-bar clock readout
     private Label _descriptionLabel = null!;
     private Label _toolbarLabel = null!;
     private Label _handLabel = null!;
@@ -122,6 +123,14 @@ public partial class GameSceneController : Control
         _breadcrumbLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _breadcrumbLabel.VerticalAlignment = VerticalAlignment.Center;
         topBarContent.AddChild(_breadcrumbLabel);
+
+        // Slice 5: top-bar clock readout — "it was always running" (realtime mode). Visible only once
+        // NoticeClock has materialized the ClockReadout chrome.
+        _clockLabel = new Label { Text = "" };
+        _clockLabel.AddThemeFontSizeOverride("font_size", 16);
+        _clockLabel.AddThemeColorOverride("font_color", new Color(0.8f, 0.85f, 0.7f));
+        _clockLabel.VerticalAlignment = VerticalAlignment.Center;
+        topBarContent.AddChild(_clockLabel);
 
         // --- Main content: left (grid row + description) | right (action log) ---
         var mainContent = new HBoxContainer();
@@ -304,6 +313,23 @@ public partial class GameSceneController : Control
         // is dialogue-box-only). Non-demo profiles are everything-on, so this is identical to before.
         _gridPanel.SetState(state.ActiveBag.Grid, state.Cursor.Position);
         _gridPanel.Visible = state.Ui.Has(ChromeElement.Grid);
+
+        // Fullness pips (Slice 5): once the eye core is slotted, every bag cell shows its Core-computed
+        // pip. Both frontends render only from this Core state.
+        var showPips = state.Ui.Has(ChromeElement.FullnessPips);
+        _gridPanel.SetPips(showPips
+            ? i =>
+            {
+                var cells = state.ActiveBag.Grid.Cells;
+                if (i < 0 || i >= cells.Length || cells[i].IsEmpty) return null;
+                return Fullness.Of(state.Store, cells[i].Stack!);
+            }
+            : (System.Func<int, FullnessPip?>?)null);
+
+        // Clock readout (Slice 5) — gated by NoticeClock (ClockReadout chrome).
+        _clockLabel.Text = $"⏱ {ViewModelSerializer.FormatClock(_controller.Session.Elapsed)}"
+            + (state.Ui.Has(ChromeElement.ShrineView) ? "  ◈ Shrine" : "");
+        _clockLabel.Visible = state.Ui.Has(ChromeElement.ClockReadout) || state.Ui.Has(ChromeElement.ShrineView);
 
         // Hand
         _handPanel.SetState(state.HandBag.Grid, new Position(0, 0));

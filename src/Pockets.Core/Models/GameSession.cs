@@ -35,8 +35,18 @@ public record GameSession(
     int TickCount = 0,
     int MaxUndoDepth = 1000,
     SplitModeState? SplitMode = null,
-    DialogueBook? Book = null)
+    DialogueBook? Book = null,
+    TimeSpan Elapsed = default)
 {
+    /// <summary>
+    /// Accumulated in-game time (Slice 5 clock). Mirrors the injected <see cref="IGameClock"/> via
+    /// <see cref="GameController.SyncClock"/>; the parity harness advances it only through scripted
+    /// <c>advanceTime</c> steps (never the wall clock). Serialized as the clock readout; monotonic
+    /// (carried forward across undo like <see cref="TickCount"/>).
+    /// </summary>
+    public GameSession WithElapsed(TimeSpan elapsed) =>
+        elapsed == Elapsed ? this : this with { Elapsed = elapsed };
+
     /// <summary>
     /// The dialogue beat definitions in play (static content, like <see cref="Recipes"/>). Empty for
     /// non-demo profiles; the demo profile loads it from <c>/data</c>. Runtime progression lives on
@@ -159,6 +169,10 @@ public record GameSession(
             return this;
 
         var ui = state.Ui.Fire(UiTrigger.FirstCursorRest);
+        // Resting on the Shrine's Clock slot is where the player notices "it was always ticking"
+        // (journey 15:00): the clock readout materializes. Deterministic — keyed to the clock glyph.
+        if (cell.Frame is FeatureSlotFrame { Glyph: FeatureSlotFrame.ClockGlyph })
+            ui = ui.Fire(UiTrigger.NoticeClock);
         var dialogue = state.Dialogue;
 
         var typeName = cell.Stack!.ItemType.Name;
@@ -194,6 +208,27 @@ public record GameSession(
 
         var dialogue = state.Dialogue;
         foreach (var beat in Beats.WithTrigger(DialogueTriggerKind.FirstFailedPeek))
+            dialogue = dialogue.Enqueue(beat.Id);
+
+        return dialogue == state.Dialogue ? this : this with { Current = state with { Dialogue = dialogue } };
+    }
+
+    /// <summary>
+    /// Fires the capacity-absence narrative hook (Slice 5, journey 21:00 — "Which one has space? I'd
+    /// have to look inside every single one."): enqueues every
+    /// <see cref="DialogueTriggerKind.FirstPeekWhileCarrying"/> beat not yet fired. Called by the
+    /// controller when a look-in peek SUCCEEDS while the hand is carrying something — the mechanical
+    /// rhyme for "peering into bags to find room". Fire-once and monotonic, same posture as
+    /// <see cref="FireFailedPeek"/>; touches only the dialogue substate.
+    /// </summary>
+    public GameSession FirePeekWhileCarrying()
+    {
+        var state = Current;
+        if (state.Dialogue.IsActive)
+            return this;
+
+        var dialogue = state.Dialogue;
+        foreach (var beat in Beats.WithTrigger(DialogueTriggerKind.FirstPeekWhileCarrying))
             dialogue = dialogue.Enqueue(beat.Id);
 
         return dialogue == state.Dialogue ? this : this with { Current = state with { Dialogue = dialogue } };
@@ -664,6 +699,10 @@ public record GameSession(
         // panel open/close, enter/leave) flows through ApplyResult, so no per-tool wiring is
         // needed and the demo profile's chrome grows identically on every frontend/driver.
         newState = ApplyUiTriggers(Current, newState);
+        // Structural narrative beats keyed to state transitions (the slotting resolution line). Runs
+        // here (instance) because enqueuing a beat needs the session's beat book; the UI-flag arm of
+        // the same transitions is fired inside ApplyUiTriggers.
+        newState = FireStructuralDialogue(Current, newState);
 
         var newStack = PushWithLimit(UndoStack, Current);
         var newLog = ActionLog.Add(formatLog());
@@ -703,8 +742,38 @@ public record GameSession(
         if (PanelNewlyOpen(before, after, LocationId.C) || PanelNewlyOpen(before, after, LocationId.W))
             ui = ui.Fire(UiTrigger.FirstPeek);
 
+        // Crossing into the Shrine bag materializes the Shrine slots view (journey 12:00).
+        if (JustEnteredShrine(before, after))
+            ui = ui.Fire(UiTrigger.EnterShrine);
+
+        // A newly-locked feature slot = a core was just slotted: game-wide fullness pips turn on
+        // (journey 28:00 — the first unlock that rewires rendering everywhere).
+        if (LockedFeatureSlotCount(after) > LockedFeatureSlotCount(before))
+            ui = ui.Fire(UiTrigger.CoreSlotted);
+
         return ReferenceEquals(ui, after.Ui) ? after : after with { Ui = ui };
     }
+
+    /// <summary>Enqueues the slotting-resolution beat when a feature slot is newly locked (core slotted).</summary>
+    private GameState FireStructuralDialogue(GameState before, GameState after)
+    {
+        if (LockedFeatureSlotCount(after) <= LockedFeatureSlotCount(before))
+            return after;
+
+        var dialogue = after.Dialogue;
+        foreach (var beat in Beats.WithTrigger(DialogueTriggerKind.CoreSlotted))
+            dialogue = dialogue.Enqueue(beat.Id);
+        return dialogue == after.Dialogue ? after : after with { Dialogue = dialogue };
+    }
+
+    /// <summary>True when the active bag just became the Shrine (a fresh entry, not a re-render).</summary>
+    private static bool JustEnteredShrine(GameState before, GameState after) =>
+        after.ActiveBagId != before.ActiveBagId
+        && after.ActiveBag.EnvironmentType == GameState.ShrineEnvironment;
+
+    /// <summary>Total number of locked feature slots across every bag (Slice 5 slotting detector).</summary>
+    private static int LockedFeatureSlotCount(GameState state) =>
+        state.Store.All.Sum(b => b.Grid.Cells.Count(c => c.Frame is FeatureSlotFrame { IsLocked: true }));
 
     /// <summary>True when <paramref name="panel"/> is absent in <paramref name="before"/> and present in <paramref name="after"/>.</summary>
     private static bool PanelNewlyOpen(GameState before, GameState after, LocationId panel) =>

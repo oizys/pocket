@@ -17,9 +17,11 @@ namespace Pockets.App.Rendering;
 public static class CellDrawing
 {
     /// <summary>
-    /// Renders a single cell envelope at the given view-local coordinates.
+    /// Renders a single cell envelope at the given view-local coordinates. When
+    /// <paramref name="pipGlyph"/> is set (Slice 5 fullness pip), it is drawn in the reserved
+    /// top-right gap badge — the moat position kept aside for exactly this kind of overlay.
     /// </summary>
-    public static void Draw(View target, int x, int y, Cell cell, bool isCursor)
+    public static void Draw(View target, int x, int y, Cell cell, bool isCursor, char? pipGlyph = null)
     {
         var driver = Application.Driver;
 
@@ -66,6 +68,15 @@ public static class CellDrawing
         target.Move(cx, cy + 1);
         foreach (var ch in GlyphRenderer.Row2(cell))
             driver.AddRune(ch);
+
+        // Fullness pip badge (Slice 5): top-right of the reserved gap, drawn last so it sits above
+        // the moat fill. Only supplied when the FullnessPips chrome is on and the cell holds a bag.
+        if (pipGlyph is { } pip)
+        {
+            driver.SetAttribute(ColorRenderer.MakeAttribute(PaletteColor.White, PaletteColor.Black));
+            target.Move(x + CellRenderer.CellWidth - 1, y);
+            driver.AddRune(pip);
+        }
     }
 
     /// <summary>Attribute used for every gap pixel.</summary>

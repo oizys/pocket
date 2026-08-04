@@ -40,6 +40,9 @@ public sealed class GodotWebSocketDriver : IJourneyDriver
 
     public void Tick() => Send(new JsonObject { ["action"] = "tick" });
 
+    public void AdvanceTime(TimeSpan delta) =>
+        Send(new JsonObject { ["action"] = "advanceTime", ["ms"] = (long)delta.TotalMilliseconds });
+
     public void Back() => Send(new JsonObject { ["action"] = "back" });
 
     public void Click(Position pos, ClickType type) =>

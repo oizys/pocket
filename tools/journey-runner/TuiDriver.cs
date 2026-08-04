@@ -73,6 +73,18 @@ public sealed class TuiDriver : IJourneyDriver
         Render();
     }
 
+    /// <summary>
+    /// Scripted clock advance (Slice 5). The harness GameView is built with enableTickTimer:false, so
+    /// its controller keeps the default VirtualGameClock — this is the only thing that moves game time
+    /// here. No wall clock is ever read.
+    /// </summary>
+    public void AdvanceTime(TimeSpan delta)
+    {
+        _view.Controller.AdvanceClock(delta);
+        _view.RefreshUi();
+        Render();
+    }
+
     // --- Terminal.Gui plumbing ---
 
     private void Render()

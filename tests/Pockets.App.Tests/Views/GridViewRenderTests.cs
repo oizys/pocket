@@ -188,4 +188,46 @@ public class GridViewRenderTests : IDisposable
 
         Assert.Equal("S  ", _harness.GetText(ContentX0, ContentY0, W));
     }
+
+    // ==================== Slice 5: fullness pips ====================
+
+    [Fact]
+    public void BagCell_WithFullnessPips_RendersPipGlyph()
+    {
+        // A bag item holding 1 of 4 cells → partial (◐). The state defaults to UiLedger.AllPresent,
+        // so FullnessPips is on and the pip badge draws in the reserved top-right gap of the cell.
+        var pouchType = new ItemType("Pouch", Category.Bag, IsStackable: false);
+        var inner = new Bag(Grid.Create(2, 2).SetCell(0, new Cell(new ItemStack(Rock, 1))));
+        var cells = new Cell[] { new(new ItemStack(pouchType, 1, ContainedBagId: inner.Id)) };
+        var grid = new Grid(1, 1, cells.ToImmutableArray());
+
+        var rootBag = new Bag(grid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(inner);
+        var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes);
+        SetupGridView(state);
+
+        // Pip badge sits at the top-right of the 5-wide cell envelope (row 0 gap).
+        Assert.Equal(Fullness.Glyph(FullnessPip.Partial).ToString(),
+            _harness!.GetText(CellRenderer.CellWidth - 1, 0, 1));
+    }
+
+    [Fact]
+    public void BagCell_WithoutFullnessChrome_DrawsNoPip()
+    {
+        var pouchType = new ItemType("Pouch", Category.Bag, IsStackable: false);
+        var inner = new Bag(Grid.Create(2, 2).SetCell(0, new Cell(new ItemStack(Rock, 1))));
+        var cells = new Cell[] { new(new ItemStack(pouchType, 1, ContainedBagId: inner.Id)) };
+        var grid = new Grid(1, 1, cells.ToImmutableArray());
+
+        var rootBag = new Bag(grid);
+        var handBag = GameState.CreateHandBag();
+        var store = BagStore.Empty.Add(rootBag).Add(handBag).Add(inner);
+        // FullnessPips explicitly off — no pip should be drawn.
+        var state = new GameState(store, LocationMap.Create(handBag.Id, rootBag.Id), AllTypes)
+            { Ui = UiLedger.DemoInitial };
+        SetupGridView(state);
+
+        Assert.Equal(" ", _harness!.GetText(CellRenderer.CellWidth - 1, 0, 1));
+    }
 }

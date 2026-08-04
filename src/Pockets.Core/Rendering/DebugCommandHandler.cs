@@ -18,6 +18,7 @@ namespace Pockets.Core.Rendering;
 ///   {"action":"click","row":0,"col":2,"button":"Primary"}    → HandleGridClick
 ///   {"action":"back"}                                         → HandleBackClick
 ///   {"action":"tick"}                                         → Tick
+///   {"action":"advanceTime","ms":5000}                        → AdvanceClock (scripted clock advance)
 ///   {"action":"state"}                                        → serialize (no mutation)
 /// Response: {"handled":bool,"status":"...","state":{...}} or {"error":"..."}.
 /// </summary>
@@ -65,6 +66,11 @@ public static class DebugCommandHandler
                 mutated = true;
                 var tick = controller.Tick();
                 return Success(controller, tick.Handled, tick.StatusMessage);
+            case "advanceTime":
+                mutated = true;
+                var ms = cmd["ms"]?.GetValue<long>() ?? 0;
+                var adv = controller.AdvanceClock(System.TimeSpan.FromMilliseconds(ms));
+                return Success(controller, adv.Handled, adv.StatusMessage);
             case "state":
                 return Success(controller, true, "State query");
             default:

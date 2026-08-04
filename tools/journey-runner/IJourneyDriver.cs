@@ -34,6 +34,12 @@ public interface IJourneyDriver : IDisposable
     /// <summary>Advances one facility tick (realtime "wait").</summary>
     void Tick();
 
+    /// <summary>
+    /// Advances the game clock by a scripted amount (Slice 5). Deterministic time for parity — the
+    /// harness NEVER reads the wall clock; every advance is an explicit journey step.
+    /// </summary>
+    void AdvanceTime(TimeSpan delta);
+
     /// <summary>Presses the back / leave-bag affordance.</summary>
     void Back();
 

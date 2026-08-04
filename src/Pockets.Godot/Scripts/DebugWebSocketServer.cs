@@ -17,6 +17,7 @@ namespace Pockets.Godot.Scripts;
 ///   {"action": "click", "row": 0, "col": 2, "button": "Primary"}  → HandleGridClick
 ///   {"action": "back"}                              → HandleBackClick
 ///   {"action": "tick"}                              → Tick
+///   {"action": "advanceTime", "ms": 5000}           → AdvanceClock (scripted clock advance)
 ///   {"action": "state"}                             → Return current state (no mutation)
 ///   {"action": "screenshot", "path": "/tmp/ss.png"} → Save viewport screenshot
 ///

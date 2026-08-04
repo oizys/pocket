@@ -103,6 +103,7 @@ public static class JourneyRunnerCore
         if (step.Key is { } key) driver.Key(key);
         if (step.Back) driver.Back();
         if (step.Click is { } click) driver.Click(new Position(click.Row, click.Col), click.Button);
+        if (step.AdvanceTimeMs is { } ms) driver.AdvanceTime(TimeSpan.FromMilliseconds(ms));
         if (step.Tick is { } ticks)
             for (int t = 0; t < ticks; t++) driver.Tick();
         // A step with only a comment/checkpoint/assert performs no action.

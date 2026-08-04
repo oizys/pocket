@@ -15,6 +15,7 @@ public class BagPanelView : View
     private Bag? _bag;
     private Cursor _cursor = new(new Position(0, 0));
     private bool _isFocused;
+    private GameState? _stateForPips;
 
     public LocationId LocationId => _locationId;
 
@@ -35,11 +36,12 @@ public class BagPanelView : View
         WantMousePositionReports = true;
     }
 
-    public void UpdatePanel(Bag? bag, Cursor? cursor, bool isFocused)
+    public void UpdatePanel(Bag? bag, Cursor? cursor, bool isFocused, GameState? stateForPips = null)
     {
         _bag = bag;
         _cursor = cursor ?? new Cursor(new Position(0, 0));
         _isFocused = isFocused;
+        _stateForPips = stateForPips;
 
         if (bag is not null)
         {
@@ -147,6 +149,7 @@ public class BagPanelView : View
         CellDrawing.FillGap(this, 1, 1, innerW, innerH);
 
         var grid = _bag.Grid;
+        var showPips = _stateForPips?.Ui.Has(ChromeElement.FullnessPips) ?? false;
         for (int row = 0; row < grid.Rows; row++)
         {
             for (int col = 0; col < grid.Columns; col++)
@@ -154,10 +157,14 @@ public class BagPanelView : View
                 var pos = new Position(row, col);
                 var cell = grid.GetCell(pos);
                 var isCursor = _isFocused && row == _cursor.Position.Row && col == _cursor.Position.Col;
+                char? pip = showPips && !cell.IsEmpty && _stateForPips is { } st
+                    && Fullness.Of(st.Store, cell.Stack!) is { } p
+                    ? Fullness.Glyph(p)
+                    : null;
                 CellDrawing.Draw(this,
                     col * CellRenderer.CellWidth + 1,
                     row * CellRenderer.CellHeight + 1,
-                    cell, isCursor);
+                    cell, isCursor, pip);
             }
         }
     }

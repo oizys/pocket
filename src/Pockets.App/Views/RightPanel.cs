@@ -43,6 +43,20 @@ public class RightPanel : FrameView
     }
 
     /// <summary>
+    /// Sets the Slice-5 chrome markers on the panel's title bar (the TUI's "top bar" surface with
+    /// room to spare): the clock readout, the Shrine-view indicator, and the fullness legend. Each is
+    /// supplied by the caller only when its UiLedger flag is on — the thin per-frontend render check
+    /// for ClockReadout / ShrineView / FullnessPips. Empty markers restore the plain title.
+    /// </summary>
+    public void SetChromeMarkers(string markers)
+    {
+        // Prepend the markers so the clock/shrine/fullness text lands at the very start of the title
+        // (the panel is narrow — a trailing suffix would clip past the visible width).
+        Title = string.IsNullOrEmpty(markers) ? "Action Log" : $"{markers}  Log";
+        SetNeedsDisplay();
+    }
+
+    /// <summary>
     /// Updates the log display with every entry from the session, newest first.
     /// Older entries remain reachable via the ScrollView's vertical scroll.
     /// </summary>

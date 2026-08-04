@@ -21,7 +21,21 @@ public enum DialogueTriggerKind
     /// <see cref="Bag.EnterOnly"/> (journey 15:30 — "Can't just peek at this one."). The refused
     /// peek itself is the teaching moment; the beat names it once. Threshold is unused.
     /// </summary>
-    FirstFailedPeek
+    FirstFailedPeek,
+
+    /// <summary>
+    /// Fires the first time a look-in peek SUCCEEDS while the hand is carrying something (Slice 5,
+    /// journey 21:00 — "Which one has space? I'd have to look inside every single one."): the
+    /// capacity-absence the eye core later answers. Deterministic; threshold unused.
+    /// </summary>
+    FirstPeekWhileCarrying,
+
+    /// <summary>
+    /// Fires when a core is slotted into a Shrine feature slot (Slice 5, journey 28:00 —
+    /// "…Oh. Now I can see."): the resolution line paired with the eye-of-fullness unlock.
+    /// Threshold unused.
+    /// </summary>
+    CoreSlotted
 }
 
 /// <summary>

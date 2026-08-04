@@ -139,6 +139,110 @@
 
     { "comment": "Q leaves back to the parent, restoring the cursor to the Quiet Pocket cell (1,2).",
       "checkpoint": "s4-enter-only-left", "key": "LeaveBag",
-      "assertViewModel": { "isNested": false, "cursor": { "row": 1, "col": 2 } } }
+      "assertViewModel": { "isNested": false, "cursor": { "row": 1, "col": 2 } } },
+
+    { "comment": "======== SLICE 5 — THE SHRINE, THE CLOCK, THE EYE OF FULLNESS ========" },
+
+    { "comment": "SLICE 5 (journey 12:00). Navigate to the Shrine — a plain, enterable bag item seeded in the home room at (1,4). Fullness pips are still ABSENT (asserted here — the eye core is not slotted yet).", "key": "Right" },
+    { "checkpoint": "s5-at-shrine", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 1, "col": 4 }, "ui": { "shrineView": false, "clockReadout": false, "fullnessPips": false } } },
+
+    { "comment": "Enter the Shrine (E/Primary → breadcrumb push). EnterShrine fires the ShrineView chrome row (journey 12:00). Three pre-slotted, LOCKED feature slots (Menu/Toolbar/Clock) + one empty, unlocked eye slot are present; clock readout + fullness pips are still absent.",
+      "checkpoint": "s5-enter-shrine", "key": "Primary",
+      "assertViewModel": {
+        "isNested": true, "activeBag": "Shrine", "breadcrumbs": [ "Default", "Shrine" ],
+        "ui": { "shrineView": true, "breadcrumbs": true, "clockReadout": false, "fullnessPips": false },
+        "cells": [
+          { "row": 0, "col": 0, "item": "Menu", "hasBag": true, "frame": "FeatureSlotFrame", "glyph": "menu", "locked": true },
+          { "row": 0, "col": 1, "item": "Toolbar", "hasBag": true, "frame": "FeatureSlotFrame", "glyph": "toolbar", "locked": true },
+          { "row": 1, "col": 0, "item": "Clock", "frame": "FeatureSlotFrame", "glyph": "clock", "locked": true },
+          { "row": 1, "col": 1, "empty": true, "frame": "FeatureSlotFrame", "glyph": "eye", "locked": false }
+        ] },
+      "assertRender": "Shrine" },
+
+    { "comment": "MENU IS PEEKABLE (journey 12:00): C on the Menu feature slot opens its bag as a look-in overlay (hand empty → no capacity beat). The Menu's Start/Esc contents are asserted by a Core unit test.",
+      "checkpoint": "s5-menu-peek", "key": "Peek",
+      "assertViewModel": { "openPanels": { "C": "Menu" }, "ui": { "lookInOverlay": true } } },
+    { "checkpoint": "s5-menu-peek-close", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" } } },
+
+    { "comment": "THE CLOCK, DETERMINISTICALLY (journey 15:00). Scripted time advance — the harness NEVER reads the wall clock. The clock is running but not yet noticed, so the readout chrome is still absent.",
+      "checkpoint": "s5-clock-advance-1", "advanceTime": 5000,
+      "assertViewModel": { "ui": { "clockReadout": false }, "clock": { "elapsedMs": 5000, "readout": "00:05" } } },
+    { "comment": "Cursor rests on the Clock slot → NoticeClock fires the ClockReadout chrome (absent→present). \"It was always running.\"",
+      "checkpoint": "s5-notice-clock", "key": "Down",
+      "assertViewModel": { "cursor": { "row": 1, "col": 0 }, "ui": { "clockReadout": true, "fullnessPips": false }, "clock": { "elapsedMs": 5000, "readout": "00:05" } } },
+    { "comment": "Advance again — the readout ticks forward (Δt asserted: 5000 → 15000).",
+      "checkpoint": "s5-clock-delta", "advanceTime": 10000,
+      "assertViewModel": { "clock": { "elapsedMs": 15000, "readout": "00:15" } },
+      "assertRender": "00:15" },
+
+    { "comment": "WRONG-ITEM REJECTION (feature-slot filter language) is asserted structurally: s5-enter-shrine pins the empty eye slot's filter (glyph \"eye\", locked false), and a Core unit test drives a non-matching item into it and asserts the rejection + slot-unchanged. The journey then proves the MATCHING core slots + locks below (s5-slot-core).",
+      "checkpoint": "s5-eye-filter",
+      "assertViewModel": { "cells": [ {}, {}, {}, { "empty": true, "glyph": "eye", "locked": false } ] } },
+
+    { "comment": "FETCH THE EYE CORE (temporarily seeded in the demo Chest; Slice 6 relocates it to the wilderness ruin). Leave the Shrine, walk to the Chest at (1,1).",
+      "checkpoint": "s5-leave-shrine", "key": "LeaveBag",
+      "assertViewModel": { "isNested": false, "cursor": { "row": 1, "col": 4 } } },
+    { "key": "Left" }, { "key": "Left" },
+    { "checkpoint": "s5-at-chest", "key": "Left", "assertViewModel": { "cursor": { "row": 1, "col": 1 } } },
+    { "comment": "Peek the Chest (hand empty → no capacity beat), move the overlay cursor to the eye core and grab it into the hand.",
+      "checkpoint": "s5-peek-chest", "key": "Peek", "assertViewModel": { "openPanels": { "C": "Chest" } } },
+    { "key": "Right" },
+    { "key": "Right" },
+    { "checkpoint": "s5-grab-core", "key": "Primary",
+      "assertViewModel": { "handEmpty": false, "hand": [ { "item": "Eye Core" } ] } },
+    { "checkpoint": "s5-close-chest", "key": "Peek", "assertViewModel": { "handEmpty": false } },
+
+    { "comment": "CAPACITY-ABSENCE BEAT (journey 21:00). Peering into a bag WHILE CARRYING the core fires the capacity line once (\"…look inside every single one.\"). Move onto the Belt Pouch at (1,0) and peek it.", "key": "Left" },
+    { "checkpoint": "s5-capacity", "key": "Peek",
+      "assertViewModel": {
+        "openPanels": { "C": "Pouch" },
+        "dialogue": { "beatId": "capacity", "index": 0, "line": "Which one has space? I'd have to look inside every single one.", "portrait": "weary" } },
+      "assertRender": "look inside every single one" },
+    { "checkpoint": "s5-capacity-dismiss", "key": "Primary", "assertViewModel": { "dialogue": null } },
+    { "checkpoint": "s5-close-pouch", "key": "Peek", "assertViewModel": { "handEmpty": false } },
+
+    { "comment": "SLOT THE EYE CORE (journey 28:00). Carry it back to the Shrine and enter.", "key": "Right" },
+    { "key": "Right" }, { "key": "Right" },
+    { "checkpoint": "s5-back-to-shrine", "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 4 } } },
+    { "checkpoint": "s5-reenter-shrine", "key": "Primary",
+      "assertViewModel": { "isNested": true, "activeBag": "Shrine", "ui": { "shrineView": true, "clockReadout": true, "fullnessPips": false } } },
+    { "comment": "Move onto the empty eye slot (via the clock slot — NoticeClock is idempotent).", "key": "Down" },
+    { "checkpoint": "s5-at-eye-2", "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 1 } } },
+    { "comment": "SLOT IT — the glyph matches. The core locks irreversibly, CoreSlotted fires game-wide fullness pips (fullnessPips absent→present), and the resolution beat plays. Pips are asserted on the Shrine's own nested bag cells (Menu full / Toolbar empty).",
+      "checkpoint": "s5-slot-core", "key": "Primary",
+      "assertViewModel": {
+        "ui": { "fullnessPips": true },
+        "dialogue": { "beatId": "slotted", "index": 0, "line": "…Oh. Now I can see.", "portrait": "wonder" },
+        "cells": [
+          { "item": "Menu", "hasBag": true, "pip": "full" },
+          { "item": "Toolbar", "hasBag": true, "pip": "empty" },
+          {},
+          { "item": "Eye Core", "empty": false, "frame": "FeatureSlotFrame", "glyph": "eye", "locked": true }
+        ] },
+      "assertRender": "Now I can see" },
+    { "checkpoint": "s5-slot-dismiss", "key": "Primary",
+      "assertViewModel": { "dialogue": null, "ui": { "fullnessPips": true } } },
+
+    { "comment": "CORE NON-REMOVABLE: Primary on the locked eye slot is refused (a slotted core can't be harvested/grabbed). The slot is unchanged, the hand stays empty. Toolbar pip asserted here too (Coin Pouch partial — the toolbar render surface).",
+      "checkpoint": "s5-core-nonremovable", "key": "Primary",
+      "assertViewModel": {
+        "handEmpty": true,
+        "cells": [ {}, {}, {}, { "item": "Eye Core", "locked": true } ],
+        "toolbar": [ { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "pip": "partial" } ] } },
+
+    { "comment": "GAME-WIDE PIPS (room surface): leave to the home room and assert the fullness pip on every bag cell — Belt Pouch empty, Chest partial, Quiet Pocket partial, Shrine full — against known contents.",
+      "checkpoint": "s5-room-pips", "key": "LeaveBag",
+      "assertViewModel": {
+        "isNested": false, "cursor": { "row": 1, "col": 4 },
+        "cells": [
+          {}, {}, {}, {}, {}, {}, {}, {},
+          { "item": "Belt Pouch", "hasBag": true, "pip": "empty" },
+          { "item": "Chest", "hasBag": true, "pip": "partial" },
+          { "item": "Quiet Pocket", "hasBag": true, "pip": "partial" },
+          {},
+          { "item": "Shrine", "hasBag": true, "pip": "full" }
+        ] } }
   ]
 }

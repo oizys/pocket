@@ -37,6 +37,7 @@ public static class ViewModelSerializer
         var state = session.Current;
         var activeBag = state.ActiveBag;
         var grid = activeBag.Grid;
+        var fullnessOn = state.Ui.Has(ChromeElement.FullnessPips);
 
         var cells = new JsonArray();
         for (var i = 0; i < grid.Cells.Length; i++)
@@ -65,6 +66,20 @@ public static class ViewModelSerializer
 
             if (cell.Frame is not null)
                 cellObj["frame"] = cell.Frame.GetType().Name;
+
+            // Feature slot (Slice 5): expose the glyph key + locked state so wrong-item rejection and
+            // core-non-removable are diff-assertable cross-driver.
+            if (cell.Frame is FeatureSlotFrame fsf)
+            {
+                cellObj["glyph"] = fsf.Glyph;
+                cellObj["locked"] = fsf.IsLocked;
+            }
+
+            // Fullness pip (Slice 5): drawn on every bag cell ONLY once the eye core is slotted
+            // (FullnessPips chrome on). Absent from the projection before the unlock — the checkpoint
+            // signal for absent→present.
+            if (!cell.IsEmpty && fullnessOn && Fullness.Of(state.Store, cell.Stack!) is { } cellPip)
+                cellObj["pip"] = Fullness.Name(cellPip);
 
             cells.Add(cellObj);
         }
@@ -101,6 +116,9 @@ public static class ViewModelSerializer
                     ["count"] = cell.Stack.Count,
                     ["hasBag"] = cell.Stack.ContainedBagId is not null
                 };
+                // Fullness pip on a toolbar bag slot (game-wide once slotted — the toolbar arm).
+                if (fullnessOn && Fullness.Of(state.Store, cell.Stack) is { } slotPip)
+                    slot["pip"] = Fullness.Name(slotPip);
                 if (cell.Stack.ContainedBagId is { } nestedId && state.Store.GetById(nestedId) is { } nestedBag)
                 {
                     var contents = new JsonArray();
@@ -108,12 +126,16 @@ public static class ViewModelSerializer
                     {
                         var nc = nestedBag.Grid.Cells[j];
                         if (nc.IsEmpty) continue;
-                        contents.Add(new JsonObject
+                        var nestedObj = new JsonObject
                         {
                             ["slot"] = j,
                             ["item"] = nc.Stack!.ItemType.Name,
                             ["count"] = nc.Stack.Count
-                        });
+                        };
+                        // Pip on a bag nested inside a toolbar bag (the "nested" render surface).
+                        if (fullnessOn && Fullness.Of(state.Store, nc.Stack) is { } nestedPip)
+                            nestedObj["pip"] = Fullness.Name(nestedPip);
+                        contents.Add(nestedObj);
                     }
                     slot["contents"] = contents;
                 }
@@ -186,9 +208,21 @@ public static class ViewModelSerializer
             ["isNested"] = state.IsNested,
             ["tickMode"] = session.TickMode.ToString(),
             ["tickCount"] = session.TickCount,
+            // Clock readout (Slice 5): the accumulated game time, always projected (deterministic —
+            // the parity harness advances it only via scripted advanceTime). The ui.clockReadout flag
+            // gates whether a frontend DRAWS it; elapsedMs is the cross-driver Δt checkpoint signal.
+            ["clock"] = new JsonObject
+            {
+                ["elapsedMs"] = (long)session.Elapsed.TotalMilliseconds,
+                ["readout"] = FormatClock(session.Elapsed)
+            },
             ["actionLog"] = log
         };
     }
+
+    /// <summary>Formats elapsed game time as a stable mm:ss readout (both frontends draw this string).</summary>
+    public static string FormatClock(TimeSpan elapsed) =>
+        $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
 
     /// <summary>
     /// Serializes the session into a compact JSON string (single line, stable field

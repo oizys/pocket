@@ -18,6 +18,8 @@ public record JourneyStep
     public int? Tick { get; init; }
     public bool Back { get; init; }
     public ClickSpec? Click { get; init; }
+    /// <summary>Scripted clock advance in milliseconds (Slice 5 — deterministic, never wall-clock).</summary>
+    public int? AdvanceTimeMs { get; init; }
 
     // --- Assertions evaluated after the action. ---
     /// <summary>Subset match against the observed view-model (recursive containment).</summary>
@@ -89,6 +91,7 @@ public record JourneyScript(string Name, string? Description, IReadOnlyList<Jour
             Tick = o["tick"]?.GetValue<int>(),
             Back = o["back"]?.GetValue<bool>() ?? false,
             Click = click,
+            AdvanceTimeMs = o["advanceTime"]?.GetValue<int>(),
             AssertViewModel = o["assertViewModel"] as JsonObject,
             AssertRender = o["assertRender"]?.GetValue<string>(),
             Conserves = o["conserves"]?.GetValue<bool>() ?? true
