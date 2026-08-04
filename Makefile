@@ -1,5 +1,11 @@
 # Pockets — build / test / parity entry points.
 #
+# SHELL-AGNOSTIC BY DESIGN: every recipe is a plain sequence of `dotnet run` calls — no sh-only
+# `mkdir -p`/`diff`/`if…fi`/`rm -rf`. Those break under cmd-spawned make on Windows (the "syntax of the
+# command is incorrect" failure). Directory creation, EOL-normalized comparison, and cleanup are all
+# folded into the journey-runner (`--out` self-creates its dir; `--compare`/`--compare-dirs`/`--clean`),
+# so these targets run identically under cmd-make, Git Bash, and Linux sh.
+#
 # The parity gate (target-demo-build-plan.md, principle 2): one journey script drives BOTH
 # frontends and the checkpoint streams must diff clean, with the invariant pack green after
 # every step. Two standing gates (build plan's sync policy — both are pre-push):
@@ -37,14 +43,9 @@ test:
 ## Both runs also assert the invariant pack after every step. Fails if either run fails or the
 ## streams diverge.
 parity:
-	@mkdir -p $(OUT)
 	dotnet run --project $(RUNNER) -- --driver tui        --script $(SMOKE) --out $(OUT)/smoke.tui.checkpoints
 	dotnet run --project $(RUNNER) -- --driver mock-godot --script $(SMOKE) --out $(OUT)/smoke.mock-godot.checkpoints
-	@if diff -u $(OUT)/smoke.tui.checkpoints $(OUT)/smoke.mock-godot.checkpoints; then \
-		echo "PARITY OK — smoke tui/mock-godot checkpoint streams diff-clean"; \
-	else \
-		echo "PARITY FAIL — smoke checkpoint streams diverge"; exit 1; \
-	fi
+	dotnet run --project $(RUNNER) -- --compare $(OUT)/smoke.tui.checkpoints $(OUT)/smoke.mock-godot.checkpoints --label "smoke cross-driver"
 
 ## FULL demo gate: the complete 30-minute target-demo journey on tui + mock-godot, cross-driver
 ## diffed, then regression-checked against the committed goldens — the VM checkpoint stream
@@ -53,27 +54,11 @@ parity:
 ## `parity`, so a single `make parity-full` runs BOTH journeys on both drivers. A golden mismatch
 ## means either a regression or an intentional change — in the latter case run `make record-goldens`.
 parity-full: parity
-	@mkdir -p $(OUT)/buffers
 	dotnet run --project $(RUNNER) -- --driver tui        --script $(FULL) --out $(OUT)/target-demo.tui.checkpoints --goldens $(OUT)/buffers
 	dotnet run --project $(RUNNER) -- --driver mock-godot --script $(FULL) --out $(OUT)/target-demo.mock-godot.checkpoints
-	@echo "--- cross-driver parity ---"
-	@if diff -u $(OUT)/target-demo.tui.checkpoints $(OUT)/target-demo.mock-godot.checkpoints; then \
-		echo "PARITY OK — target-demo tui/mock-godot checkpoint streams diff-clean"; \
-	else \
-		echo "PARITY FAIL — target-demo checkpoint streams diverge"; exit 1; \
-	fi
-	@echo "--- golden regression: VM checkpoint stream ---"
-	@if diff -u $(GOLDENS)/target-demo.checkpoints $(OUT)/target-demo.tui.checkpoints; then \
-		echo "GOLDEN OK — VM checkpoint stream matches the committed golden"; \
-	else \
-		echo "GOLDEN FAIL — VM stream drifted from golden (run 'make record-goldens' if intended)"; exit 1; \
-	fi
-	@echo "--- golden regression: TUI ledger-row buffers ---"
-	@if diff -ru $(GOLDENS)/buffers $(OUT)/buffers; then \
-		echo "GOLDEN OK — TUI ledger-row buffers match the committed goldens"; \
-	else \
-		echo "GOLDEN FAIL — TUI buffers drifted from goldens (run 'make record-goldens' if intended)"; exit 1; \
-	fi
+	dotnet run --project $(RUNNER) -- --compare      $(OUT)/target-demo.tui.checkpoints $(OUT)/target-demo.mock-godot.checkpoints --label "target-demo cross-driver"
+	dotnet run --project $(RUNNER) -- --compare      $(GOLDENS)/target-demo.checkpoints $(OUT)/target-demo.tui.checkpoints          --label "golden: VM checkpoint stream"
+	dotnet run --project $(RUNNER) -- --compare-dirs $(GOLDENS)/buffers                 $(OUT)/buffers                                --label "golden: TUI ledger-row buffers"
 	@echo "PARITY-FULL OK — target demo green on both drivers, goldens clean"
 
 ## Regenerate the committed goldens from the target-demo journey (TUI driver). The VM checkpoint
@@ -81,7 +66,6 @@ parity-full: parity
 ## from tui is canonical; the buffer goldens are TUI-only render surfaces. Run this ONLY after an
 ## intentional journey/state change, then commit journeys/goldens/.
 record-goldens:
-	@mkdir -p $(GOLDENS)/buffers
 	dotnet run --project $(RUNNER) -- --driver tui --script $(FULL) --out $(GOLDENS)/target-demo.checkpoints --goldens $(GOLDENS)/buffers
 	@echo "Recorded goldens → $(GOLDENS)/ (VM stream + TUI ledger-row buffers). Review the diff, then commit."
 
@@ -92,15 +76,10 @@ record-goldens:
 ## golden set for a vision-model pass. The screenshot capture is scripted here but only runs where a
 ## Godot viewport exists; it never blocks the in-process gates above.
 parity-godot:
-	@mkdir -p $(OUT) $(SHOTS)
 	dotnet run --project $(RUNNER) -- --driver tui   --script $(FULL) --out $(OUT)/target-demo.tui.checkpoints
 	dotnet run --project $(RUNNER) -- --driver godot --script $(FULL) --out $(OUT)/target-demo.godot.checkpoints --url ws://localhost:9080 --screenshots $(SHOTS)
-	@if diff -u $(OUT)/target-demo.tui.checkpoints $(OUT)/target-demo.godot.checkpoints; then \
-		echo "PARITY OK — tui and godot checkpoint streams diff-clean"; \
-	else \
-		echo "PARITY FAIL — checkpoint streams diverge"; exit 1; \
-	fi
+	dotnet run --project $(RUNNER) -- --compare $(OUT)/target-demo.tui.checkpoints $(OUT)/target-demo.godot.checkpoints --label "tui vs live-godot"
 	@echo "Godot ledger-row screenshots → $(SHOTS)/"
 
 clean-parity:
-	rm -rf $(OUT) $(SHOTS)
+	dotnet run --project $(RUNNER) -- --clean $(OUT) $(SHOTS)

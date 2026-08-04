@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using Pockets.Core.Models;
 
 namespace Pockets.Core.Data;
@@ -109,8 +110,11 @@ public static class ContentParsers
             .Select(e => ParseLootEntry(e.Trim()))
             .ToImmutableArray();
 
+        // InvariantCulture: data files author decimals with a '.' separator. A comma-decimal host
+        // locale (e.g. de-DE) would otherwise misparse "0.5" as 5 or throw — drifting the demo profile
+        // and every downstream golden. Data parsing must be locale-independent.
         var fillRatio = block.Fields.TryGetValue("FillRatio", out var fr)
-            ? double.Parse(fr)
+            ? double.Parse(fr, CultureInfo.InvariantCulture)
             : 0.5;
 
         return new LootTableTemplate(block.Id, entries, fillRatio);
@@ -123,7 +127,7 @@ public static class ContentParsers
     {
         var separatorIndex = entry.LastIndexOf('×');
         var itemName = entry[..separatorIndex].Trim();
-        var weight = double.Parse(entry[(separatorIndex + 1)..].Trim());
+        var weight = double.Parse(entry[(separatorIndex + 1)..].Trim(), CultureInfo.InvariantCulture);
         return new LootTableEntry(itemName, weight);
     }
 }

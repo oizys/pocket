@@ -1,3 +1,4 @@
+using System.Globalization;
 using Pockets.Core.Models;
 
 namespace Pockets.Core.Rendering;
@@ -31,13 +32,14 @@ public static class GlyphRenderer
         if (!stack.ItemType.IsStackable)
             return glyph + "  ";
 
-        // Stackable: right-align count in remaining 2 chars
+        // Stackable: right-align count in remaining 2 chars. Invariant-formatted — this string is a
+        // golden-bound render surface, so counts must never pick up locale digit shaping.
         var count = stack.Count;
         var countText = count switch
         {
             <= 0 => "  ",
-            < 10 => " " + count,
-            < 100 => count.ToString(),
+            < 10 => " " + count.ToString(CultureInfo.InvariantCulture),
+            < 100 => count.ToString(CultureInfo.InvariantCulture),
             _ => "9+"
         };
         return glyph + countText;

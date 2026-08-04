@@ -259,6 +259,69 @@ still a recipe card, never a Stone Axe) and definitively by the Core test
 `CraftingTableTests.DemoTables_CraftCompass_Wilderness_AndPouch_ButNeverTheAxe` (`!HasItem "Stone
 Axe"`), since the subset-matcher can only assert presence, not census-level absence.
 
+## Windows portability of the parity gates (follow-up, 2026-08-04)
+
+Aaron ran the standing gates on Windows and hit two real issues; both are now fixed so `make parity`
+and `make parity-full` behave identically under **cmd-spawned make**, **Git Bash**, and **Linux sh**.
+
+**1. cmd-make choked on sh-only recipes.** The old recipes used `mkdir -p`, `diff -u`, `if…fi`, and
+`rm -rf` — pure sh. Windows `make` (not run from a sh shell) hands recipe lines to `cmd.exe`, which
+fails them (`The syntax of the command is incorrect … Makefile:40`). **Fix:** every recipe is now a
+flat sequence of `dotnet run` calls, with directory-creation, comparison, and cleanup folded into the
+journey-runner:
+- `--out <file>` self-creates its parent directory (no `mkdir`).
+- `--compare <expected> <actual> [--label t]` and `--compare-dirs <expectedDir> <actualDir>` replace
+  `diff`/`diff -r` — EOL-normalized, PASS/FAIL to stdout, exit 0/1 (make gates on the exit code).
+- `--clean <dir>…` replaces `rm -rf`.
+
+There is **no sh syntax left in the Makefile** — the recipes are the same tokens on every platform.
+
+**2. `GOLDEN FAIL` on `toolbar-depth-1.txt` under Git Bash — line endings.** The runner writes buffer
+goldens with LF (`TuiDriver.DumpBuffer` emits `\n`); the committed goldens, with no `.gitattributes`
+pinning EOL, checked out as **CRLF** under Git for Windows' default `core.autocrlf=true`. Every line
+then read as drifted. Confirmed by the PM against Aaron's checkout (`/mnt/c/git/pocket`): golden CRLF,
+artifact LF, **byte-identical after EOL normalization** — no real render drift. **Fix, belt + suspenders:**
+- **Suspenders — [`.gitattributes`](../.gitattributes):** `journeys/goldens/** text eol=lf`, plus
+  `*.journey.json` and `*.checkpoints` as `eol=lf`. This forces LF in the working tree on checkout AND
+  normalizes to LF in the repo on commit, regardless of `core.autocrlf` — so a golden re-recorded on a
+  Windows box still commits LF, and any fresh clone checks out LF.
+- **Belt — normalized compare:** `Compare.cs` normalizes CRLF/CR→LF (and ignores a trailing final
+  newline) on *every* comparison. So even a working tree carrying stale attributes, or a golden that
+  slipped in as CRLF, still passes. Line endings can no longer re-enter the parity signal. The runner
+  now also always writes the VM checkpoint stream with LF, so goldens recorded on any OS are byte-stable.
+
+Verified locally by CRLF-ifying every committed golden (reproducing Aaron's exact `toolbar-depth-1.txt`
+failure) and confirming `make parity-full` stays green, then restoring.
+
+**3. Culture audit (hardening).** Swept the serializer + render + data-load paths for locale-sensitive
+formatting and pinned `InvariantCulture` where output feeds the VM/buffers/goldens or the demo profile:
+- `ContentParsers` `double.Parse` for loot **FillRatio / ×Weight** — the real trap: under a
+  comma-decimal locale (de-DE) `double.Parse("0.5")` silently yields **5.0**, corrupting the loot
+  tables → demo profile → every downstream golden (`data/seedling-pot.md` carries `×0.5`, `×0.3`,
+  `FillRatio: 0.6`). Now `InvariantCulture`.
+- `ViewModelSerializer.FormatClock` (mm:ss readout), `GlyphRenderer`/`GridDiagram` stack counts —
+  invariant-pinned.
+- `RenderHelpers.AbbreviateName` `ToUpper` → `ToUpperInvariant` — the Turkish-I trap (`"iron"`→`"İRON"`
+  under tr-TR) that would drift toolbar/hand abbreviations.
+
+Proven by `CultureInvarianceTests` (Core): the demo VM serialization, the loot-table decimals,
+`FormatClock`, and `AbbreviateName` are all asserted byte-identical under **de-DE** and **tr-TR** vs
+the InvariantCulture baseline.
+
+### What Aaron should see / do on Windows
+
+- **cmd-make** (`make parity`, `make parity-full` from a plain Windows shell) and **Git Bash** now run
+  the same recipes to the same PASS/FAIL — no more `cmd.exe` syntax error, no `GOLDEN FAIL`.
+- **After pulling this change, no manual step is required for the gate**: the normalized compare passes
+  whether the goldens are CRLF or LF. The `.gitattributes` is purely to keep the *working tree* tidy
+  (LF). If you want the working tree normalized immediately in an **existing** clone (Git does not
+  re-checkout unchanged files just because attributes changed), run once after pulling:
+  ```
+  git add --renormalize journeys/goldens/ && git checkout -- journeys/goldens/
+  ```
+  A **fresh clone** needs nothing — the goldens check out LF by attribute. Either way, `make parity-full`
+  is green. `make parity-godot` still needs a live Godot runtime (below); it now uses `--compare` too.
+
 ## What remains Windows-only (needs a Godot runtime)
 
 This WSL env has no `godot`/`godot4` binary and no display, so the real Godot process cannot run

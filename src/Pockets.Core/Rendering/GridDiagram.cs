@@ -1,5 +1,6 @@
 using Pockets.Core.Models;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -172,7 +173,7 @@ public static class GridDiagram
     {
         if (stack == null) return "    ";
         string abbr = GetAbbreviation(stack.ItemType, reverseTypes);
-        string count = stack.ItemType.IsStackable ? stack.Count.ToString() : "-";
+        string count = stack.ItemType.IsStackable ? stack.Count.ToString(CultureInfo.InvariantCulture) : "-";
         return $"{abbr}{count}";
     }
 
@@ -183,7 +184,7 @@ public static class GridDiagram
         Dictionary<ItemType, string>? reverseTypes)
     {
         string abbr = GetAbbreviation(stack.ItemType, reverseTypes);
-        string count = stack.ItemType.IsStackable ? stack.Count.ToString() : "-";
+        string count = stack.ItemType.IsStackable ? stack.Count.ToString(CultureInfo.InvariantCulture) : "-";
         return $"{abbr}{count}";
     }
 

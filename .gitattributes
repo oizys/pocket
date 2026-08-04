@@ -1,0 +1,19 @@
+# EOL policy for the parity gate.
+#
+# The parity gate diffs freshly generated TUI/VM artifacts against committed goldens. The runner
+# always WRITES those artifacts with LF (Program.cs / TuiDriver.DumpBuffer), so the committed goldens
+# must also be LF on every platform — otherwise Git for Windows' default core.autocrlf=true checks the
+# goldens out as CRLF and every line reads as drifted (the toolbar-depth-1.txt GOLDEN FAIL Aaron hit).
+#
+# `eol=lf` (implies `text`) pins these to LF in the working tree on checkout AND normalizes them to LF
+# in the repo on commit, regardless of the host's core.autocrlf. So a golden re-recorded on a Windows
+# box still commits LF, and a fresh clone always checks out LF. The runner ALSO EOL-normalizes every
+# comparison (Compare.cs) as the belt to this suspenders — a re-clone carrying stale attributes still
+# passes. Together, line endings can never re-enter the parity signal.
+
+# Committed goldens: VM checkpoint stream + TUI ledger-row buffer captures.
+journeys/goldens/**        text eol=lf
+
+# Journey scripts + any checkpoint artifacts, wherever they live.
+*.journey.json             text eol=lf
+*.checkpoints              text eol=lf

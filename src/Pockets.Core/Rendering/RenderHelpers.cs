@@ -29,10 +29,13 @@ public static class RenderHelpers
     /// </summary>
     public static string AbbreviateName(string name, int maxLength = 5)
     {
+        // Invariant upper-casing: item abbreviations land in the TUI buffer goldens, and the default
+        // ToUpper() would map 'i'→'İ' under a Turkish host locale (the classic Turkish-I bug) — drifting
+        // every golden built on such a machine. Culture must never touch golden-bound text.
         var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Length == 1)
-            return name.Length <= maxLength ? name.ToUpper() : name[..maxLength].ToUpper();
-        var initials = string.Concat(words.Select(w => char.ToUpper(w[0])));
+            return name.Length <= maxLength ? name.ToUpperInvariant() : name[..maxLength].ToUpperInvariant();
+        var initials = string.Concat(words.Select(w => char.ToUpperInvariant(w[0])));
         return initials.Length <= maxLength ? initials : initials[..maxLength];
     }
 

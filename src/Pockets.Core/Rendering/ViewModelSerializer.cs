@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Pockets.Core.Models;
@@ -277,9 +278,13 @@ public static class ViewModelSerializer
         };
     }
 
-    /// <summary>Formats elapsed game time as a stable mm:ss readout (both frontends draw this string).</summary>
+    /// <summary>
+    /// Formats elapsed game time as a stable mm:ss readout (both frontends draw this string, and it
+    /// lands in the VM checkpoint stream + TUI buffer goldens). InvariantCulture-pinned so the digits
+    /// never vary with the host locale — a golden recorded on any machine stays byte-identical.
+    /// </summary>
     public static string FormatClock(TimeSpan elapsed) =>
-        $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
+        string.Format(CultureInfo.InvariantCulture, "{0:D2}:{1:D2}", (int)elapsed.TotalMinutes, elapsed.Seconds);
 
     /// <summary>
     /// Serializes the session into a compact JSON string (single line, stable field

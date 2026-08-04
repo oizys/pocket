@@ -13,6 +13,34 @@ using Pockets.JourneyRunner;
 //                  [--goldens <dir>] [--screenshots <dir>]
 // --goldens captures the TUI character buffer at every golden-flagged checkpoint (Slice 8 ledger-row
 // render goldens); --screenshots captures a Godot viewport PNG at the same checkpoints (real Godot only).
+//
+// Shell-agnostic compare modes (so the Makefile parity recipes need no sh-only diff/mkdir/if — they
+// break under cmd-spawned make on Windows). Every comparison is EOL-normalized; see Compare.cs.
+//   journey-runner --compare      <expected> <actual>       [--label <text>] [--normalize-eol]
+//   journey-runner --compare-dirs <expectedDir> <actualDir> [--label <text>] [--normalize-eol]
+
+if (args.Length > 0 && args[0] == "--clean")
+{
+    // Shell-agnostic `rm -rf` for the parity output dirs (no sh in cmd-make). Missing dirs are a no-op.
+    foreach (var dir in args.Skip(1))
+        if (Directory.Exists(dir)) { Directory.Delete(dir, recursive: true); Console.WriteLine($"removed {dir}"); }
+    return 0;
+}
+
+if (args.Length > 0 && args[0] is "--compare" or "--compare-dirs")
+{
+    if (args.Length < 3)
+    {
+        Console.Error.WriteLine($"Usage: journey-runner {args[0]} <expected> <actual> [--label <text>] [--normalize-eol]");
+        return 2;
+    }
+    var label = LabelFrom(args);
+    // --normalize-eol is accepted for explicitness but is always in effect (comparisons never depend
+    // on line-ending byte identity — that is the whole point of folding compare into the runner).
+    return args[0] == "--compare"
+        ? Compare.Files(args[1], args[2], label)
+        : Compare.Dirs(args[1], args[2], label);
+}
 
 var opts = ParseArgs(args);
 if (opts is null) { PrintUsage(); return 2; }
@@ -46,7 +74,11 @@ var result = JourneyRunnerCore.Run(driver, script, screenshotsDir);
 
 if (outPath is not null)
 {
-    File.WriteAllLines(outPath, result.Checkpoints);
+    // Runner creates its own output directory (no `mkdir -p` in the Makefile). Always write LF so a
+    // golden recorded on ANY platform is byte-stable; combined with .gitattributes and the normalized
+    // compare, line endings can never re-enter the parity signal.
+    EnsureParentDir(outPath);
+    File.WriteAllText(outPath, string.Join('\n', result.Checkpoints) + (result.Checkpoints.Count > 0 ? "\n" : ""));
     Console.Error.WriteLine($"[journey-runner] wrote {result.Checkpoints.Count} checkpoints → {outPath}");
 }
 
@@ -111,6 +143,21 @@ static (string driver, string script, string? outPath, string dataDir, int? seed
     if (driver is null || script is null) return null;
     dataDir ??= DefaultDataDir();
     return (driver, script, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir);
+}
+
+// Optional --label <text> for the compare modes (names the gate in PASS/FAIL output). Empty if absent.
+static string LabelFrom(string[] args)
+{
+    for (var i = 0; i < args.Length - 1; i++)
+        if (args[i] == "--label") return args[i + 1];
+    return "";
+}
+
+// Creates the parent directory of a to-be-written file so recipes never need `mkdir -p`.
+static void EnsureParentDir(string path)
+{
+    var dir = Path.GetDirectoryName(Path.GetFullPath(path));
+    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 }
 
 static string Next(string[] args, ref int i)
