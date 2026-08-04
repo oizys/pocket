@@ -74,10 +74,31 @@ public class GameController
         SyncClock();
     }
 
-    /// <summary>Copies the injected clock's current reading onto the session (the clock-readout value).</summary>
+    /// <summary>
+    /// One facility craft tick per this many milliseconds of game time (Slice 7). Crafting progress is
+    /// clock-driven: the compass's Duration is measured in these whole-second ticks. The parity harness
+    /// only advances game time via scripted <c>advanceTime</c>, so a craft can never drift forward on a
+    /// plain key press — the "realtime, deterministically" contract from the Slice-5 clock.
+    /// </summary>
+    public const int TickLengthMs = 1000;
+
+    /// <summary>
+    /// Copies the injected clock's reading onto the session (the clock-readout value) AND advances
+    /// facility crafting by one tick per whole-second boundary crossed since the last sync. Both the
+    /// scripted path (<see cref="AdvanceClock"/>) and a live wall-clock frontend (which calls this each
+    /// refresh) drive timed crafts identically; the harness stays deterministic because it only ever
+    /// moves the clock through scripted <c>advanceTime</c>.
+    /// </summary>
     public ControllerResult SyncClock()
     {
-        _session = _session.WithElapsed(_clock.Elapsed);
+        var before = _session.Elapsed;
+        var now = _clock.Elapsed;
+        _session = _session.WithElapsed(now);
+
+        var ticks = (long)(now.TotalMilliseconds / TickLengthMs) - (long)(before.TotalMilliseconds / TickLengthMs);
+        for (long t = 0; t < ticks; t++)
+            _session = _session.Tick();
+
         return ControllerResult.Handle(_session, "Clock: sync");
     }
 

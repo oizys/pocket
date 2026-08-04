@@ -48,6 +48,23 @@ public record GameState(
     public ImmutableHashSet<string> KnownRecipes { get; init; } = ImmutableHashSet<string>.Empty;
 
     /// <summary>
+    /// Zones-reached state (Slice 7, journey 26:00 — the minimap). The distinct EnterOnly-wilderness
+    /// bag ids the player has <b>entered</b> (crossed the threshold into), in first-entry order. Each
+    /// entry lights one wedge of the cosmology's 12-wedge ring around the Core dot. Crafting a new
+    /// wilderness does NOT light a wedge — only entering it does — so the wedge count is a record of
+    /// where the player has physically been. The VM projects only the count + wedge indices (never the
+    /// bag GUIDs), so it is deterministic and cross-driver diff-clean. Grows monotonically; defaults
+    /// empty, every non-demo profile unaffected. See <see cref="GameSession"/> for the entry detector.
+    /// </summary>
+    public ImmutableList<Guid> ZonesReached { get; init; } = ImmutableList<Guid>.Empty;
+
+    /// <summary>The EnvironmentType marking the demo Crafting Table facility (Slice 7, journey 24:00).</summary>
+    public const string CraftingTableEnvironment = "Crafting Table";
+
+    /// <summary>The demo's Quiet Compass item name — its appearance fires CompassCrafted → Minimap.</summary>
+    public const string QuietCompassItem = "Quiet Compass";
+
+    /// <summary>
     /// The per-item property key a recipe-as-item carries to name the recipe it teaches on pickup
     /// (Slice 6). Data-driven like <see cref="FeatureSlotFrame.GlyphProperty"/>: the demo attaches it to
     /// the ruin's "another Quiet 1" card.

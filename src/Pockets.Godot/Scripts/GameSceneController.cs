@@ -23,6 +23,7 @@ public partial class GameSceneController : Control
     private Button _backButton = null!;
     private Label _breadcrumbLabel = null!;
     private Label _clockLabel = null!;   // Slice 5: top-bar clock readout
+    private Label _queueLabel = null!;   // Slice 7: thin action-queue + minimap chrome
     private Label _descriptionLabel = null!;
     private Label _toolbarLabel = null!;
     private Label _handLabel = null!;
@@ -131,6 +132,14 @@ public partial class GameSceneController : Control
         _clockLabel.AddThemeColorOverride("font_color", new Color(0.8f, 0.85f, 0.7f));
         _clockLabel.VerticalAlignment = VerticalAlignment.Center;
         topBarContent.AddChild(_clockLabel);
+
+        // Slice 7: thin action-queue + minimap chrome (the real queue/radar are the TUI's — this is the
+        // Godot thin equivalent). Visible only once FirstTimedAction / CompassCrafted materialize them.
+        _queueLabel = new Label { Text = "" };
+        _queueLabel.AddThemeFontSizeOverride("font_size", 16);
+        _queueLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.85f, 0.8f));
+        _queueLabel.VerticalAlignment = VerticalAlignment.Center;
+        topBarContent.AddChild(_queueLabel);
 
         // --- Main content: left (grid row + description) | right (action log) ---
         var mainContent = new HBoxContainer();
@@ -337,6 +346,17 @@ public partial class GameSceneController : Control
         _clockLabel.Text = $"⏱ {ViewModelSerializer.FormatClock(_controller.Session.Elapsed)}"
             + (state.Ui.Has(ChromeElement.ShrineView) ? "  ◈ Shrine" : "");
         _clockLabel.Visible = state.Ui.Has(ChromeElement.ClockReadout) || state.Ui.Has(ChromeElement.ShrineView);
+
+        // Action queue + minimap (Slice 7) — thin: the count of in-flight crafts and the lit-wedge count.
+        // Each half draws only once its ledger flag is on (FirstTimedAction / CompassCrafted).
+        var activeCrafts = state.Store.All.Count(b => b.FacilityState?.RecipeId is not null);
+        var queueText = "";
+        if (state.Ui.Has(ChromeElement.ActionQueue))
+            queueText += $"⚙ {activeCrafts}  ";
+        if (state.Ui.Has(ChromeElement.Minimap))
+            queueText += $"◉ {state.ZonesReached.Count}/12";
+        _queueLabel.Text = queueText.TrimEnd();
+        _queueLabel.Visible = state.Ui.Has(ChromeElement.ActionQueue) || state.Ui.Has(ChromeElement.Minimap);
 
         // Hand
         _handPanel.SetState(state.HandBag.Grid, new Position(0, 0));

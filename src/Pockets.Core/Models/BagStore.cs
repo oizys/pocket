@@ -116,6 +116,17 @@ public class BagStore
     }
 
     /// <summary>
+    /// The <see cref="ItemStack"/> that owns a bag — the stack in the parent cell whose
+    /// <see cref="ItemStack.ContainedBagId"/> is this bag. Null if the bag has no owner (a root bag).
+    /// The single place facility progress / owner metadata is read from, so the tick loop, the
+    /// item-description renderer, and the action-queue projection agree.
+    /// </summary>
+    public ItemStack? GetOwnerStack(Guid bagId) =>
+        GetOwnerOf(bagId) is { } owner && GetById(owner.ParentBagId) is { } parent
+            ? parent.Grid.GetCell(owner.CellIndex).Stack
+            : null;
+
+    /// <summary>
     /// Builds a BagStore by extracting all nested bags from root bags.
     /// Walks each root bag's grid cells, collecting any ContainedBagId references,
     /// and adds all found bags to the store.

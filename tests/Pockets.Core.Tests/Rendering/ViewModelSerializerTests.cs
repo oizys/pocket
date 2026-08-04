@@ -48,7 +48,7 @@ public class ViewModelSerializerTests
         Assert.NotNull(vm["cells"]);
         Assert.NotNull(vm["cursor"]);
         Assert.NotNull(vm["hand"]);
-        Assert.Equal("Rogue", vm["tickMode"]!.GetValue<string>());
+        Assert.Equal("Realtime", vm["tickMode"]!.GetValue<string>()); // Slice 7: demo is clock-driven
         Assert.Equal(8, vm["gridColumns"]!.GetValue<int>());
         Assert.Equal(4, vm["gridRows"]!.GetValue<int>());
         Assert.True(vm["handEmpty"]!.GetValue<bool>());

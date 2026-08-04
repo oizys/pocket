@@ -744,19 +744,12 @@ public record GameSession(
             (newState, completionLogs) = (result.State, ImmutableList<string>.Empty);
         }
 
-        // Chrome-as-state: detect the gameplay transitions that reveal UI and fire their
-        // triggers on the ledger. Centralized here because every state mutation (tool actions,
-        // panel open/close, enter/leave) flows through ApplyResult, so no per-tool wiring is
-        // needed and the demo profile's chrome grows identically on every frontend/driver.
-        newState = ApplyUiTriggers(Current, newState);
-        // Structural narrative beats keyed to state transitions (the slotting resolution line). Runs
-        // here (instance) because enqueuing a beat needs the session's beat book; the UI-flag arm of
-        // the same transitions is fired inside ApplyUiTriggers.
-        newState = FireStructuralDialogue(Current, newState);
-        // Known-recipes registry (Slice 6): any recipe-as-item that has reached the player's fixed
-        // inventories (hand/toolbar) teaches its recipe. Runs on every action so it catches a pickup
-        // however it routed (grab-into-hand, pickup-to-toolbar, overflow-into-bag). Monotonic + idempotent.
-        newState = RegisterKnownRecipes(newState);
+        // Chrome-as-state + structural beats + known-recipes + minimap zones: the shared transition
+        // hooks. Centralized here because every state mutation (tool actions, panel open/close,
+        // enter/leave) flows through ApplyResult, so no per-tool wiring is needed and the demo
+        // profile's chrome grows identically on every frontend/driver. The same hooks run after a
+        // scripted facility tick (see Tick) so a timed craft's completion fires identically.
+        newState = RunTransitionHooks(Current, newState);
 
         var newStack = PushWithLimit(UndoStack, Current);
         var newLog = ActionLog.Add(formatLog());
@@ -805,7 +798,104 @@ public record GameSession(
         if (LockedFeatureSlotCount(after) > LockedFeatureSlotCount(before))
             ui = ui.Fire(UiTrigger.CoreSlotted);
 
+        // A Crafting Table just began crafting (RecipeId null→set) ⇒ FirstTimedAction (journey 24:00):
+        // the action-queue panel materializes to show the timed work. Scoped to the Crafting Table
+        // because that is the demo's designated first *shown* timed craft (the earlier Slice-3 Workshop
+        // craft teaches toolbar-sourced grab-for-move, not the queue). Detected structurally so it fires
+        // the same way whether the craft starts during a scripted tick (advanceTime) or any other path.
+        if (CraftingTableActiveCount(after) > CraftingTableActiveCount(before))
+            ui = ui.Fire(UiTrigger.FirstTimedAction);
+
+        // A Quiet Compass just appeared in the world (craft complete) ⇒ CompassCrafted (journey 26:00):
+        // the minimap/radar materializes. Counting the item is robust to where the compass lands.
+        if (CompassCount(after) > CompassCount(before))
+            ui = ui.Fire(UiTrigger.CompassCrafted);
+
         return ReferenceEquals(ui, after.Ui) ? after : after with { Ui = ui };
+    }
+
+    /// <summary>A facility currently mid-craft, projected for the action-queue chrome (Slice 7).</summary>
+    public record ActiveCraft(string Facility, string RecipeId, string? Name, int Progress, int Duration);
+
+    /// <summary>
+    /// All facilities in a deterministic, GUID-free order: env → active recipe → owning cell index (all
+    /// pure functions of state). The single source of facility ordering for both the tick loop and the
+    /// action-queue projection, so the completion log and the queue panel never disagree — bag ids are
+    /// process-fresh GUIDs, so the store's dictionary order would otherwise diverge across drivers.
+    /// </summary>
+    private static IEnumerable<Bag> OrderedFacilities(GameState state) =>
+        state.Store.Facilities
+            .OrderBy(f => f.EnvironmentType, StringComparer.Ordinal)
+            .ThenBy(f => f.FacilityState?.ActiveRecipeId ?? f.FacilityState?.RecipeId ?? "", StringComparer.Ordinal)
+            .ThenBy(f => state.Store.GetOwnerOf(f.Id)?.CellIndex ?? 0);
+
+    /// <summary>
+    /// The action-queue rows (Slice 7): every facility mid-craft, in canonical order, each with its
+    /// current progress and the active recipe's duration/name. The view-model serializer and both
+    /// frontends read this one projection, so the TUI queue, the Godot count, and the parity stream
+    /// can never drift.
+    /// </summary>
+    public IReadOnlyList<ActiveCraft> ActiveCrafts()
+    {
+        var byId = Recipes.IsDefaultOrEmpty
+            ? null
+            : Recipes.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
+
+        var rows = new List<ActiveCraft>();
+        foreach (var f in OrderedFacilities(Current))
+        {
+            if (f.FacilityState?.RecipeId is not { } recipeId) continue;
+            var progress = Current.Store.GetOwnerStack(f.Id)?.GetInt("Progress") ?? 0;
+            var recipe = byId is not null && byId.TryGetValue(recipeId, out var r) ? r : null;
+            rows.Add(new ActiveCraft(f.EnvironmentType, recipeId, recipe?.Name, progress, recipe?.Duration ?? 0));
+        }
+        return rows;
+    }
+
+    /// <summary>Number of Crafting Table facilities currently mid-craft (a non-null active RecipeId).</summary>
+    private static int CraftingTableActiveCount(GameState state) =>
+        state.Store.All.Count(b =>
+            b.EnvironmentType == GameState.CraftingTableEnvironment && b.FacilityState?.RecipeId is not null);
+
+    /// <summary>Total count of Quiet Compass items anywhere in the store (the CompassCrafted signal).</summary>
+    private static int CompassCount(GameState state) =>
+        state.Store.All.Sum(b => b.Grid.Cells
+            .Where(c => c.Stack?.ItemType.Name == GameState.QuietCompassItem)
+            .Sum(c => c.Stack!.Count));
+
+    /// <summary>
+    /// Lights a minimap wedge when the player crosses the threshold INTO a wilderness (an
+    /// <see cref="Bag.EnterOnly"/> bag) they have not entered before. Keyed to a breadcrumb-depth
+    /// increase (a real enter, not a look-in), so peeking a ruin or entering the plain Shrine/pouch
+    /// never lights a wedge. Distinct + monotonic (a re-entry never double-counts). Returns the same
+    /// state when nothing new is reached.
+    /// </summary>
+    private static GameState RegisterZoneEntry(GameState before, GameState after)
+    {
+        if (after.BreadcrumbStack.Count() <= before.BreadcrumbStack.Count())
+            return after;
+        if (!after.ActiveBag.EnterOnly)
+            return after;
+        var id = after.ActiveBagId;
+        if (after.ZonesReached.Contains(id))
+            return after;
+        return after with { ZonesReached = after.ZonesReached.Add(id) };
+    }
+
+    /// <summary>
+    /// Runs the shared state→state transition hooks after any successful mutation, whether from a
+    /// player action (<see cref="ApplyResult"/>) or a scripted facility tick (<see cref="Tick"/>):
+    /// chrome triggers, structural dialogue beats, known-recipe learning, and minimap zone entry.
+    /// Centralizing them here means a craft that completes DURING a tick fires CompassCrafted/minimap
+    /// exactly like a player-driven transition would.
+    /// </summary>
+    private GameState RunTransitionHooks(GameState before, GameState after)
+    {
+        after = ApplyUiTriggers(before, after);
+        after = FireStructuralDialogue(before, after);
+        after = RegisterKnownRecipes(after);
+        after = RegisterZoneEntry(before, after);
+        return after;
     }
 
     /// <summary>Enqueues the slotting-resolution beat when a feature slot is newly locked (core slotted).</summary>
@@ -893,7 +983,7 @@ public record GameSession(
         if (Recipes.IsDefaultOrEmpty)
             return (state, logs);
 
-        var facilities = state.Store.Facilities.ToList();
+        var facilities = OrderedFacilities(state).ToList();
         if (facilities.Count == 0)
             return (state, logs);
 
@@ -903,15 +993,8 @@ public record GameSession(
             if (facilityRecipes.Count == 0)
                 continue;
 
-            // Read current progress from owning ItemStack's properties
-            var ownerInfo = state.Store.GetOwnerOf(facility.Id);
-            int currentProgress = 0;
-            if (ownerInfo is not null)
-            {
-                var parentBag = state.Store.GetById(ownerInfo.ParentBagId);
-                var ownerStack = parentBag?.Grid.GetCell(ownerInfo.CellIndex).Stack;
-                currentProgress = ownerStack?.GetInt("Progress") ?? 0;
-            }
+            // Read current progress from the owning ItemStack's properties (shared owner lookup).
+            int currentProgress = state.Store.GetOwnerStack(facility.Id)?.GetInt("Progress") ?? 0;
 
             var wasCrafting = facility.FacilityState?.RecipeId;
             var (ticked, newProgress, newBags) = FacilityLogic.Tick(facility, currentProgress, facilityRecipes);
@@ -950,6 +1033,9 @@ public record GameSession(
         if (!Recipes.IsDefaultOrEmpty)
             (tickedState, completionLogs) = TickFacilities(Current);
         tickedState = PlantLogic.TickPlants(tickedState);
+        // A craft that starts/completes during this tick must reveal chrome (FirstTimedAction →
+        // ActionQueue, CompassCrafted → Minimap) exactly as a player action would.
+        tickedState = RunTransitionHooks(Current, tickedState);
         if (tickedState == Current)
             return this;
 
@@ -975,6 +1061,13 @@ public record GameSession(
     /// </summary>
     private IReadOnlyList<Recipe> GetRecipesForFacility(string environmentType)
     {
+        // The Crafting Table (Slice 7) is a generic assembler: its craftable set is exactly the
+        // recipes the player KNOWS (KnownRecipes ∩ the loaded recipe set) — the Slice-6 deferred
+        // wiring. Learn a recipe and the table can build it the moment its inputs match; an unknown
+        // recipe (or a known one with no table inputs, e.g. the Iron-Ore-gated demo axe) never crafts.
+        if (environmentType == GameState.CraftingTableEnvironment)
+            return Recipes.Where(r => Current.KnownRecipes.Contains(r.Id)).ToList();
+
         if (FacilityRecipeMap is not null &&
             FacilityRecipeMap.TryGetValue(environmentType, out var recipeIds))
         {

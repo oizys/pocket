@@ -298,6 +298,97 @@
           { "item": "Quiet 1", "hasBag": true, "pip": "partial" },
           {},
           { "item": "Shrine", "hasBag": true, "pip": "full" }
-        ] } }
+        ] } },
+
+    { "comment": "======== SLICE 7 — THE CRAFTING TABLE, THE COMPASS, THE THREE-PATH CLIFF (journey 24:00–30:00) ======== Crafting is now clock-driven (Realtime): three pre-loaded Crafting Tables in the home room stay idle until their recipe is KNOWN and game time is advanced. From the Shrine cell, drop down a row to the three recipe cards and learn them (a pickup routes to the toolbar and teaches the recipe). No time is advanced yet, so the action queue stays absent.",
+      "checkpoint": "s7-start", "key": "Down",
+      "assertViewModel": { "cursor": { "row": 2, "col": 4 }, "ui": { "actionQueue": false, "minimap": false } } },
+
+    { "comment": "Learn the COMPASS recipe (card at (2,5) → toolbar). knownRecipes gains 'compass'; still no craft.", "key": "Right" },
+    { "checkpoint": "s7-learn-compass", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 5 }, "handEmpty": true, "knownRecipes": [ "another-quiet-1", "compass" ], "ui": { "actionQueue": false } } },
+
+    { "comment": "Learn the POUCH recipe (organizer path).", "key": "Right" },
+    { "checkpoint": "s7-learn-pouch", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 6 }, "knownRecipes": [ "another-quiet-1", "belt-pouch", "compass" ] } },
+
+    { "comment": "Learn the AXE recipe — readable + known, but priced in Iron Ore that never appears down here (the gatherer path, deliberately out of reach). It overflows into the Coin Pouch (the plain toolbar slots are full).", "key": "Right" },
+    { "checkpoint": "s7-learn-axe", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 7 }, "knownRecipes": [ "another-quiet-1", "belt-pouch", "compass", "demo-axe" ], "ui": { "actionQueue": false, "minimap": false },
+        "toolbar": [ { "slot": 0, "item": "Compass Recipe" }, { "slot": 1, "item": "Pouch Recipe" }, { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "hasBag": true, "contents": [ { "item": "Woven Fiber" }, { "item": "Axe Recipe" } ] } ] } },
+
+    { "comment": "FIRST TIMED CRAFT (journey 24:00). One scripted second of game time starts every loaded+known table at once — FirstTimedAction materializes the ACTION QUEUE (absent→present). Each row sits at progress 1/3; the clock ticked 15000→16000ms. The minimap is still absent (no compass yet). The axe recipe is known but its table never queues — it is not craftable.",
+      "checkpoint": "s7-craft-start", "advanceTime": 1000,
+      "assertViewModel": {
+        "ui": { "actionQueue": true, "minimap": false },
+        "clock": { "elapsedMs": 16000, "readout": "00:16" },
+        "actionQueue": [
+          { "facility": "Crafting Table", "recipe": "another-quiet-1", "progress": 1, "duration": 3 },
+          { "facility": "Crafting Table", "recipe": "belt-pouch", "progress": 1, "duration": 3 },
+          { "facility": "Crafting Table", "recipe": "compass", "progress": 1, "duration": 3 }
+        ] },
+      "assertRender": "1/3" },
+
+    { "comment": "NO DRIFT — a plain key press advances neither the clock nor any craft: progress stays 1/3 and the clock stays at 16000ms. Only advanceTime moves crafting ('realtime, deterministically').",
+      "checkpoint": "s7-no-drift", "key": "Left",
+      "assertViewModel": {
+        "cursor": { "row": 2, "col": 6 },
+        "clock": { "elapsedMs": 16000 },
+        "actionQueue": [ { "recipe": "another-quiet-1", "progress": 1 }, { "recipe": "belt-pouch", "progress": 1 }, { "recipe": "compass", "progress": 1 } ] } },
+
+    { "comment": "Advance again — every craft ticks to 2/3.",
+      "checkpoint": "s7-craft-progress", "advanceTime": 1000,
+      "assertViewModel": { "clock": { "elapsedMs": 17000 }, "actionQueue": [ { "recipe": "another-quiet-1", "progress": 2 }, { "recipe": "belt-pouch", "progress": 2 }, { "recipe": "compass", "progress": 2 } ] } },
+
+    { "comment": "COMPLETE (journey 26:00). The third tick finishes all three crafts: the Quiet Compass appears → CompassCrafted materializes the MINIMAP (absent→present) and the queue drains. Wedge count == 1 — only the home Quiet 1 has been ENTERED; the freshly-folded one has not. Inputs were consumed + outputs produced (a declared transform).",
+      "checkpoint": "s7-craft-complete", "advanceTime": 1000, "conserves": false,
+      "assertViewModel": {
+        "ui": { "actionQueue": true, "minimap": true },
+        "clock": { "elapsedMs": 18000 },
+        "actionQueue": [],
+        "minimap": { "core": true, "wedges": 12, "litCount": 1, "lit": [ 0 ] },
+        "knownRecipes": [ "another-quiet-1", "belt-pouch", "compass", "demo-axe" ] },
+      "assertRender": "Zones" },
+
+    { "comment": "EXPLORER PATH (journey 30:00). The middle table (1,6) folded a NEW Quiet 1 wilderness from the ruin's 'another Quiet 1' recipe. Open it (facility → look-in) and lift the crafted bag out of its output tray into the hand.", "key": "Up" },
+    { "checkpoint": "s7-open-wildtable", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 1, "col": 6 }, "openPanels": { "C": "Crafting Table" } } },
+    { "key": "Right" },
+    { "checkpoint": "s7-grab-quiet1", "key": "Right", "assertViewModel": { "openPanels": { "C": "Crafting Table" } } },
+    { "checkpoint": "s7-lift-quiet1", "key": "Primary",
+      "assertViewModel": { "handEmpty": false, "hand": [ { "item": "Quiet 1" } ] } },
+    { "checkpoint": "s7-close-wildtable", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "handEmpty": false } },
+
+    { "comment": "Carry the crafted Quiet 1 to a free home cell (2,6)=cell 22 and drop it (hand → root). It renders a 'partial' fullness pip (grass + one tree inside) — the new bag exists and is visible in the world.", "key": "Down" },
+    { "checkpoint": "s7-drop-quiet1", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 6 }, "handEmpty": true,
+        "cells": [ {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { "item": "Quiet 1", "hasBag": true, "pip": "partial" } ] } },
+
+    { "comment": "ENTER the crafted wilderness (E works where C won't — it is EnterOnly, Dust-palette, Quiet+-glyphed, exactly like the found one). Entering lights a SECOND minimap wedge: litCount 1 → 2. The env header is asserted from the VM env fields.",
+      "checkpoint": "s7-enter-crafted", "key": "Primary",
+      "assertViewModel": {
+        "isNested": true, "activeBag": "Quiet 1",
+        "env": { "palette": "Dust", "glyph": "quiet-positive" },
+        "ui": { "minimap": true },
+        "minimap": { "litCount": 2, "lit": [ 0, 1 ] } },
+      "assertRender": "Quiet 1" },
+
+    { "checkpoint": "s7-leave-crafted", "key": "LeaveBag",
+      "assertViewModel": { "isNested": false, "cursor": { "row": 2, "col": 6 }, "minimap": { "litCount": 2 } } },
+
+    { "comment": "ORGANIZER PATH (journey 30:00). The loom (1,7) crafted a Belt Pouch. Navigate to it, open it, lift the new bag out.", "key": "Up" },
+    { "checkpoint": "s7-at-loom", "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 7 } } },
+    { "checkpoint": "s7-open-loom", "key": "Primary", "assertViewModel": { "openPanels": { "C": "Crafting Table" } } },
+    { "key": "Right" },
+    { "key": "Right" },
+    { "checkpoint": "s7-lift-pouch", "key": "Primary",
+      "assertViewModel": { "handEmpty": false, "hand": [ { "item": "Belt Pouch" } ] } },
+    { "checkpoint": "s7-close-loom", "key": "Peek", "assertViewModel": { "openPanels": { "T": "Toolbar" }, "handEmpty": false } },
+
+    { "comment": "Carry the new Belt Pouch to a free home cell (2,7)=cell 23 and drop it. Fullness pips are on (eye core slotted), so the empty new bag renders an 'empty' pip — the organizer path's proof that the bag recipe crafts a real new carrying space.", "key": "Down" },
+    { "checkpoint": "s7-drop-pouch", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 7 }, "handEmpty": true,
+        "cells": [ {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { "item": "Belt Pouch", "hasBag": true, "pip": "empty" } ] } }
   ]
 }

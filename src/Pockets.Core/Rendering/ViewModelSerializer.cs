@@ -203,6 +203,43 @@ public static class ViewModelSerializer
         foreach (var id in state.KnownRecipes.OrderBy(r => r, StringComparer.Ordinal))
             knownRecipes.Add(id);
 
+        // Action queue (Slice 7, journey 18:00/24:00): every facility currently mid-craft, as a row of
+        // {facility, recipe, progress, duration, name}. The rows + their canonical order come from the
+        // shared GameSession.ActiveCrafts() projection (the same one the frontends read), so the parity
+        // stream, the TUI queue, and the Godot count can never drift. The ui.actionQueue flag gates
+        // whether a frontend DRAWS the panel; this array is the progress signal (rows advance ONLY via
+        // scripted advanceTime).
+        var actionQueue = new JsonArray();
+        foreach (var craft in session.ActiveCrafts())
+        {
+            var row = new JsonObject
+            {
+                ["facility"] = craft.Facility,
+                ["recipe"] = craft.RecipeId,
+                ["progress"] = craft.Progress
+            };
+            if (craft.Name is not null)
+            {
+                row["duration"] = craft.Duration;
+                row["name"] = craft.Name;
+            }
+            actionQueue.Add(row);
+        }
+
+        // Minimap (Slice 7, journey 26:00): the cosmology's 12-wedge ring around the Core dot. Each
+        // wilderness the player has ENTERED lights one wedge, in entry order. Always projected (like the
+        // clock); ui.minimap gates whether a frontend draws it. Only the count + wedge indices are
+        // emitted (never the bag GUIDs), so it is deterministic and cross-driver diff-clean.
+        var litCount = state.ZonesReached.Count;
+        var litWedges = new JsonArray(Enumerable.Range(0, litCount).Select(w => (JsonNode)w).ToArray());
+        var minimap = new JsonObject
+        {
+            ["core"] = true,
+            ["wedges"] = 12,
+            ["litCount"] = litCount,
+            ["lit"] = litWedges
+        };
+
         return new JsonObject
         {
             ["gridColumns"] = grid.Columns,
@@ -210,6 +247,8 @@ public static class ViewModelSerializer
             ["activeBag"] = activeBag.EnvironmentType,
             ["env"] = env,
             ["knownRecipes"] = knownRecipes,
+            ["actionQueue"] = actionQueue,
+            ["minimap"] = minimap,
             ["cells"] = cells,
             ["cursor"] = new JsonObject
             {

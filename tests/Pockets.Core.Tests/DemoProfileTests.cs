@@ -31,10 +31,13 @@ public class DemoProfileTests
     }
 
     [Fact]
-    public void CreateDemoProfile_PinsRogueTickMode()
+    public void CreateDemoProfile_PinsRealtimeTickMode()
     {
-        Assert.Equal(TickMode.Rogue, Profile().TickMode);
-        Assert.Equal(TickMode.Rogue, Profile().NewSession().TickMode);
+        // Slice 7: the demo runs Realtime (clock-driven crafting). A plain key press never advances a
+        // craft — progress moves only through scripted advanceTime / the live SystemGameClock. Slices
+        // 0–6 pinned Rogue only because nothing crafted on the clock yet.
+        Assert.Equal(TickMode.Realtime, Profile().TickMode);
+        Assert.Equal(TickMode.Realtime, Profile().NewSession().TickMode);
     }
 
     [Fact]

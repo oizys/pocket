@@ -260,6 +260,18 @@ public class GameView : Window
         _focusedDescription.UpdateState(state, _controller.Focus);
         // Chrome-as-state: the description pane draws only when the ledger says it exists.
         _focusedDescription.Visible = state.Ui.Has(ChromeElement.DescriptionPane);
+        // Slice-7 realtime chrome (right panel): the action queue (recipe progress rows) and the minimap
+        // radar, each drawn only once its ledger flag is on. Read straight from Core state (the shared
+        // ActiveCrafts projection + ZonesReached) so the TUI shows exactly what the parity stream asserts,
+        // without re-serializing the whole view-model every refresh.
+        var queueLines = new List<string>();
+        if (state.Ui.Has(ChromeElement.ActionQueue))
+            foreach (var craft in _controller.Session.ActiveCrafts())
+                queueLines.Add($"{craft.Name ?? craft.RecipeId} {craft.Progress}/{craft.Duration}");
+        var minimapLine = state.Ui.Has(ChromeElement.Minimap)
+            ? $"Zones ◉ {state.ZonesReached.Count}/12"
+            : "";
+        _rightPanel.SetQueueAndMinimap(queueLines, minimapLine);
         _rightPanel.UpdateLog(_controller.Session.ActionLog);
         // Slice-5 chrome markers on the right panel's title bar (the TUI top-bar surface): each draws
         // only once its ledger flag is on. This is the thin per-frontend render of ClockReadout

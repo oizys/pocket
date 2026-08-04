@@ -132,14 +132,8 @@ public static class ItemDescriptionRenderer
         return (cell, activeBag);
     }
 
-    private static int GetFacilityProgress(GameState state, Bag facilityBag)
-    {
-        var ownerInfo = state.Store.GetOwnerOf(facilityBag.Id);
-        if (ownerInfo is null) return 0;
-        var parentBag = state.Store.GetById(ownerInfo.ParentBagId);
-        var ownerStack = parentBag?.Grid.GetCell(ownerInfo.CellIndex).Stack;
-        return ownerStack?.GetInt("Progress") ?? 0;
-    }
+    private static int GetFacilityProgress(GameState state, Bag facilityBag) =>
+        state.Store.GetOwnerStack(facilityBag.Id)?.GetInt("Progress") ?? 0;
 
     private static Recipe? GetActiveRecipe(Bag facility, ImmutableArray<Recipe> recipes)
     {
