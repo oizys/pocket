@@ -125,6 +125,18 @@ and a display/runtime WSL doesn't provide). Consequences:
 
 ---
 
+## Slice 2 (dialogue box) — Godot node needs a Windows Godot-runtime pass
+Same posture as Slices 0–1: the Godot-side dialogue edits (`GameSceneController` — load the
+`DialogueBook`, gate the room grid on `ChromeElement.Grid`, and a bottom-third `PanelContainer`
+overlay with a `ColorRect` portrait placeholder + line label driven by `state.Dialogue`) are
+**mechanical and reviewed but not compiled here** (no Godot .NET SDK in this WSL). The Core dialogue
+system, the view-model `dialogue` field, and the demo-opening journey section are fully exercised by
+`make parity` (TUI + mock-godot, 51 checkpoints, diff-clean) — the mock-godot driver runs the exact
+serializer + command dispatch the real Godot server uses, so only the actual Godot process/render
+is unverified. **Action for Aaron:** on the Windows box, rebuild `src/Pockets.Godot`, launch, and run
+`make parity-godot` to confirm the live pass + eyeball the dialogue overlay (colored-rect portrait,
+grid hidden at frame 0, box drops on Primary → grid appears). Placeholder art only — no asset pipeline.
+
 ## Follow-ups for later slices
 - **Slice 1 (`UiLedger`)**: render C/W/T panels in Godot from ledger state; then the existing
   `openPanels` checkpoints assert render parity on both drivers.

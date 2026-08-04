@@ -29,7 +29,7 @@ public sealed class TuiDriver : IJourneyDriver
         Application.Init(driver: new FakeDriver());
 
         _view = new GameView(profile.State, profile.Recipes, profile.FacilityRecipeMap,
-            enableTickTimer: false, tickMode: profile.TickMode)
+            enableTickTimer: false, tickMode: profile.TickMode, dialogue: profile.Dialogue)
         {
             X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill()
         };

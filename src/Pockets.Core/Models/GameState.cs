@@ -19,6 +19,14 @@ public record GameState(
     public UiLedger Ui { get; init; } = UiLedger.AllPresent;
 
     /// <summary>
+    /// Runtime dialogue progression (the active beat, fired-once guard, unique-inspect counter).
+    /// Defaults to <see cref="DialogueState.Empty"/> so non-demo profiles never show dialogue. The
+    /// beat definitions themselves live on <see cref="GameSession"/> (<see cref="DialogueBook"/>).
+    /// Progression is monotonic — see <see cref="DialogueState"/> for the undo decision.
+    /// </summary>
+    public DialogueState Dialogue { get; init; } = DialogueState.Empty;
+
+    /// <summary>
     /// Fires a UI trigger, materializing any chrome it reveals. Returns the same instance when
     /// nothing changes (idempotent), so it never manufactures a spurious state change.
     /// </summary>

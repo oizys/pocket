@@ -37,6 +37,20 @@ public class GameController
     /// </summary>
     public ControllerResult HandleKey(GameKey key, Random? rng = null)
     {
+        // Dialogue is modal-lite: while a beat is showing, Primary advances/dismisses it and every
+        // other key is swallowed (handled, no state change) — the input's first job is turning pages,
+        // before movement exists, and nothing leaks to the cursor underneath.
+        if (_session.Current.Dialogue.IsActive)
+        {
+            if (key == GameKey.Primary)
+            {
+                _session = _session.AdvanceDialogue();
+                var showing = _session.Current.Dialogue.IsActive ? "advance" : "dismiss";
+                return ControllerResult.Handle(_session, $"Dialogue: {showing}");
+            }
+            return ControllerResult.Handle(_session, "Dialogue: showing (Primary to continue)");
+        }
+
         // Inline split mode owns its keys: ←/→ adjust, Enter commit, Esc cancel.
         // Every other key is swallowed while in split mode so it behaves like a
         // focused mini-mode without being a true modal.

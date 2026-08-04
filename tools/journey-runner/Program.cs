@@ -25,7 +25,8 @@ DemoProfile? profile = null;
 if (driverName is "tui" or "mock-godot")
 {
     var registry = ContentLoader.LoadFromDirectory(dataDir);
-    profile = GameInitializer.CreateDemoProfile(registry, seed);
+    var dialogue = DialogueLoader.LoadFromDirectory(dataDir);
+    profile = GameInitializer.CreateDemoProfile(registry, seed, dialogue);
 }
 
 using IJourneyDriver driver = driverName switch

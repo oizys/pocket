@@ -34,8 +34,15 @@ public record GameSession(
     TickMode TickMode = TickMode.Rogue,
     int TickCount = 0,
     int MaxUndoDepth = 1000,
-    SplitModeState? SplitMode = null)
+    SplitModeState? SplitMode = null,
+    DialogueBook? Book = null)
 {
+    /// <summary>
+    /// The dialogue beat definitions in play (static content, like <see cref="Recipes"/>). Empty for
+    /// non-demo profiles; the demo profile loads it from <c>/data</c>. Runtime progression lives on
+    /// <see cref="GameState.Dialogue"/>.
+    /// </summary>
+    public DialogueBook Beats => Book ?? DialogueBook.Empty;
     /// <summary>
     /// Creates a new session with empty undo history.
     /// </summary>
@@ -88,7 +95,9 @@ public record GameSession(
 
         return this with
         {
-            Current = previousState,
+            // Dialogue progression is monotonic and never rewinds (see DialogueState): carry the
+            // live dialogue substate forward onto the restored state so a beat can't un-fire.
+            Current = previousState with { Dialogue = Current.Dialogue },
             UndoStack = poppedStack,
             ActionLog = ActionLog.Add(logEntry)
         };
@@ -124,7 +133,71 @@ public record GameSession(
 
         var newCursor = loc.Cursor.Move(direction, activeBag.Grid.Rows, activeBag.Grid.Columns);
         var newLoc = loc with { Cursor = newCursor };
-        return this with { Current = Current with { Locations = Current.Locations.Set(locId, newLoc) } };
+        var moved = this with { Current = Current with { Locations = Current.Locations.Set(locId, newLoc) } };
+
+        // Inspecting = the inventory (B) cursor resting on an item. It reveals the description pane
+        // (first rest) and feeds the Nth-unique-inspect dialogue condition. Not undoable — moves
+        // never are — and inert while a dialogue is blocking the world.
+        return locId == LocationId.B ? moved.EvaluateCursorRest() : moved;
+    }
+
+    /// <summary>
+    /// Evaluates cursor-rest narrative triggers after a B-cursor move: if the cursor now rests on an
+    /// item and no dialogue is blocking, fires <see cref="UiTrigger.FirstCursorRest"/> (description
+    /// pane) and records a unique inspection, firing any <see cref="DialogueTriggerKind.NthUniqueInspect"/>
+    /// beat whose threshold the new unique count reaches. Fire-once and dedup by item type mean a
+    /// rapid back-and-forth scan can never double-fire a beat. Returns the same session when nothing changes.
+    /// </summary>
+    private GameSession EvaluateCursorRest()
+    {
+        var state = Current;
+        if (state.Dialogue.IsActive)
+            return this; // the world is blocked while a beat is showing
+
+        var cell = state.CurrentCell;
+        if (cell.IsEmpty)
+            return this;
+
+        var ui = state.Ui.Fire(UiTrigger.FirstCursorRest);
+        var dialogue = state.Dialogue;
+
+        var typeName = cell.Stack!.ItemType.Name;
+        if (!dialogue.InspectedItems.Contains(typeName))
+        {
+            dialogue = dialogue.Inspect(typeName);
+            foreach (var beat in Beats.WithTrigger(DialogueTriggerKind.NthUniqueInspect))
+            {
+                if (beat.Trigger.Threshold == dialogue.UniqueInspectCount && !dialogue.HasFired(beat.Id))
+                    dialogue = dialogue.Enqueue(beat.Id);
+            }
+        }
+
+        if (ReferenceEquals(ui, state.Ui) && dialogue == state.Dialogue)
+            return this;
+        return this with { Current = state with { Ui = ui, Dialogue = dialogue } };
+    }
+
+    /// <summary>
+    /// Advances the active dialogue by one line, or dismisses it when past the last line. On dismiss
+    /// the beat may materialize chrome (the opening beat reveals the grid — the world fades in as the
+    /// box drops). Not undoable: dialogue progression never rewinds. No-op when nothing is showing.
+    /// </summary>
+    public GameSession AdvanceDialogue()
+    {
+        var dialogue = Current.Dialogue;
+        if (!dialogue.IsActive)
+            return this;
+
+        var beat = Beats.Get(dialogue.ActiveBeatId!);
+        var lineCount = beat?.Lines.Length ?? 1;
+        var (advanced, dismissed) = dialogue.Advance(lineCount);
+
+        var state = Current with { Dialogue = advanced };
+        if (dismissed is not null && beat?.Reveals is ChromeElement reveal)
+            state = state with { Ui = state.Ui.With(reveal) };
+
+        var log = dismissed is not null ? $"Dialogue: dismissed {dismissed}" : "Dialogue: advance";
+        return this with { Current = state, ActionLog = ActionLog.Add(log) };
     }
 
     /// <summary>

@@ -19,6 +19,7 @@ public class GameView : Window
     private readonly BagPanelView _toolbarPanel;   // T panel
     private readonly ItemDescriptionView _focusedDescription; // standalone, follows focus
     private readonly CommandStripView _commandStrip; // global bottom strip
+    private readonly DialogueBoxView _dialogueBox;   // bottom-third narrative overlay
 
     /// <summary>Height of the standalone focused-description pane.</summary>
     private const int FocusedDescriptionHeight = 8;
@@ -42,7 +43,8 @@ public class GameView : Window
         ImmutableArray<Recipe> recipes = default,
         ImmutableDictionary<string, ImmutableArray<string>>? facilityRecipeMap = null,
         bool enableTickTimer = true,
-        TickMode tickMode = TickMode.Realtime) : base("Pockets")
+        TickMode tickMode = TickMode.Realtime,
+        DialogueBook? dialogue = null) : base("Pockets")
     {
         _enableTickTimer = enableTickTimer;
         X = 0;
@@ -63,6 +65,8 @@ public class GameView : Window
             : recipes.IsDefaultOrEmpty
                 ? GameSession.New(initialState)
                 : GameSession.New(initialState, recipes, tickMode);
+        if (dialogue is not null)
+            session = session with { Book = dialogue };
 
         _controller = new GameController(session);
 
@@ -101,6 +105,9 @@ public class GameView : Window
         // Global command strip — single row at the bottom for hotkeys / split editor
         _commandStrip = new CommandStripView();
 
+        // Dialogue box — bottom-third narrative overlay, drawn on top when a beat is showing.
+        _dialogueBox = new DialogueBoxView { Visible = false };
+
         // Wire mouse events
         _gridPanel.GetGridView().GridCellClicked += OnGridCellClicked;
         _gridPanel.GetGridView().GridCellRightClicked += OnGridCellRightClicked;
@@ -111,7 +118,7 @@ public class GameView : Window
         _toolbarPanel.CellClicked += OnPanelCellClicked;
 
         Add(_containerPanel, _gridPanel, _worldPanel, _toolbarPanel, _rightPanel,
-            _focusedDescription, _commandStrip);
+            _focusedDescription, _commandStrip, _dialogueBox);
 
         // Initial state population — populates _focusedDescription, command strip,
         // action log, and runs UpdatePanelLayout so the visible chrome is right
@@ -223,11 +230,28 @@ public class GameView : Window
     {
         var state = _controller.Session.Current;
         _gridPanel.UpdateState(state);
+        // Chrome-as-state: the room grid draws only once it has materialized (demo frame 0 is
+        // dialogue-box-only; non-demo profiles are everything-on so this is identical to before).
+        _gridPanel.Visible = state.Ui.Has(ChromeElement.Grid);
         _focusedDescription.UpdateState(state, _controller.Focus);
         // Chrome-as-state: the description pane draws only when the ledger says it exists.
         _focusedDescription.Visible = state.Ui.Has(ChromeElement.DescriptionPane);
         _rightPanel.UpdateLog(_controller.Session.ActionLog);
         _commandStrip.Update(_controller.Session);
+
+        // Dialogue box: draw the active line (resolved from the beat book) or hide it.
+        var dialogue = state.Dialogue;
+        var beat = dialogue.IsActive ? _controller.Session.Beats.Get(dialogue.ActiveBeatId!) : null;
+        if (beat is not null && dialogue.LineIndex < beat.Lines.Length)
+        {
+            var line = beat.Lines[dialogue.LineIndex];
+            _dialogueBox.Show(line.Portrait, line.Text);
+        }
+        else
+        {
+            _dialogueBox.Hide();
+        }
+
         UpdatePanelLayout();
     }
 

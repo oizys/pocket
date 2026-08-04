@@ -105,6 +105,23 @@ public static class ViewModelSerializer
         foreach (var element in Enum.GetValues<ChromeElement>())
             ui[ToCamel(element.ToString())] = state.Ui.Has(element);
 
+        // Active dialogue (beat id, line text, portrait tag, advance index) resolved against the
+        // session's beat book — null when the box is closed. This is the cross-driver checkpoint
+        // signal for the demo's narrative beats; the text comes straight from the data file.
+        JsonNode? dialogue = null;
+        var dlg = state.Dialogue;
+        if (dlg.IsActive && session.Beats.Get(dlg.ActiveBeatId!) is { } beat && dlg.LineIndex < beat.Lines.Length)
+        {
+            var line = beat.Lines[dlg.LineIndex];
+            dialogue = new JsonObject
+            {
+                ["beatId"] = beat.Id,
+                ["index"] = dlg.LineIndex,
+                ["line"] = line.Text,
+                ["portrait"] = line.Portrait
+            };
+        }
+
         var log = new JsonArray();
         foreach (var entry in session.ActionLog.TakeLast(ActionLogTail))
             log.Add(entry);
@@ -125,6 +142,7 @@ public static class ViewModelSerializer
             ["breadcrumbs"] = breadcrumbs,
             ["openPanels"] = openPanels,
             ["ui"] = ui,
+            ["dialogue"] = dialogue,
             ["isNested"] = state.IsNested,
             ["tickMode"] = session.TickMode.ToString(),
             ["tickCount"] = session.TickCount,

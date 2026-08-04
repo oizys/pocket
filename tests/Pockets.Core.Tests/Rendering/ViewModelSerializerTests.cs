@@ -79,6 +79,28 @@ public class ViewModelSerializerTests
     }
 
     [Fact]
+    public void Serialize_EmitsActiveDialogue_FromTheBook_AndNullWhenClosed()
+    {
+        // With the dialogue book, the demo starts at frame 0 with the opening beat active — the
+        // serialized `dialogue` carries beat id, line index, the data-file text, and portrait tag.
+        var book = DialogueLoader.LoadFromDirectory(TestPaths.DataDir);
+        var withBook = GameInitializer.CreateDemoProfile(
+            ContentLoader.LoadFromDirectory(TestPaths.DataDir), seed: null, dialogue: book);
+        var session = withBook.NewSession();
+
+        var dialogue = ViewModelSerializer.Serialize(session)["dialogue"]!.AsObject();
+        Assert.Equal("opening", dialogue["beatId"]!.GetValue<string>());
+        Assert.Equal(0, dialogue["index"]!.GetValue<int>());
+        Assert.Equal("…cold. Was I reaching for something?", dialogue["line"]!.GetValue<string>());
+        Assert.Equal("groggy", dialogue["portrait"]!.GetValue<string>());
+
+        // Bookless profiles never show dialogue — the field is present and null.
+        var noDialogue = ViewModelSerializer.Serialize(Profile().NewSession());
+        Assert.True(noDialogue.ContainsKey("dialogue"));
+        Assert.Null(noDialogue["dialogue"]);
+    }
+
+    [Fact]
     public void Serialize_ReflectsStateChange_AfterCursorMove()
     {
         var session = Profile().NewSession();

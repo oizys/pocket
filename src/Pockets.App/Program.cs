@@ -17,14 +17,15 @@ if (dir is null)
 
 var dataPath = Path.Combine(dir.FullName, "data");
 var registry = ContentLoader.LoadFromDirectory(dataPath);
+var dialogue = DialogueLoader.LoadFromDirectory(dataPath);
 
 // Both frontends load the same shared, seeded demo profile so the TUI and Godot
-// builds start in identical game state with the same tick mode (parity baseline).
-var profile = GameInitializer.CreateDemoProfile(registry);
+// builds start in identical game state with the same tick mode + dialogue beats (parity baseline).
+var profile = GameInitializer.CreateDemoProfile(registry, dialogue: dialogue);
 
 Application.Init();
 var top = Application.Top;
 top.Add(new GameView(profile.State, profile.Recipes, profile.FacilityRecipeMap,
-    tickMode: profile.TickMode));
+    tickMode: profile.TickMode, dialogue: profile.Dialogue));
 Application.Run();
 Application.Shutdown();

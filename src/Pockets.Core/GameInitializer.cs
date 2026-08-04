@@ -14,14 +14,16 @@ public record DemoProfile(
     GameState State,
     ImmutableArray<Recipe> Recipes,
     ImmutableDictionary<string, ImmutableArray<string>> FacilityRecipeMap,
-    TickMode TickMode)
+    TickMode TickMode,
+    DialogueBook Dialogue)
 {
     /// <summary>
     /// Builds the session both frontends run. Centralizing this guarantees the tick mode
-    /// (and thus per-action tick semantics) is identical across TUI and Godot.
+    /// (and thus per-action tick semantics) and the dialogue beat book are identical across
+    /// TUI and Godot.
     /// </summary>
     public GameSession NewSession() =>
-        GameSession.New(State, Recipes, FacilityRecipeMap, TickMode);
+        GameSession.New(State, Recipes, FacilityRecipeMap, TickMode) with { Book = Dialogue };
 }
 
 /// <summary>
@@ -36,22 +38,44 @@ public static class GameInitializer
     /// </summary>
     public const int DemoSeed = 20260803;
 
+    /// <summary>The demo's opening beat id — seeded active at frame 0 (journey 0:00).</summary>
+    public const string OpeningBeatId = "opening";
+
     /// <summary>
     /// The shared demo-profile initializer used by BOTH the TUI and Godot builds.
     /// Wraps <see cref="CreateFromRegistry"/> with a fixed RNG seed and pins
     /// <see cref="TickMode.Rogue"/> (deterministic per-action ticks, no wall-clock timer),
     /// reconciling the two previously-divergent init paths (unseeded RNG on both;
     /// TUI defaulted to Realtime while Godot pinned Rogue). See design/parity-drift-report.md.
+    ///
+    /// When a <paramref name="dialogue"/> book with the opening beat is supplied (the real
+    /// frontends + journey runner always pass it), the profile starts at journey frame 0:
+    /// dialogue-box only (<see cref="UiLedger.DemoFrameZero"/>, grid ledger-off) with the opening
+    /// beat active — dismissing it fires the grid's materialization. Without the book (bare
+    /// determinism/serializer tests) it starts grid-on (<see cref="UiLedger.DemoInitial"/>).
     /// </summary>
-    public static DemoProfile CreateDemoProfile(ContentRegistry registry, int? seed = null)
+    public static DemoProfile CreateDemoProfile(
+        ContentRegistry registry, int? seed = null, DialogueBook? dialogue = null)
     {
         var rng = new Random(seed ?? DemoSeed);
         var (state, recipes) = CreateFromRegistry(registry, rng);
         var facilityRecipeMap = registry.BuildFacilityRecipeMap();
+        var book = dialogue ?? DialogueBook.Empty;
 
         state = WithDemoLedgerFixtures(state);
 
-        return new DemoProfile(state, recipes, facilityRecipeMap, TickMode.Rogue);
+        // Frame 0 (journey 0:00): the dialogue box alone, world not yet materialized. Only applied
+        // when the opening beat is available so bookless callers keep the grid-on Slice-1 baseline.
+        if (book.Get(OpeningBeatId) is not null)
+        {
+            state = state with
+            {
+                Ui = UiLedger.DemoFrameZero,
+                Dialogue = DialogueState.Empty.Enqueue(OpeningBeatId)
+            };
+        }
+
+        return new DemoProfile(state, recipes, facilityRecipeMap, TickMode.Rogue, book);
     }
 
     /// <summary>

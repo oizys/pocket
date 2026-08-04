@@ -1,7 +1,46 @@
 {
   "name": "smoke",
-  "description": "Slice 0 parity smoke + Slice 1 UiLedger checkpoints (~2 min of play): cursor move+wrap, pick up, drop, look into a bag (Workshop container panel), one full craft (Workbench), then a real breadcrumb enter (Belt Pouch). Same file drives every --driver; checkpoint streams must diff clean and the invariant pack must stay green after every step. The 'ui' asserts pin the progressive-UI ledger's absent→present transitions through real gameplay triggers: toolbar on first pickup, look-in overlay on first peek, breadcrumbs on first enter. Coordinates are pinned to the deterministic demo profile (GameInitializer.DemoSeed); a content change that shifts them is a deliberate script update (append-only history).",
+  "description": "Slice 0 parity smoke + Slice 1 UiLedger + Slice 2 dialogue-box/demo-opening checkpoints. Opens with the demo's frame-0 dialogue-only state (journey 0:00), dismisses the opening beat to materialize the grid (0:45), browses items so the description pane materializes on first cursor-rest (1:30) and the 3rd-unique-inspect fires the amnesia beat exactly once (a rapid re-scan proves no double-fire and no cursor leak), then repositions to (0,0) and runs the original mechanical smoke (cursor move+wrap, pick up, drop, look-in, one full craft, breadcrumb enter). Same file drives every --driver; checkpoint streams must diff clean and the invariant pack must stay green after every step. Dialogue text is asserted straight from data/dialogue/opening.md. Coordinates are pinned to the deterministic demo profile (GameInitializer.DemoSeed); a content change that shifts them is a deliberate script update (append-only history).",
   "steps": [
+    { "comment": "DEMO OPENING (journey 0:00) — frame 0 is the dialogue box alone: grid ledger-off, opening beat active. Pure assert (no action).",
+      "checkpoint": "frame-0",
+      "assertViewModel": {
+        "ui": { "dialogueBox": true, "grid": false, "descriptionPane": false, "toolbar": false, "lookInOverlay": false, "breadcrumbs": false, "shrineView": false, "clockReadout": false, "actionQueue": false, "minimap": false, "fullnessPips": false },
+        "dialogue": { "beatId": "opening", "index": 0, "line": "…cold. Was I reaching for something?", "portrait": "groggy" }
+      },
+      "assertRender": "reaching for something" },
+
+    { "comment": "Dismiss the opening beat on Primary — the box drops and the world (grid) fades in (0:45).",
+      "checkpoint": "opening-dismissed", "key": "Primary",
+      "assertViewModel": { "dialogue": null, "ui": { "dialogueBox": true, "grid": true, "descriptionPane": false, "toolbar": false } } },
+
+    { "comment": "BROWSE (journey 1:30) — first cursor-rest on an item materializes the description pane.",
+      "checkpoint": "inspect-1", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 1 }, "dialogue": null, "ui": { "descriptionPane": true } } },
+    { "checkpoint": "inspect-2", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 2 }, "dialogue": null } },
+    { "comment": "3rd unique item inspected → the amnesia beat fires (exactly once).",
+      "checkpoint": "inspect-3", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 3 }, "dialogue": { "beatId": "amnesia", "index": 0, "line": "I know what these are. Why don't I know where I am?", "portrait": "puzzled" } },
+      "assertRender": "know what these are" },
+
+    { "comment": "Rapid input while the beat shows: a non-Primary key is swallowed — cursor does NOT move (no leak) and the beat does not double-advance.",
+      "checkpoint": "no-cursor-leak", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 3 }, "dialogue": { "beatId": "amnesia", "index": 0 } } },
+
+    { "checkpoint": "amnesia-dismissed", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 0, "col": 3 }, "dialogue": null } },
+
+    { "comment": "Scanning onto a brand-new unique item (4th) does NOT re-fire amnesia (fire-once).",
+      "checkpoint": "no-refire", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 4 }, "dialogue": null } },
+
+    { "comment": "Reposition the cursor back to (0,0) so the original mechanical smoke runs from its pinned start.", "key": "Left" },
+    { "key": "Left" },
+    { "key": "Left" },
+    { "checkpoint": "back-to-origin", "key": "Left",
+      "assertViewModel": { "cursor": { "row": 0, "col": 0 }, "dialogue": null, "ui": { "grid": true, "descriptionPane": true } } },
+
     { "checkpoint": "move-left-wrap", "key": "Left", "assertViewModel": { "cursor": { "row": 0, "col": 7 }, "ui": { "grid": true, "toolbar": false, "lookInOverlay": false, "breadcrumbs": false } }, "assertRender": "Pockets" },
     { "checkpoint": "move-right-wrap", "key": "Right", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
     { "checkpoint": "move-down", "key": "Down", "assertViewModel": { "cursor": { "row": 1, "col": 0 } } },

@@ -27,6 +27,11 @@ public partial class GameSceneController : Control
     private Label _handLabel = null!;
     private Label _statusLabel = null!;
 
+    // Dialogue box (Slice 2): bottom-third overlay, colored-rect portrait placeholder + text.
+    private Control _dialoguePanel = null!;
+    private ColorRect _dialoguePortrait = null!;
+    private Label _dialogueText = null!;
+
     public override void _Ready()
     {
         InitializeGame();
@@ -61,9 +66,10 @@ public partial class GameSceneController : Control
         {
             var dataPath = System.IO.Path.Combine(dir.FullName, "data");
             var registry = ContentLoader.LoadFromDirectory(dataPath);
-            // Shared, seeded demo profile — identical to the TUI build's start state and
-            // tick mode (see Pockets.Core.GameInitializer.CreateDemoProfile).
-            session = GameInitializer.CreateDemoProfile(registry).NewSession();
+            var dialogue = DialogueLoader.LoadFromDirectory(dataPath);
+            // Shared, seeded demo profile — identical to the TUI build's start state, tick mode,
+            // and dialogue beats (see Pockets.Core.GameInitializer.CreateDemoProfile).
+            session = GameInitializer.CreateDemoProfile(registry, dialogue: dialogue).NewSession();
         }
         else
         {
@@ -194,7 +200,45 @@ public partial class GameSceneController : Control
         _toolbarLabel.AddThemeFontSizeOverride("font_size", 13);
         _toolbarLabel.AddThemeColorOverride("font_color", new Color(0.6f, 0.7f, 0.6f));
         bottomBar.AddChild(_toolbarLabel);
+
+        // --- Dialogue box (Slice 2): bottom-third overlay, drawn over everything else. ---
+        // Anchored to the bottom third of the viewport; colored-rect portrait placeholder on the
+        // left, the current line to its right. Placeholder art only (no asset pipeline).
+        _dialoguePanel = new PanelContainer();
+        _dialoguePanel.SetAnchorsPreset(LayoutPreset.BottomWide);
+        _dialoguePanel.AnchorTop = 0.66f;
+        _dialoguePanel.Visible = false;
+        AddPanelStyle((PanelContainer)_dialoguePanel, new Color(0.05f, 0.05f, 0.08f));
+        AddChild(_dialoguePanel);
+
+        var dialogueRow = new HBoxContainer();
+        dialogueRow.AddThemeConstantOverride("separation", 12);
+        _dialoguePanel.AddChild(dialogueRow);
+
+        _dialoguePortrait = new ColorRect();
+        _dialoguePortrait.CustomMinimumSize = new Vector2(72, 72);
+        _dialoguePortrait.Color = new Color(0.4f, 0.45f, 0.6f);
+        dialogueRow.AddChild(_dialoguePortrait);
+
+        _dialogueText = new Label();
+        _dialogueText.AddThemeFontSizeOverride("font_size", 16);
+        _dialogueText.AddThemeColorOverride("font_color", new Color(0.92f, 0.92f, 0.92f));
+        _dialogueText.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _dialogueText.VerticalAlignment = VerticalAlignment.Center;
+        _dialogueText.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        dialogueRow.AddChild(_dialogueText);
     }
+
+    /// <summary>
+    /// Maps a portrait-emotion tag to a placeholder rect color (no asset pipeline in-demo; the TUI
+    /// build uses a glyph face for the same tags). Unknown tags fall back to neutral.
+    /// </summary>
+    private static Color PortraitColor(string emotion) => emotion.ToLowerInvariant() switch
+    {
+        "groggy" => new Color(0.35f, 0.38f, 0.5f),
+        "puzzled" => new Color(0.5f, 0.42f, 0.3f),
+        _ => new Color(0.4f, 0.45f, 0.6f)
+    };
 
     /// <summary>
     /// Maps Godot InputEventKey to abstract GameKey, or null if not a game key.
@@ -250,8 +294,10 @@ public partial class GameSceneController : Control
     {
         var state = _controller.Session.Current;
 
-        // Grid
+        // Grid — chrome-as-state: the room grid draws only once it has materialized (demo frame 0
+        // is dialogue-box-only). Non-demo profiles are everything-on, so this is identical to before.
         _gridPanel.SetState(state.ActiveBag.Grid, state.Cursor.Position);
+        _gridPanel.Visible = state.Ui.Has(ChromeElement.Grid);
 
         // Hand
         _handPanel.SetState(state.HandBag.Grid, new Position(0, 0));
@@ -278,6 +324,21 @@ public partial class GameSceneController : Control
             ? "[1]Grab [2]Drop [3]Split [4]Sort [5]Acquire  |  [E]Enter [Q]Leave [Ctrl-Z]Undo"
             : "[1]Grab [2]Drop [3]Split [4]Sort [5]Acquire  |  [E]Enter [Q]Leave [Ctrl-Z]Undo";
         _toolbarLabel.Visible = state.Ui.Has(ChromeElement.Toolbar);
+
+        // Dialogue box — draw the active line (resolved from the beat book) or hide it.
+        var dialogue = state.Dialogue;
+        var beat = dialogue.IsActive ? _controller.Session.Beats.Get(dialogue.ActiveBeatId!) : null;
+        if (beat is not null && dialogue.LineIndex < beat.Lines.Length)
+        {
+            var line = beat.Lines[dialogue.LineIndex];
+            _dialogueText.Text = line.Text;
+            _dialoguePortrait.Color = PortraitColor(line.Portrait);
+            _dialoguePanel.Visible = true;
+        }
+        else
+        {
+            _dialoguePanel.Visible = false;
+        }
 
         // Action log (last 8 entries)
         var logEntries = _controller.Session.ActionLog.TakeLast(8);

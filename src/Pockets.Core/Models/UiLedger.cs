@@ -80,10 +80,18 @@ public record UiLedger(ImmutableHashSet<ChromeElement> Present)
         new(Enum.GetValues<ChromeElement>().ToImmutableHashSet());
 
     /// <summary>
-    /// The demo profile's opening chrome: grid + cursor only (journey 0:45 row). Everything else
-    /// grows in through triggers. (Frame-0 dialogue-box-only lands with Slice 2's dialogue box.)
+    /// The demo profile's chrome once the world has faded in: grid + cursor only (journey 0:45 row).
+    /// Everything else grows in through triggers. This is the state after the opening dialogue is
+    /// dismissed (see <see cref="DemoFrameZero"/>).
     /// </summary>
     public static readonly UiLedger DemoInitial = new(ImmutableHashSet.Create(ChromeElement.Grid));
+
+    /// <summary>
+    /// The demo's true frame 0 (journey 0:00 row): the dialogue box alone, before the world exists —
+    /// grid ledger-off. Dismissing the opening beat fires <see cref="ChromeElement.Grid"/>
+    /// (the beat's on-dismiss reveal), transitioning to <see cref="DemoInitial"/>'s grid-on state.
+    /// </summary>
+    public static readonly UiLedger DemoFrameZero = new(ImmutableHashSet.Create(ChromeElement.DialogueBox));
 
     /// <summary>True when the given chrome element is currently materialized.</summary>
     public bool Has(ChromeElement element) => Present.Contains(element);
