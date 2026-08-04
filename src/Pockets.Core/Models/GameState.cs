@@ -158,6 +158,29 @@ public record GameState(
     public Bag ActiveBag => Store.GetById(ActiveBagId)!;
 
     /// <summary>
+    /// The active bag at an arbitrary panel location, following that location's own breadcrumb trail
+    /// (B, but also a C/W look-in panel showing a facility). Falls back to <see cref="ActiveBag"/> when
+    /// the location is absent or its trail is broken. Used by the recipe menu, which can be opened on a
+    /// facility whether the player has entered it (B) or peeked it (C).
+    /// </summary>
+    public Bag ActiveBagAt(LocationId loc)
+    {
+        var info = Locations.TryGet(loc);
+        if (info is null) return ActiveBag;
+
+        var bagId = info.BagId;
+        foreach (var entry in info.Breadcrumbs.Reverse())
+        {
+            var bag = Store.GetById(bagId);
+            if (bag is null) break;
+            var cell = bag.Grid.GetCell(entry.CellIndex);
+            if (cell.Stack?.ContainedBagId is not { } childId) break;
+            bagId = childId;
+        }
+        return Store.GetById(bagId) ?? ActiveBag;
+    }
+
+    /// <summary>
     /// Returns a new GameState with the active bag replaced in the store.
     /// </summary>
     private GameState WithActiveBag(Bag newActiveBag) =>

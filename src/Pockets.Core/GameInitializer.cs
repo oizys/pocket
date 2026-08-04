@@ -344,31 +344,38 @@ public static class GameInitializer
 
     /// <summary>
     /// Slice-7 demo content: the <b>Crafting Table</b> — realtime timed crafting + the three-path cliff
-    /// (journey 24:00–28:00). Places three instances of the <see cref="GameState.CraftingTableEnvironment"/>
-    /// facility in the home room, each pre-loaded with one recipe's inputs and pinned to that recipe, plus
-    /// three readable recipe cards. A table only crafts a recipe the player KNOWS (the assembler wiring in
-    /// <see cref="GameSession"/> gates its craftable set on <see cref="GameState.KnownRecipes"/>), so all
-    /// three stay idle through Slices 0–6 and begin the instant their card is learned and game time is
-    /// advanced (<c>advanceTime</c>) — the "realtime, deterministically" contract.
+    /// (journey 24:00–28:00). REVISED by the 2026-08-04 playtest fixes (see the drift report): places ONE
+    /// EMPTY <see cref="GameState.CraftingTableEnvironment"/> facility (generic input slots +
+    /// <see cref="FacilityState.RequiresSelectedRecipe"/> — it never auto-scans), three readable recipe
+    /// cards (learned AND consumed on pickup), and a loose stash of the compass ingredients. The table only
+    /// crafts a recipe the player KNOWS and has explicitly SELECTED from the modal recipe menu, and only
+    /// once its ingredients are loaded through play — so nothing crafts on its own (the old three pre-loaded
+    /// tables instantly crafted the moment their recipe was learned, which is the surprise this fixes).
     ///
-    /// The three paths (30-minute cliff, journey-doc RATIFIED): the <b>compass</b> table proves the
-    /// headline timed craft → Quiet Compass → minimap; the <b>another-quiet-1</b> table proves the
-    /// explorer path (crafting yields a NEW EnterOnly Quiet 1 via the recipe's OutputFactory); the
-    /// <b>belt-pouch</b> table proves the organizer path (a new carrying bag). The <b>demo-axe</b> recipe
-    /// is learnable + readable but priced in Iron Ore that never appears down here, so it is known-but-
-    /// uncraftable (the gatherer path, deliberately just out of reach). Returns the updated state and the
-    /// four demo recipes to append to the profile's recipe set. Demo profile only.
+    /// The three paths (30-minute cliff, journey-doc RATIFIED) are still all reachable: the <b>compass</b>
+    /// recipe is the headline timed craft → Quiet Compass → minimap; <b>another-quiet-1</b> is the explorer
+    /// path (crafting yields a NEW EnterOnly Quiet 1 via its OutputFactory); <b>belt-pouch</b> is the
+    /// organizer path (a new carrying bag); <b>demo-axe</b> is the gatherer path, known + readable but
+    /// priced in Iron Ore too scarce to gather (only one exists; the axe needs two) — known-but-uncraftable.
+    /// The journey crafts the compass and proves the other paths' *availability* (all known); each recipe's
+    /// craftability is proven at the Core level (<c>CraftingTableTests.SelectLoadCraft_*</c>). Returns the
+    /// updated state and the four demo recipes to append to the profile's recipe set. Demo profile only.
     /// </summary>
     private static (GameState State, ImmutableArray<Recipe> Recipes) WithDemoCraftingTables(GameState state)
     {
-        // Pinned free home cells (see the initial-layout audit): tables in row 1, cards in row 2.
-        const int compassTableCell = 13, wildTableCell = 14, loomCell = 15;
+        // Pinned free home cells (see the initial-layout audit): the single table in row 1, cards in row 2.
+        const int compassTableCell = 13;
         const int compassCardCell = 21, pouchCardCell = 22, axeCardCell = 23;
+        // Loose "gathered materials" for the compass craft (cells 14/15, the two freed by dropping the old
+        // wild/loom tables). These are the ingredients the player is assumed to have collected — placed in
+        // the antechamber, NOT in the table, so the Slice-7 beat LOADS the empty table through play (grab
+        // to toolbar → drop into a slot) instead of a table that arrives pre-loaded and instantly crafts.
+        const int grassStashCell = 14, boneStashCell = 15;
 
         var rootGrid = state.RootBag.Grid;
         // Defensive: if any pinned cell is occupied (layout drift), skip the whole feature rather than
         // overwrite content — the journey's Slice-7 asserts would then flag the drift loudly.
-        foreach (var i in new[] { compassTableCell, wildTableCell, loomCell, compassCardCell, pouchCardCell, axeCardCell })
+        foreach (var i in new[] { compassTableCell, compassCardCell, pouchCardCell, axeCardCell, grassStashCell, boneStashCell })
             if (!rootGrid.GetCell(i).IsEmpty)
                 return (state, ImmutableArray<Recipe>.Empty);
 
@@ -428,38 +435,39 @@ public static class GameInitializer
             () => RecipeOutput.FromStacks(new[] { new ItemStack(Type("Stone Axe"), 1) }),
             Duration: 3);
 
-        // --- Three pre-loaded Crafting Table facilities (each pinned to its recipe). ---
-        Bag LoadedTable(string recipeId, ItemStack in1, ItemStack in2)
+        // --- ONE empty Crafting Table (playtest fix, 2026-08-04). ---
+        // Was three pre-loaded, recipe-pinned tables (a Slice-7 journey convenience); that pre-seating
+        // caused "learn a recipe → it instantly crafts because the ingredients already sat in the table."
+        // Now a single EMPTY generic assembler: two unfiltered intake slots + one output. It stays inert
+        // (RequiresSelectedRecipe) until the player learns a recipe, picks it from the modal recipe menu,
+        // and loads the ingredients through play — no surprise instant crafts. The four demo recipes are
+        // still the craftable set (gated on KnownRecipes), so the three-path cliff is unchanged.
+        Bag EmptyTable()
         {
             var grid = Grid.Create(3, 1)
-                .SetCell(0, new Cell(Stack: in1, Frame: new InputSlotFrame("in1", ItemTypeFilter: in1.ItemType)))
-                .SetCell(1, new Cell(Stack: in2, Frame: new InputSlotFrame("in2", ItemTypeFilter: in2.ItemType)))
+                .SetCell(0, new Cell(Frame: new InputSlotFrame("in1")))   // unfiltered — a generic tray
+                .SetCell(1, new Cell(Frame: new InputSlotFrame("in2")))
                 .SetCell(2, new Cell(Frame: new OutputSlotFrame("out1")));
             return new Bag(grid, GameState.CraftingTableEnvironment, "Brown",
-                FacilityState: new FacilityState(ActiveRecipeId: recipeId));
+                FacilityState: new FacilityState(RequiresSelectedRecipe: true));
         }
 
-        var compassTable = LoadedTable(CompassRecipeId,
-            new ItemStack(Type("Dry Grass"), 3), new ItemStack(Type("Bone Chips"), 2));
-        var wildTable = LoadedTable(AnotherQuiet1RecipeId,
-            new ItemStack(Type("Rough Wood"), 2), new ItemStack(Type("Plain Rock"), 2));
-        var loom = LoadedTable(BeltPouchRecipeId,
-            new ItemStack(Type("Tanned Leather"), 2), new ItemStack(Type("Woven Fiber"), 1));
+        var table = EmptyTable();
 
         var tableType = new ItemType(GameState.CraftingTableEnvironment, Category.Structure, IsStackable: false,
-            Description: "A scarred work surface with two intake trays and a finished-goods tray. Drop what a recipe asks for; time does the rest.");
+            Description: "A scarred work surface with two intake trays and a finished-goods tray. Pick a recipe (R), drop what it asks for; time does the rest.");
 
-        // --- Three readable recipe cards (RecipeItemProperty-tagged; learned on pickup). ---
+        // --- Three readable recipe cards (RecipeItemProperty-tagged; learned AND consumed on pickup). ---
         ItemStack Card(string itemName, string recipeId) =>
             new ItemStack(Type(itemName), 1).WithProperty(GameState.RecipeItemProperty, new StringValue(recipeId));
 
         rootGrid = rootGrid
-            .SetCell(compassTableCell, new Cell(Stack: new ItemStack(tableType, 1, ContainedBagId: compassTable.Id)))
-            .SetCell(wildTableCell, new Cell(Stack: new ItemStack(tableType, 1, ContainedBagId: wildTable.Id)))
-            .SetCell(loomCell, new Cell(Stack: new ItemStack(tableType, 1, ContainedBagId: loom.Id)))
+            .SetCell(compassTableCell, new Cell(Stack: new ItemStack(tableType, 1, ContainedBagId: table.Id)))
             .SetCell(compassCardCell, new Cell(Stack: Card("Compass Recipe", CompassRecipeId)))
             .SetCell(pouchCardCell, new Cell(Stack: Card("Pouch Recipe", BeltPouchRecipeId)))
-            .SetCell(axeCardCell, new Cell(Stack: Card("Axe Recipe", DemoAxeRecipeId)));
+            .SetCell(axeCardCell, new Cell(Stack: Card("Axe Recipe", DemoAxeRecipeId)))
+            .SetCell(grassStashCell, new Cell(Stack: new ItemStack(Type("Dry Grass"), 3)))
+            .SetCell(boneStashCell, new Cell(Stack: new ItemStack(Type("Bone Chips"), 2)));
 
         var itemTypes = state.ItemTypes;
         if (!itemTypes.Contains(tableType)) itemTypes = itemTypes.Add(tableType);
@@ -467,7 +475,7 @@ public static class GameInitializer
         var newState = state with
         {
             ItemTypes = itemTypes,
-            Store = state.Store.Add(compassTable).Add(wildTable).Add(loom)
+            Store = state.Store.Add(table)
                 .Set(state.RootBagId, state.RootBag with { Grid = rootGrid })
         };
 

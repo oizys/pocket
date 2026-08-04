@@ -41,8 +41,8 @@ an assertable absent→present transition.)*
 > | 12:00–15:30 Shrine | `s5-enter-shrine`..`s5-eye-filter` | Shrine = a plain enterable bag; injectable clock; scripted `advanceTime` only. |
 > | 15:30–21:00 wilderness | `c6-*`, `s5-capacity` | Real Quiet 1; eye-core source re-pointed Chest→ruin; unnavigable trees; recipe-as-item. |
 > | 21:00–24:00 bags-in-bags | `hint-negative` | **Hint + first-nest memory fragment DEFERRED** (no nesting-event trigger in Core); the negative is the test. |
-> | 24:00–28:00 table / compass | `s7-craft-start`..`s7-craft-complete` | Crafting Table = generic assembler (KnownRecipes∩Recipes); minimap lights on *entering*, not crafting. |
-> | 28:00–30:00 eye of fullness + cliff | `s5-slot-core`, `s7-*`, `final-golden` | Fullness (not Sort) is the closing unlock; three-path cliff incl. the axe negative (known-but-uncraftable). |
+> | 24:00–28:00 table / compass | `s7-learn-*`, `s7-recipe-menu`, `s7-craft-start`..`s7-craft-complete` | **Revised by the 2026-08-04 playtest fixes** (see drift report): ONE empty table (not three pre-loaded); recipe cards are consumed on learn; the recipe is picked from a **modal menu** (R), then ingredients are loaded through play; then the compass crafts. |
+> | 28:00–30:00 eye of fullness + cliff | `s5-slot-core`, `s7-*`, `final-golden` | Fullness (not Sort) is the closing unlock; three-path cliff proven by *availability* (all three recipes known) + the axe negative (known-but-uncraftable, Iron-Ore-scarce). `minimap.litCount` ends at 1 (one wilderness entered). |
 
 **Spine in one line:** wake with nothing — not even UI — and let curiosity
 pull verbs, panels, and memory into existence, one noticed absence at a
@@ -255,6 +255,13 @@ Nothing else may summon it early (regression tests hammer this).
   event, not time.
 
 ## 24:00–28:00 — The Crafting Table (action queue; the Compass)
+
+> **Revised by the 2026-08-04 playtest fixes** (Aaron's first run — see
+> [`parity-drift-report.md` § Playtest fixes](parity-drift-report.md)). The three pre-loaded tables are
+> gone: the antechamber has **one empty Crafting Table**. The beat is now: learn the recipe cards (each is
+> **consumed on learn** — poof, no longer parked in the toolbar), open the table, pick the recipe from a
+> **modal recipe menu** (R — the no-modal rule is reversed), load the trays through play, then advance time
+> to craft. No more "learn a recipe → it instantly crafts because the ingredients were pre-sat there."
 
 - **Input**: home again; drop sticks + rocks + Dry Grass at the
   **Crafting Table** (1×3, input/output frames — Stage-3 facility

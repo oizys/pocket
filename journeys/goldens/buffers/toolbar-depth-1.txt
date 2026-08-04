@@ -5,7 +5,7 @@
 ││         W    F                   W 3  F 6  R 4     ││Pickup: 10 Plain Rock ││
 ││                                                    ││Dialogue: dismissed am││
 ││                                                    ││Dialogue: dismissed op││
-││         B    C    Q         S    C    C    C       ││                      ││
+││         B    C    Q         S    C    D 3  B 2     ││                      ││
 ││                                                    ││                      ││
 ││        ┌  Toolbar─────────────┐                    ││                      ││
 ││        │                      │  C    P    A       ││                      ││

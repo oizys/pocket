@@ -122,7 +122,7 @@ public sealed class TuiDriver : IJourneyDriver
         GameKey.BeginSplit => (TgKey)'#',
         GameKey.Sort => (TgKey)'4',
         GameKey.AcquireRandom => (TgKey)'5',
-        GameKey.CycleRecipe => (TgKey)'r',
+        GameKey.RecipeMenu => (TgKey)'r',
         GameKey.Peek => (TgKey)'c',
         GameKey.LeaveBag => (TgKey)'q',
         GameKey.Undo => TgKey.Z | TgKey.CtrlMask,

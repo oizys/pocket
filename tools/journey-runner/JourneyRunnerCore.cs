@@ -82,13 +82,24 @@ public static class JourneyRunnerCore
                 var census = InvariantChecker.Census(state);
                 if (prevCensus is not null)
                 {
-                    var delta = InvariantChecker.CensusDelta(prevCensus, census);
-                    if (delta.Count > 0)
+                    if (step.ExpectDelta is { } expectedDelta)
                     {
-                        if (step.Conserves)
-                            failures.Add($"[{i} {label}] conservation breach: {string.Join("; ", delta)}");
-                        else
-                            notes.Add($"[{i} {label}] declared transform: {string.Join("; ", delta)}");
+                        // Sanctioned removal/transform: the census must change by EXACTLY this map — no
+                        // more appeared or vanished (accounts for e.g. a consumed recipe card precisely).
+                        var deltaMismatch = CensusDeltaMismatch(prevCensus, census, expectedDelta);
+                        if (deltaMismatch is not null)
+                            failures.Add($"[{i} {label}] expected-delta mismatch: {deltaMismatch}");
+                    }
+                    else
+                    {
+                        var delta = InvariantChecker.CensusDelta(prevCensus, census);
+                        if (delta.Count > 0)
+                        {
+                            if (step.Conserves)
+                                failures.Add($"[{i} {label}] conservation breach: {string.Join("; ", delta)}");
+                            else
+                                notes.Add($"[{i} {label}] declared transform: {string.Join("; ", delta)}");
+                        }
                     }
                 }
                 prevCensus = census;
@@ -130,6 +141,33 @@ public static class JourneyRunnerCore
         }
 
         return new RunResult(driver.Name, checkpoints, failures, notes, goldens);
+    }
+
+    /// <summary>
+    /// Returns null when the census changed by EXACTLY <paramref name="expected"/> (name → signed delta),
+    /// or a human-readable description of the first discrepancy. Any name not in <paramref name="expected"/>
+    /// must be unchanged; any name in it must change by precisely that amount.
+    /// </summary>
+    private static string? CensusDeltaMismatch(
+        ImmutableSortedDictionary<string, int> before,
+        ImmutableSortedDictionary<string, int> after,
+        IReadOnlyDictionary<string, int> expected)
+    {
+        var names = before.Keys.Union(after.Keys).OrderBy(n => n, StringComparer.Ordinal);
+        foreach (var name in names)
+        {
+            before.TryGetValue(name, out var b);
+            after.TryGetValue(name, out var a);
+            var actual = a - b;
+            expected.TryGetValue(name, out var want); // 0 when not listed → must be unchanged
+            if (actual != want)
+                return $"{name}: changed by {(actual >= 0 ? "+" : "")}{actual}, expected {(want >= 0 ? "+" : "")}{want}";
+        }
+        // Expected names that never appeared in either census (delta 0) but were asked to change.
+        foreach (var (name, want) in expected)
+            if (want != 0 && !before.ContainsKey(name) && !after.ContainsKey(name))
+                return $"{name}: absent, expected change {(want >= 0 ? "+" : "")}{want}";
+        return null;
     }
 
     private static void Act(IJourneyDriver driver, JourneyStep step)

@@ -131,54 +131,104 @@ public class CraftingTableTests
         Assert.False(c.Session.Current.Ui.Has(ChromeElement.Minimap));
     }
 
-    // ---- The three-path cliff at the demo profile ----
+    // ---- The single empty table + the three-path cliff at the demo profile ----
 
-    private static DemoProfile DemoAllKnown()
+    private static (GameController Controller, Guid TableId, GameState State) EmptyDemoTable(params string[] known)
     {
         var profile = GameInitializer.CreateDemoProfile(ContentLoader.LoadFromDirectory(TestPaths.DataDir));
-        // Learn every cliff recipe up-front (the journey does this by picking up the cards).
-        var known = profile.State.KnownRecipes
-            .Add(GameInitializer.CompassRecipeId)
-            .Add(GameInitializer.AnotherQuiet1RecipeId)
-            .Add(GameInitializer.BeltPouchRecipeId)
-            .Add(GameInitializer.DemoAxeRecipeId);
-        return profile with { State = profile.State with { KnownRecipes = known } };
+        var k = profile.State.KnownRecipes;
+        foreach (var id in known) k = k.Add(id);
+        var session = (profile with { State = profile.State with { KnownRecipes = k } }).NewSession();
+        var tableId = session.Current.Store.All
+            .First(b => b.EnvironmentType == GameState.CraftingTableEnvironment).Id;
+        return (new GameController(session), tableId, session.Current);
+    }
+
+    private static ItemType DemoType(GameState s, string name) => s.ItemTypes.First(t => t.Name == name);
+
+    /// <summary>Loads the given ingredients into the empty table's generic input slots and pins the recipe
+    /// (the white-box equivalent of: open the modal, select a recipe, then drop the ingredients).</summary>
+    private static void LoadAndSelect(GameController c, Guid tableId, string recipeId, params ItemStack[] ins)
+    {
+        var table = c.Session.Current.Store.GetById(tableId)!;
+        var grid = table.Grid;
+        for (int i = 0; i < ins.Length; i++)
+            grid = grid.SetCell(i, grid.GetCell(i) with { Stack = ins[i] });
+        var loaded = table with { Grid = grid, FacilityState = table.FacilityState! with { ActiveRecipeId = recipeId } };
+        var newState = c.Session.Current with { Store = c.Session.Current.Store.Set(tableId, loaded) };
+        c.SetSession(c.Session with { Current = newState });
     }
 
     [Fact]
-    public void DemoTables_CraftCompass_Wilderness_AndPouch_ButNeverTheAxe()
+    public void EmptyTable_StaysInert_UntilARecipeIsSelected()
     {
-        var c = new GameController(DemoAllKnown().NewSession());
+        // The empty table with ingredients dropped in but NO recipe selected must NOT auto-craft
+        // (RequiresSelectedRecipe) — the whole point of the one-empty-table playtest fix.
+        var (c, table, s0) = EmptyDemoTable(GameInitializer.CompassRecipeId);
+        var t = c.Session.Current.Store.GetById(table)!;
+        var grid = t.Grid
+            .SetCell(0, t.Grid.GetCell(0) with { Stack = new ItemStack(DemoType(s0, "Dry Grass"), 3) })
+            .SetCell(1, t.Grid.GetCell(1) with { Stack = new ItemStack(DemoType(s0, "Bone Chips"), 2) });
+        c.SetSession(c.Session with { Current = c.Session.Current with
+            { Store = c.Session.Current.Store.Set(table, t with { Grid = grid }) } });
 
-        c.AdvanceClock(TimeSpan.FromSeconds(3)); // all three loaded+known tables complete
+        c.AdvanceClock(TimeSpan.FromSeconds(10));
+        Assert.Null(c.Session.Current.Store.GetById(table)!.FacilityState!.RecipeId);
+        Assert.False(HasItem(c, "Quiet Compass"));
+    }
 
-        Assert.True(HasItem(c, "Quiet Compass"));        // gatherer→compass headline
-        Assert.True(HasItem(c, "Belt Pouch"));           // organizer path: a new bag
-        // Explorer path: a freshly-crafted EnterOnly Quiet 1 wilderness bag now exists.
-        var craftedWilds = c.Session.Current.Store.All
+    [Fact]
+    public void SelectLoadCraft_ProducesCompass_AndFiresMinimap()
+    {
+        var (c, table, s0) = EmptyDemoTable(GameInitializer.CompassRecipeId);
+        LoadAndSelect(c, table, GameInitializer.CompassRecipeId,
+            new ItemStack(DemoType(s0, "Dry Grass"), 3), new ItemStack(DemoType(s0, "Bone Chips"), 2));
+
+        c.AdvanceClock(TimeSpan.FromSeconds(3)); // Duration 3 → complete
+        Assert.True(HasItem(c, "Quiet Compass"));
+        Assert.True(c.Session.Current.Ui.Has(ChromeElement.Minimap));
+    }
+
+    [Fact]
+    public void SelectLoadCraft_Wilderness_ProducesAnEnterableQuiet1()
+    {
+        var (c, table, s0) = EmptyDemoTable(GameInitializer.AnotherQuiet1RecipeId);
+        var before = c.Session.Current.Store.All
             .Count(b => b.EnvironmentType == GameInitializer.WildernessEnvironment && b.EnterOnly);
-        Assert.True(craftedWilds >= 2); // the original home Quiet 1 + at least one crafted
+        LoadAndSelect(c, table, GameInitializer.AnotherQuiet1RecipeId,
+            new ItemStack(DemoType(s0, "Rough Wood"), 2), new ItemStack(DemoType(s0, "Plain Rock"), 2));
 
-        // Gatherer path deliberately out of reach: the axe recipe is KNOWN but priced in Iron Ore that
-        // never appears down here, so the craftable-set gate never admits it — no Stone Axe is produced.
-        Assert.Contains(GameInitializer.DemoAxeRecipeId, c.Session.Current.KnownRecipes);
-        Assert.False(HasItem(c, "Stone Axe"));
+        c.AdvanceClock(TimeSpan.FromSeconds(3));
+        var crafted = c.Session.Current.Store.All
+            .Where(b => b.EnvironmentType == GameInitializer.WildernessEnvironment && b.EnterOnly).ToList();
+        Assert.Equal(before + 1, crafted.Count); // one fresh EnterOnly Quiet 1
+        Assert.All(crafted, b => Assert.True(b.EnterOnly));
+        Assert.Contains(crafted, b => b.ColorScheme == GameInitializer.WildernessPalette
+                                      && b.Glyph == GameInitializer.WildernessGlyph);
     }
 
     [Fact]
-    public void CraftedQuiet1_IsEnterable_AndLightsASecondWedge()
+    public void SelectLoadCraft_Pouch_ProducesABag()
     {
-        var c = new GameController(DemoAllKnown().NewSession());
+        var (c, table, s0) = EmptyDemoTable(GameInitializer.BeltPouchRecipeId);
+        LoadAndSelect(c, table, GameInitializer.BeltPouchRecipeId,
+            new ItemStack(DemoType(s0, "Tanned Leather"), 2), new ItemStack(DemoType(s0, "Woven Fiber"), 1));
+
         c.AdvanceClock(TimeSpan.FromSeconds(3));
+        Assert.True(HasItem(c, "Belt Pouch"));
+    }
 
-        // Find the crafted wilderness (the one NOT reachable from the home root cell 10).
-        var homeWildId = c.Session.Current.RootBag.Grid.GetCell(10).Stack!.ContainedBagId!.Value;
-        var crafted = c.Session.Current.Store.All.First(b =>
-            b.EnvironmentType == GameInitializer.WildernessEnvironment && b.EnterOnly && b.Id != homeWildId);
-
-        Assert.True(crafted.EnterOnly);
-        Assert.Equal(GameInitializer.WildernessPalette, crafted.ColorScheme);
-        Assert.Equal(GameInitializer.WildernessGlyph, crafted.Glyph);
+    [Fact]
+    public void DemoProfile_CannotCraftTheAxe_IronOreTooScarce()
+    {
+        // The gatherer path is deliberately out of reach: the axe is priced at Iron Ore ×2 but the whole
+        // demo world holds fewer than 2 Iron Ore, so no amount of play produces a Stone Axe. The recipe is
+        // still learnable + readable (the cliff shows the path); the materials just aren't there.
+        var (_, _, s0) = EmptyDemoTable(GameInitializer.DemoAxeRecipeId);
+        var axe = new[] { new RecipeInput(DemoType(s0, "Iron Ore"), 2) };
+        var totalIronOre = s0.Store.All.Sum(b => b.Grid.Cells
+            .Where(cell => cell.Stack?.ItemType.Name == "Iron Ore").Sum(cell => cell.Stack!.Count));
+        Assert.True(totalIronOre < axe[0].Count, $"demo has {totalIronOre} Iron Ore; the axe needs {axe[0].Count}");
     }
 
     // ---- Minimap zones: entering lights a wedge, crafting does not ----

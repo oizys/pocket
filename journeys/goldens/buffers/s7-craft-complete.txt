@@ -1,25 +1,25 @@
 ┌ Pockets ─────────────────────────────────────────────────────────────────────┐
-│┌ ► Inventory ───────────────────────────────────────┐┌ Clk 00:18  Shrine  ──┐│
-││       Default                                   Han││Zones ◉ 1/12         ▲││
-││           ●    ◐                                   ││--------             ┬││
-││         W    F    D 2                 F 6  R 4     ││✦ Crafting Table craf│││
-││                                                    ││✦ Crafting Table craf│││
-││           ○    ◐    ◐         ●    ◐    ◐    ◐     ││✦ Crafting Table craf│││
-││         B    C    Q    S 3  S    C    C    C       ││Tick #47             │││
-││                                                    ││Tick #46             │││
-││        ┌  Toolbar─────────────┐                    ││Pickup: 1 Axe Recipe ┴││
-││        │                   ●  │                    ││Pickup: 1 Pouch Recip░││
-││        │  C    P    T 6  C    │                    ││Pickup: 1 Compass Rec░││
-││        │                      │                    ││Back: returned to par░││
-││        │                      │  G                 ││FAILED: Harvest: 1 Ey░││
-│└────────└──────────────────────┘────────────────────┘│Dialogue: dismissed s░││
-│┌ Item ──────────────────────────────────────────────┐│Drop: 1 Eye Core     ░││
-││(empty)                                             ││Enter: Shrine        ░││
-││                                                    ││Close peek: C        ░││
-││                                                    ││Dialogue: dismissed c░││
-││                                                    ││Peek: Pouch          ░││
+│         ┌► Crafting Table─┐                          ┌ Clk 00:18  Shrine  ──┐│
+│         │                 │                          │Zones ◉ 1/12         ▲││
+│         │            Q    │                          │--------             ┬││
+│         │  ▼▼▼  ▼▼▼  ▲▲▲  │                          │✦ Crafting Table craf│││
+│         │                 │                          │Tick #54             │││
+│┌   Inventory ───────────────────────────────────────┐│Tick #53             │││
+││       Default                                   Han││Drop: 2 Bone Chips   │││
+││           ●    ◐                                   ││Grab: 2 Bone Chips   ┴││
+││        ┌  Toolbar─────────────┐       F 6  R 4     ││Drop: 3 Dry Grass    ░││
+││        │                   ◐  │                    ││Grab: 3 Dry Grass    ░││
+││        │            T 6  C    │    ◐               ││SetRecipe: compass   ░││
+││        │                      │  C                 ││Recipe menu: opened (░││
+││        │                      │                    ││Open Container: Craft░││
+│└────────└──────────────────────┘────────────────────┘│Pickup: 2 Bone Chips ░││
+│┌ Item ──────────────────────────────────────────────┐│Pickup: 3 Dry Grass →░││
+││[Input Slot]                                        ││Pickup: 1 Axe Recipe ░││
+││Accepts: any                                        ││Pickup: 1 Pouch Recip░││
+││                                                    ││Pickup: 1 Compass Rec░││
 ││                                                    ││Back: returned to par░││
-││                                                    ││Close peek: C        ▼││
+││                                                    ││FAILED: Harvest: 1 Ey░││
+││                                                    ││Dialogue: dismissed s▼││
 │└────────────────────────────────────────────────────┘│◄├────────────────┤░► ││
 │[1/E:Action] [C:Peek] [2:Half] [3:QuickSplit] [#:Split] [4:Sort] [R:Recipe] [Q│
 └──────────────────────────────────────────────────────────────────────────────┘

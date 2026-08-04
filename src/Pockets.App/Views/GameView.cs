@@ -20,6 +20,7 @@ public class GameView : Window
     private readonly ItemDescriptionView _focusedDescription; // standalone, follows focus
     private readonly CommandStripView _commandStrip; // global bottom strip
     private readonly DialogueBoxView _dialogueBox;   // bottom-third narrative overlay
+    private readonly RecipeMenuView _recipeMenu;     // centered modal recipe list
 
     /// <summary>Height of the standalone focused-description pane.</summary>
     private const int FocusedDescriptionHeight = 8;
@@ -108,6 +109,9 @@ public class GameView : Window
         // Dialogue box — bottom-third narrative overlay, drawn on top when a beat is showing.
         _dialogueBox = new DialogueBoxView { Visible = false };
 
+        // Recipe menu — a centered modal, drawn on top when the player opens it on a facility.
+        _recipeMenu = new RecipeMenuView { Visible = false };
+
         // Wire mouse events
         _gridPanel.GetGridView().GridCellClicked += OnGridCellClicked;
         _gridPanel.GetGridView().GridCellRightClicked += OnGridCellRightClicked;
@@ -118,7 +122,7 @@ public class GameView : Window
         _toolbarPanel.CellClicked += OnPanelCellClicked;
 
         Add(_containerPanel, _gridPanel, _worldPanel, _toolbarPanel, _rightPanel,
-            _focusedDescription, _commandStrip, _dialogueBox);
+            _focusedDescription, _commandStrip, _dialogueBox, _recipeMenu);
 
         // Initial state population — populates _focusedDescription, command strip,
         // action log, and runs UpdatePanelLayout so the visible chrome is right
@@ -193,7 +197,7 @@ public class GameView : Window
             (Key)'#' => GameKey.BeginSplit,
             (Key)'4' => GameKey.Sort,
             (Key)'5' => GameKey.AcquireRandom,
-            (Key)'r' or (Key)'R' => GameKey.CycleRecipe,
+            (Key)'r' or (Key)'R' => GameKey.RecipeMenu,
             (Key)'c' or (Key)'C' => GameKey.Peek,
             (Key)'q' or (Key)'Q' => GameKey.LeaveBag,
             Key.Enter => GameKey.Confirm,
@@ -210,11 +214,10 @@ public class GameView : Window
         if (gameKey is null)
             return base.ProcessKey(keyEvent);
 
-        // While SplitMode is active, swallow keys at the controller layer.
-        // Outside split mode, Enter/Esc shouldn't be handled by us — Terminal.Gui
-        // may need them for focus or other defaults — so only route them when
-        // the controller is in split mode.
-        if (_controller.Session.SplitMode is null &&
+        // While a modal-lite (SplitMode or the recipe menu) is active, Enter/Esc are the modal's
+        // confirm/cancel and must reach the controller. Outside those, Enter/Esc shouldn't be handled
+        // by us — Terminal.Gui may need them for focus or other defaults.
+        if (_controller.Session.SplitMode is null && _controller.Session.RecipeMenu is null &&
             (gameKey == GameKey.Confirm || gameKey == GameKey.Cancel))
         {
             return base.ProcessKey(keyEvent);
@@ -299,6 +302,11 @@ public class GameView : Window
         {
             _dialogueBox.Hide();
         }
+
+        // Recipe menu: a real modal drawn on top while it is open (Core state gates it).
+        _recipeMenu.Render(_controller.Session.RecipeMenu);
+        if (_controller.Session.RecipeMenu is not null)
+            BringSubviewToFront(_recipeMenu);
 
         UpdatePanelLayout();
 

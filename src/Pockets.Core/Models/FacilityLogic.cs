@@ -133,13 +133,19 @@ public static class FacilityLogic
             return (facility, newProgress, Array.Empty<Bag>());
         }
 
-        // Not crafting: try to start using ActiveRecipeId if set, otherwise scan
+        // Not crafting: try to start using ActiveRecipeId if set, otherwise scan.
         Recipe? match;
         if (state.ActiveRecipeId is not null)
         {
             var activeRecipe = recipes.FirstOrDefault(r => r.Id == state.ActiveRecipeId);
             match = activeRecipe is not null && RecipeMatches(activeRecipe, inputStacks)
                 ? activeRecipe : null;
+        }
+        else if (state.RequiresSelectedRecipe)
+        {
+            // A manual assembler (the Crafting Table) never auto-scans — it stays idle until the player
+            // selects a recipe from the modal menu. This is what keeps the empty starting table inert.
+            match = null;
         }
         else
         {

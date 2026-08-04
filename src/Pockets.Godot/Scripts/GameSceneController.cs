@@ -33,6 +33,8 @@ public partial class GameSceneController : Control
     private Control _dialoguePanel = null!;
     private ColorRect _dialoguePortrait = null!;
     private Label _dialogueText = null!;
+    private PanelContainer _recipeMenuPanel = null!;  // playtest: thin modal recipe menu
+    private Label _recipeMenuLabel = null!;
 
     public override void _Ready()
     {
@@ -245,6 +247,20 @@ public partial class GameSceneController : Control
         _dialogueText.VerticalAlignment = VerticalAlignment.Center;
         _dialogueText.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         dialogueRow.AddChild(_dialogueText);
+
+        // Modal recipe menu (playtest feature): a thin but functional centered overlay listing the
+        // craftable recipes with the selection marked. Drawn from Core state; ↑/↓ move, Enter sets,
+        // Esc/Q closes (handled by the controller). Aaron reversed the no-modal rule (see drift report).
+        _recipeMenuPanel = new PanelContainer();
+        _recipeMenuPanel.SetAnchorsPreset(LayoutPreset.Center);
+        _recipeMenuPanel.Visible = false;
+        AddPanelStyle(_recipeMenuPanel, new Color(0.08f, 0.08f, 0.12f));
+        AddChild(_recipeMenuPanel);
+
+        _recipeMenuLabel = new Label();
+        _recipeMenuLabel.AddThemeFontSizeOverride("font_size", 16);
+        _recipeMenuLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.8f));
+        _recipeMenuPanel.AddChild(_recipeMenuLabel);
     }
 
     /// <summary>
@@ -285,9 +301,11 @@ public partial class GameSceneController : Control
             Key.Key3 when !key.ShiftPressed => GameKey.QuickSplit,
             Key.Key4 => GameKey.Sort,
             Key.Key5 => GameKey.AcquireRandom,
-            Key.R => GameKey.CycleRecipe,
+            Key.R => GameKey.RecipeMenu,
             Key.C => GameKey.Peek,
             Key.Q => GameKey.LeaveBag,
+            Key.Enter or Key.KpEnter => GameKey.Confirm, // recipe-menu select / split commit
+            Key.Escape => GameKey.Cancel,                // recipe-menu / split cancel
             Key.Z when key.CtrlPressed => GameKey.Undo,
             _ => null
         };
@@ -402,6 +420,26 @@ public partial class GameSceneController : Control
         else
         {
             _dialoguePanel.Visible = false;
+        }
+
+        // Modal recipe menu (playtest feature): a thin functional overlay drawn from Core state.
+        var menu = _controller.Session.RecipeMenu;
+        if (menu is not null)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"Craft at the {menu.FacilityEnvironment}:");
+            if (menu.RecipeNames.IsEmpty)
+                sb.AppendLine("  (no recipes known yet)");
+            else
+                for (var i = 0; i < menu.RecipeNames.Length; i++)
+                    sb.AppendLine((i == menu.SelectedIndex ? "> " : "  ") + menu.RecipeNames[i]);
+            sb.Append("↑/↓ select · Enter set · Esc close");
+            _recipeMenuLabel.Text = sb.ToString();
+            _recipeMenuPanel.Visible = true;
+        }
+        else
+        {
+            _recipeMenuPanel.Visible = false;
         }
 
         // Action log (last 8 entries)

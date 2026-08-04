@@ -15,7 +15,7 @@ public enum GameKey
     QuickSplit,     // Key 3
     Sort,           // Key 4
     AcquireRandom,  // Key 5 (debug)
-    CycleRecipe,    // R
+    RecipeMenu,     // R — open the modal recipe menu on a facility (replaces the old cycle-through)
     Peek,           // C — look-in overlay (open/close) for a peekable bag; no-op + shake on enter-only
     LeaveBag,       // Q
     Undo,           // Ctrl-Z

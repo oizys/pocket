@@ -422,3 +422,104 @@ and the implementation reconcile:
    fast core-mechanics gate (through Slice 4) and `target-demo` promoted to the canonical full script +
    the closing `final-golden`/`hint-negative` beats. A deliberate restructure (append-only history: the
    full thread is preserved verbatim in target-demo; smoke is its proper prefix).
+
+---
+
+# Playtest fixes (2026-08-04) — Aaron's first target-demo run
+
+The first real playthrough of the target demo (Windows) surfaced six items. All are landed; this section
+is the as-built record. One item (toolbar quickmove / Primary-macro rework / diminished hand role) is
+**PARKED** pending Aaron's design call and was deliberately NOT implemented.
+
+## What changed (by item)
+
+1. **[BUG, was blocking] Recipe-switch destroyed items.** Repro: with a full home room, switching a
+   facility's recipe deleted the items sitting in its slots. **Root cause:** `GameSession.ExecuteCycleRecipe`
+   dumped the slot items and then discarded `Grid.AcquireItems`' *unplaced remainder* (`var (newGrid, _) =
+   rootGrid.AcquireItems(...)`) — a silent item sink whenever the root bag had no room. **Fix:** the dumped
+   items are re-homed through `ApplyRecipeSwitch`, which acquires them into the root bag and, if any stack
+   cannot be fully placed, **refuses the whole switch** (nothing mutated, items kept) rather than dropping
+   them. The Crafting Table no longer dumps at all (see item 4/5: generic slots + set-recipe), so its path
+   is deletion-proof by construction. **Coverage:** Core `PlaytestFixesTests` (full-root refusal conserves;
+   room-in-root switch conserves; generic-table set-recipe conserves) + the journey now exercises a recipe
+   *set* with conservation asserted, closing the invariant hole (there was previously no cycle/switch step
+   in either journey, so conservation was never checked on this path).
+
+2. **[BUG] Entering the Coin Pouch from the toolbar wedged the UI.** Primary/E on a bag living in the
+   **T** panel used to breadcrumb-*enter* it, pushing a breadcrumb onto the T location; the toolbar panel
+   then showed the nested bag with no way out (Q/LeaveBag act on B, not T). **Fix:** in
+   `GameController.ExecuteFocusedPrimary`, Primary on a toolbar bag now opens it as a **C look-in overlay**
+   (peek), never enters — toggles closed cleanly on Q/C. Regression: `PlaytestFixesTests.ToolbarBag_Primary_
+   Peeks_DoesNotEnter_AndClosesCleanly`.
+
+3. **[FIX] Recipe cards are consumed on learn.** Learning a recipe used to leave the card resting in the
+   toolbar. Now `GameSession.RegisterKnownRecipes` **learns and removes** the card (poof on learn):
+   `KnownRecipes` gains the id and the card's cell empties. This is a *sanctioned* census removal — the
+   journey-runner gained an `expectDelta` step field that asserts the census changed by EXACTLY the
+   consumed card (`{"Compass Recipe": -1}` etc.), so conservation is accounted for precisely, not silently
+   weakened to a blanket `conserves:false`. Coverage: `PlaytestFixesTests.PickingUpARecipeCard_LearnsIt_
+   AndConsumesTheCard` + `expectDelta` on every learn step in the journey.
+
+4. **[FIX] One crafting table, starting EMPTY.** The antechamber seeded three pre-loaded, recipe-pinned
+   tables (compass/wilderness/loom — a Slice-7 journey convenience) that instantly crafted the moment their
+   recipe was learned, because the ingredients already sat in them. Replaced with **one empty table**:
+   generic (unfiltered) input slots + `FacilityState.RequiresSelectedRecipe`, so it never auto-scans and
+   stays inert until the player selects a recipe and loads it through play. The compass ingredients now sit
+   loose in the antechamber (cells 14/15, the two freed by dropping the old tables); the journey grabs them
+   to the toolbar and drops them into the table. Kills the instant-craft-on-learn surprise (Belt Pouch
+   included). Core: `CraftingTableTests` rewritten to `EmptyTable_StaysInert_UntilARecipeIsSelected` +
+   `SelectLoadCraft_*` (compass / wilderness→new EnterOnly Quiet 1 / pouch→bag) + `DemoProfile_CannotCraft
+   TheAxe_IronOreTooScarce` (the gatherer negative is now material scarcity — only one Iron Ore exists, the
+   axe needs two).
+
+5. **[FEATURE] Modal recipe menu — replaces recipe cycling.** R now opens a real **modal recipe list**
+   (`RecipeMenuState` on `GameSession`, projected to the VM as `recipeMenu`): it lists the facility's
+   craftable set (KnownRecipes ∩ loaded), ↑/↓ navigate, Enter selects (sets the active recipe), Esc/Q
+   closes. The controller owns the keys while it is open (modal-lite, like `SplitMode`). Rendered on both
+   frontends — **TUI real** (`RecipeMenuView`, a centered overlay) and **Godot thin** (a centered panel).
+   `GameKey.CycleRecipe` was renamed `GameKey.RecipeMenu`. **The old no-modal-dialogs rule is REVERSED**
+   (Aaron) — noted here and in [`tui-redesign.md`](tui-redesign.md) #7 (its status header). The underlying
+   `FacilityLogic.CycleRecipe` primitive remains (for legacy filtered-slot facilities) but is now routed
+   through the conservation-safe placement from item 1.
+
+## Journey / golden changes (deliberate, append-only history)
+
+The target-demo journey's **Slice-7 section (24:00–30:00) was rewritten** and its goldens re-recorded
+(`make record-goldens`). Every earlier beat (Slices 0–6) is unchanged; the smoke journey stays a proper
+prefix. Documented diffs:
+
+- **Ruin recipe grab (`c6-grab-recipe`)** — grabbing the "another Quiet 1" card now consumes it
+  (`expectDelta {"Quiet Recipe": -1}`, hand ends empty). The follow-on `c6-swap-core` became a plain
+  `c6-grab-core` (no card rides back into the ruin — it's gone).
+- **Learn beats (`s7-learn-compass/pouch/axe`)** — each now carries `expectDelta {"<card>": -1}` and asserts
+  the toolbar is unchanged (cards no longer route there).
+- **New load-through-play beats** — grab the loose Dry Grass/Bone Chips to the toolbar, open the empty
+  table, open the **modal recipe menu** (`s7-recipe-menu`, `recipeMenu` asserted + `assertRender:"Recipe"`),
+  select compass (`s7-select-compass`, `recipeMenu:null`), then the established toolbar-sourced load
+  (`s7-drop-grass`/`s7-drop-bone`) into the trays.
+- **Compass craft** — `s7-craft-start` (ActionQueue materializes, one row, progress 1/3) → `s7-no-drift` →
+  `s7-craft-progress` (2/3) → `s7-craft-complete` (Minimap materializes, queue drains, compass produced —
+  a declared transform: Dry Grass −3, Bone Chips −2, Quiet Compass +1). These two remain the golden
+  ledger-row captures.
+- **Three-path cliff (`final-golden`)** — now proven by **availability**: all three non-axe recipes are
+  KNOWN (in hand by 30:00), the headline compass is crafted, and the axe is known-but-uncraftable. The
+  journey no longer crafts a second wilderness + a pouch at two extra tables (that was the removed
+  3-table convenience); each recipe's craftability is instead proven at the Core level
+  (`CraftingTableTests.SelectLoadCraft_*`). `minimap.litCount` is therefore **1** at the end (only the
+  found Quiet 1 was entered), not 2.
+
+Golden set: `journeys/goldens/target-demo.checkpoints` + the 11 `buffers/*.txt` re-recorded (the home-room
+buffers now show the two loose material stacks at cells 14/15; `s7-craft-start`/`s7-craft-complete` show
+the single compass craft). `make parity` (76) + `make parity-full` (156) green, cross-driver + goldens
+clean; suites 875 Core + 53 App.
+
+## Runner change
+
+`JourneyStep.ExpectDelta` (`expectDelta` in JSON): when present, the runner asserts the census delta versus
+the previous step equals the map EXACTLY (nothing more appeared or vanished). It is the principled account
+of a sanctioned removal/transform — used for the consumed recipe cards — as opposed to `conserves:false`,
+which only says "something changed, allowed."
+
+## Parked (NOT implemented — Aaron's design call pending)
+
+Toolbar quickmove / Primary-macro rework / diminished hand role. PM is tracking this separately.

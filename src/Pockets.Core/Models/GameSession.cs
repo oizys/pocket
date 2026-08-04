@@ -25,6 +25,22 @@ public record SplitModeState(
     int GrabCount,
     int StackTotal);
 
+/// <summary>
+/// Transient modal state for the recipe menu (playtest feature, 2026-08-04): a proper modal list that
+/// REPLACES the old R-to-cycle affordance. Opened on a facility (the Crafting Table), it lists every
+/// recipe that facility can currently build (KnownRecipes ∩ the loaded set). ↑/↓ move
+/// <see cref="SelectedIndex"/>, Enter selects (sets the facility's active recipe), Esc/Q closes.
+/// Lives on <see cref="GameSession"/> like <see cref="SplitModeState"/> — a modal-lite the controller
+/// owns keys for — and is projected into the view-model so both frontends render an identical modal and
+/// the parity stream diffs it. Aaron reversed the old no-modal-dialogs rule for this (see drift report).
+/// </summary>
+public record RecipeMenuState(
+    Guid FacilityBagId,
+    string FacilityEnvironment,
+    ImmutableArray<string> RecipeIds,
+    ImmutableArray<string> RecipeNames,
+    int SelectedIndex);
+
 public record GameSession(
     GameState Current,
     ImmutableStack<GameState> UndoStack,
@@ -36,7 +52,8 @@ public record GameSession(
     int MaxUndoDepth = 1000,
     SplitModeState? SplitMode = null,
     DialogueBook? Book = null,
-    TimeSpan Elapsed = default)
+    TimeSpan Elapsed = default,
+    RecipeMenuState? RecipeMenu = null)
 {
     /// <summary>
     /// Accumulated in-game time (Slice 5 clock). Mirrors the injected <see cref="IGameClock"/> via
@@ -625,7 +642,14 @@ public record GameSession(
     public GameSession ExecuteCycleRecipe(LocationId loc) => RunAt(loc, s => s.ExecuteCycleRecipe());
 
     /// <summary>
-    /// Cycles the active recipe on the facility at cursor. Dumps slot items to root bag.
+    /// Cycles the active recipe on the facility at cursor to the next in the list, rebuilding its slot
+    /// filters and re-homing whatever was in the slots. The Crafting Table uses the modal recipe menu
+    /// (<see cref="OpenRecipeMenu"/>) instead of cycling; this remains for legacy filtered-slot facilities.
+    ///
+    /// Conservation is guaranteed: the dumped slot items are re-homed via <see cref="ApplyRecipeSwitch"/>,
+    /// which places them into the root bag or REFUSES the switch — it never discards. (The playtest
+    /// item-deletion bug was exactly this: the old code discarded <see cref="Grid.AcquireItems"/>'s
+    /// unplaced remainder, silently destroying the slot items whenever the root bag had no room.)
     /// </summary>
     public GameSession ExecuteCycleRecipe()
     {
@@ -642,29 +666,127 @@ public record GameSession(
             return this with { ActionLog = ActionLog.Add("FAILED: CycleRecipe — no recipes for this facility") };
 
         var (updated, dumped) = FacilityLogic.CycleRecipe(activeBag, facilityRecipes);
+        return ApplyRecipeSwitch(activeBag.Id, updated, dumped,
+            () => $"CycleRecipe: switched to {updated.FacilityState!.ActiveRecipeId}");
+    }
 
-        // Reset progress on the owning stack when cycling recipes
-        var newState = Current.ReplaceBagById(activeBag.Id, updated,
-            stack => stack.WithProperty("Progress", new IntValue(0)));
-
-        // Acquire dumped items into root bag
-        if (dumped.Count > 0)
+    /// <summary>
+    /// Installs a rebuilt facility (new active recipe + slot layout) and re-homes the items it dumped from
+    /// its slots, with a strict <b>no-loss</b> guarantee. The dumped stacks are acquired into the root
+    /// (home) bag <i>first</i>; if any stack cannot be fully placed there, the whole switch is REFUSED —
+    /// nothing is mutated and the old facility keeps its items — rather than destroying them. Home is a
+    /// large 8×4 grid so a refusal is the rare full-inventory edge; the point is that a full inventory can
+    /// never again turn a recipe switch into an item sink (the 2026-08-04 playtest deletion bug).
+    /// </summary>
+    private GameSession ApplyRecipeSwitch(
+        Guid facilityId, Bag rebuiltFacility, IReadOnlyList<ItemStack> dumped, Func<string> log)
+    {
+        var rootGrid = Current.RootBag.Grid;
+        foreach (var stack in dumped)
         {
-            var rootGrid = newState.RootBag.Grid;
-            foreach (var stack in dumped)
-            {
-                var (newGrid, _) = rootGrid.AcquireItems(new[] { stack });
-                rootGrid = newGrid;
-            }
-            newState = newState with { Store = newState.Store.Set(newState.RootBagId, newState.RootBag with { Grid = rootGrid }) };
+            var (grid, unplaced) = rootGrid.AcquireItems(new[] { stack });
+            if (unplaced.Count > 0)
+                return this with { ActionLog = ActionLog.Add("FAILED: recipe switch — no room to set down the current items") };
+            rootGrid = grid;
         }
+
+        var newState = Current with
+        {
+            Store = Current.Store.Set(Current.RootBagId, Current.RootBag with { Grid = rootGrid })
+        };
+        newState = newState.ReplaceBagById(facilityId, rebuiltFacility,
+            stack => stack.WithProperty("Progress", new IntValue(0)));
 
         var newStack = PushWithLimit(UndoStack, Current);
         return this with
         {
             Current = newState,
             UndoStack = newStack,
-            ActionLog = ActionLog.Add($"CycleRecipe: switched to {updated.FacilityState!.ActiveRecipeId}")
+            ActionLog = ActionLog.Add(log())
+        };
+    }
+
+    // ==================== Recipe menu (modal) ====================
+
+    /// <summary>
+    /// Opens the modal recipe menu on the facility active at <paramref name="loc"/> (the focused panel).
+    /// Lists exactly the recipes the facility can build (KnownRecipes ∩ the loaded set for the Crafting
+    /// Table). No-op (logged) when the focused bag is not a facility. The selection starts on the
+    /// facility's current active recipe when it has one. Opening pushes no undo snapshot — it is UI.
+    /// </summary>
+    public GameSession OpenRecipeMenu(LocationId loc)
+    {
+        var facility = Current.ActiveBagAt(loc);
+        if (facility.FacilityState is null)
+            return this with { ActionLog = ActionLog.Add("Recipe menu: not a facility") };
+
+        var recipes = GetRecipesForFacility(facility.EnvironmentType);
+        var ids = recipes.Select(r => r.Id).ToImmutableArray();
+        var names = recipes.Select(r => r.Name).ToImmutableArray();
+
+        var active = facility.FacilityState.ActiveRecipeId;
+        var selected = active is not null ? ids.IndexOf(active) : 0;
+        if (selected < 0) selected = 0;
+
+        return this with
+        {
+            RecipeMenu = new RecipeMenuState(facility.Id, facility.EnvironmentType, ids, names, selected),
+            ActionLog = ActionLog.Add($"Recipe menu: opened ({ids.Length} craftable)")
+        };
+    }
+
+    /// <summary>Moves the recipe-menu selection by <paramref name="delta"/>, clamped. No-op when closed/empty.</summary>
+    public GameSession MoveRecipeMenu(int delta)
+    {
+        if (RecipeMenu is not { } menu || menu.RecipeIds.IsEmpty) return this;
+        var next = menu.SelectedIndex + delta;
+        if (next < 0) next = 0;
+        if (next > menu.RecipeIds.Length - 1) next = menu.RecipeIds.Length - 1;
+        return next == menu.SelectedIndex ? this : this with { RecipeMenu = menu with { SelectedIndex = next } };
+    }
+
+    /// <summary>Closes the recipe menu with no state change (Esc/Q).</summary>
+    public GameSession CloseRecipeMenu() =>
+        RecipeMenu is null ? this : this with { RecipeMenu = null };
+
+    /// <summary>
+    /// Confirms the recipe-menu selection: sets the facility's active recipe (via <see cref="SetRecipeOn"/>)
+    /// and closes the menu. A closed/empty menu just closes.
+    /// </summary>
+    public GameSession ConfirmRecipeMenu()
+    {
+        if (RecipeMenu is not { } menu) return this;
+        var closed = this with { RecipeMenu = null };
+        if (menu.RecipeIds.IsEmpty) return closed;
+        var recipeId = menu.RecipeIds[Math.Clamp(menu.SelectedIndex, 0, menu.RecipeIds.Length - 1)];
+        return closed.SetRecipeOn(menu.FacilityBagId, recipeId);
+    }
+
+    /// <summary>
+    /// Sets a facility's active recipe by id (the modal recipe menu's "select"). The Crafting Table keeps
+    /// generic (unfiltered) input slots, so setting a recipe only pins <see cref="FacilityState.ActiveRecipeId"/>
+    /// and resets any in-progress craft — it never rebuilds slots or moves items, so this path can never
+    /// destroy anything (conservation is trivial). Progress resets so switching mid-craft restarts cleanly.
+    /// </summary>
+    private GameSession SetRecipeOn(Guid facilityId, string recipeId)
+    {
+        var facility = Current.Store.GetById(facilityId);
+        if (facility?.FacilityState is null)
+            return this with { ActionLog = ActionLog.Add("SetRecipe: not a facility") };
+
+        var updated = facility with
+        {
+            FacilityState = facility.FacilityState with { ActiveRecipeId = recipeId, RecipeId = null }
+        };
+        var newState = Current.ReplaceBagById(facilityId, updated,
+            stack => stack.WithProperty("Progress", new IntValue(0)));
+
+        var newStack = PushWithLimit(UndoStack, Current);
+        return this with
+        {
+            Current = newState,
+            UndoStack = newStack,
+            ActionLog = ActionLog.Add($"SetRecipe: {recipeId}")
         };
     }
 
@@ -911,44 +1033,54 @@ public record GameSession(
     }
 
     /// <summary>
-    /// Adds to <see cref="GameState.KnownRecipes"/> the recipe id of every recipe-as-item currently held
-    /// in the player's fixed inventories — the hand and the toolbar (one level into a toolbar carrying
-    /// bag, where an overflow pickup lands). A recipe item is any <see cref="ItemStack"/> carrying a
-    /// <see cref="GameState.RecipeItemProperty"/>. Idempotent (a set) and monotonic: learning is permanent,
-    /// so dropping the card later never un-learns it. Returns the same state when nothing new is learned.
+    /// Learns — and then <b>consumes</b> — every recipe-as-item the player is holding in a fixed inventory
+    /// (the hand, the toolbar, and one level into a toolbar carrying bag). Learning a card adds its id to
+    /// <see cref="GameState.KnownRecipes"/> (permanent, monotonic) and removes the card from its cell:
+    /// <b>poof on learn</b> (playtest fix, 2026-08-04). A recipe item is any <see cref="ItemStack"/>
+    /// carrying a <see cref="GameState.RecipeItemProperty"/>. This is a <i>sanctioned</i> census removal —
+    /// the journey's conservation checks account for the exact card(s) that vanished (see the runner's
+    /// <c>expectDelta</c>). Returns the same state when nothing new is learned.
     /// </summary>
     private static GameState RegisterKnownRecipes(GameState state)
     {
         var known = state.KnownRecipes;
-        foreach (var stack in HeldRecipeCarriers(state))
-            if (stack.GetString(GameState.RecipeItemProperty) is { } recipeId)
-                known = known.Add(recipeId); // ImmutableHashSet.Add returns the same instance when present
+        var store = state.Store;
 
-        return ReferenceEquals(known, state.KnownRecipes) ? state : state with { KnownRecipes = known };
-    }
+        // Clear-and-learn one grid: any cell holding a recipe card learns its id and empties.
+        (Bag, bool) LearnAndClear(Bag bag)
+        {
+            var changed = false;
+            var builder = bag.Grid.Cells.ToBuilder();
+            for (var i = 0; i < builder.Count; i++)
+            {
+                if (builder[i].Stack?.GetString(GameState.RecipeItemProperty) is not { } recipeId) continue;
+                known = known.Add(recipeId);
+                builder[i] = builder[i] with { Stack = null };
+                changed = true;
+            }
+            return changed ? (bag with { Grid = bag.Grid with { Cells = builder.MoveToImmutable() } }, true) : (bag, false);
+        }
 
-    /// <summary>
-    /// Every stack the player is carrying in their fixed inventories — the hand plus the toolbar,
-    /// including one level into a toolbar carrying bag (where an overflow pickup lands, matching the VM
-    /// serializer's toolbar-nesting depth). This is the principled "in the player's possession" set a
-    /// recipe must reach to be learned; it deliberately excludes world bags a card merely rests in.
-    /// </summary>
-    private static IEnumerable<ItemStack> HeldRecipeCarriers(GameState state)
-    {
-        foreach (var s in state.HandItems)
-            yield return s;
+        // Hand.
+        var (newHand, handChanged) = LearnAndClear(state.HandBag);
+        if (handChanged) store = store.Set(state.HandBagId, newHand);
 
-        if (state.ToolbarBagId is { } id && state.Store.GetById(id) is { } toolbar)
+        // Toolbar + one level into each toolbar carrying bag (matches the acquire/serializer nesting depth).
+        if (state.ToolbarBagId is { } toolbarId && store.GetById(toolbarId) is { } toolbar)
         {
             foreach (var cell in toolbar.Grid.Cells)
-            {
-                if (cell.Stack is not { } s) continue;
-                yield return s;
-                if (s.ContainedBagId is { } nestedId && state.Store.GetById(nestedId) is { } nested)
-                    foreach (var nc in nested.Grid.Cells)
-                        if (nc.Stack is { } ns) yield return ns;
-            }
+                if (cell.Stack?.ContainedBagId is { } nestedId && store.GetById(nestedId) is { } nested)
+                {
+                    var (newNested, nestedChanged) = LearnAndClear(nested);
+                    if (nestedChanged) store = store.Set(nestedId, newNested);
+                }
+            var (newToolbar, toolbarChanged) = LearnAndClear(store.GetById(toolbarId)!);
+            if (toolbarChanged) store = store.Set(toolbarId, newToolbar);
         }
+
+        if (ReferenceEquals(known, state.KnownRecipes) && ReferenceEquals(store, state.Store))
+            return state;
+        return state with { KnownRecipes = known, Store = store };
     }
 
     /// <summary>True when the active bag just became the Shrine (a fresh entry, not a re-render).</summary>

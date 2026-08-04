@@ -35,6 +35,16 @@ public record JourneyStep
     public bool Conserves { get; init; } = true;
 
     /// <summary>
+    /// A <b>sanctioned</b> census delta this step is expected to produce — the exact set of item counts
+    /// that must change, e.g. <c>{ "Compass Recipe": -1 }</c> for a recipe-learn that consumes its card.
+    /// When present the runner asserts the ACTUAL census delta equals this map EXACTLY (nothing more
+    /// appeared or vanished): it accounts for the sanctioned removal precisely rather than silently
+    /// weakening conservation to "anything may change" (a blanket <c>conserves:false</c>). Absent for
+    /// ordinary steps. A key maps an item name to its signed count change.
+    /// </summary>
+    public IReadOnlyDictionary<string, int>? ExpectDelta { get; init; }
+
+    /// <summary>
     /// Marks this step's checkpoint as a golden-capture point (Slice 8). At a golden checkpoint a
     /// driver that exposes a render surface records it: the TUI dumps its character buffer (→
     /// <c>--goldens</c>) and the real Godot driver saves a viewport screenshot (→ <c>--screenshots</c>).
@@ -93,6 +103,10 @@ public record JourneyScript(string Name, string? Description, IReadOnlyList<Jour
             click = new ClickSpec(c["row"]?.GetValue<int>() ?? 0, c["col"]?.GetValue<int>() ?? 0, bt);
         }
 
+        IReadOnlyDictionary<string, int>? expectDelta = null;
+        if (o["expectDelta"] is JsonObject ed)
+            expectDelta = ed.ToDictionary(kv => kv.Key, kv => kv.Value!.GetValue<int>());
+
         return new JourneyStep
         {
             Checkpoint = o["checkpoint"]?.GetValue<string>(),
@@ -105,6 +119,7 @@ public record JourneyScript(string Name, string? Description, IReadOnlyList<Jour
             AssertViewModel = o["assertViewModel"] as JsonObject,
             AssertRender = o["assertRender"]?.GetValue<string>(),
             Conserves = o["conserves"]?.GetValue<bool>() ?? true,
+            ExpectDelta = expectDelta,
             Golden = o["golden"]?.GetValue<bool>() ?? false
         };
     }

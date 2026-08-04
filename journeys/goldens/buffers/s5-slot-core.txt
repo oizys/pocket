@@ -7,7 +7,7 @@
 ││                                                    ││Peek: Pouch          │││
 ││         C    E                                     ││Back: returned to par│││
 ││                                                    ││Close peek: C        │││
-││        ┌  Toolbar─────────────┐                    ││Swap: Quiet Recipe ↔ │││
+││        ┌  Toolbar─────────────┐                    ││Grab: 1 Eye Core     │││
 ││        │                   ◐  │                    ││Grab: 1 Quiet Recipe │││
 ││        │            T 6  C    │                    ││Peek: Ruin           ┴││
 ││        │                      │                    ││Harvest: 2 Dry Grass ░││

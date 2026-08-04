@@ -204,6 +204,29 @@ public static class ViewModelSerializer
         foreach (var id in state.KnownRecipes.OrderBy(r => r, StringComparer.Ordinal))
             knownRecipes.Add(id);
 
+        // Recipe menu (playtest feature, 2026-08-04): the modal recipe list, or null when closed. Both
+        // frontends render an identical modal from this projection and the parity stream diffs it, so the
+        // menu's open/navigate/select flow is a first-class cross-driver checkpoint signal. The order is
+        // the facility's craftable set (deterministic); no bag GUID is emitted.
+        JsonNode? recipeMenu = null;
+        if (session.RecipeMenu is { } menu)
+        {
+            var options = new JsonArray();
+            for (var i = 0; i < menu.RecipeIds.Length; i++)
+                options.Add(new JsonObject
+                {
+                    ["id"] = menu.RecipeIds[i],
+                    ["name"] = i < menu.RecipeNames.Length ? menu.RecipeNames[i] : menu.RecipeIds[i]
+                });
+            recipeMenu = new JsonObject
+            {
+                ["open"] = true,
+                ["facility"] = menu.FacilityEnvironment,
+                ["selected"] = menu.SelectedIndex,
+                ["recipes"] = options
+            };
+        }
+
         // Action queue (Slice 7, journey 18:00/24:00): every facility currently mid-craft, as a row of
         // {facility, recipe, progress, duration, name}. The rows + their canonical order come from the
         // shared GameSession.ActiveCrafts() projection (the same one the frontends read), so the parity
@@ -248,6 +271,7 @@ public static class ViewModelSerializer
             ["activeBag"] = activeBag.EnvironmentType,
             ["env"] = env,
             ["knownRecipes"] = knownRecipes,
+            ["recipeMenu"] = recipeMenu,
             ["actionQueue"] = actionQueue,
             ["minimap"] = minimap,
             ["cells"] = cells,

@@ -2,6 +2,17 @@
 
 ## Status: Proposed
 
+> **⚠ 2026-08-04 — the "no modal pop-ups" constraint is REVERSED (Aaron).** After the first real
+> target-demo playtest, Aaron reversed the hard "no modal pop-ups" rule this doc encoded (constraint #7
+> below, and the framing in §Concept). His reasoning: the dialogue box is already modal by function, so
+> a modal is the honest shape for "pick one from a list." The **recipe selector is now a real modal** on
+> both frontends (TUI: `RecipeMenuView`, a centered overlay; Godot: a thin centered panel) — see
+> `RecipeMenuState`/`GameSession.OpenRecipeMenu` in Core and the as-built note in
+> [`parity-drift-report.md`](parity-drift-report.md). **Inline `SplitMode` stays inline** (that reversal
+> was about the recipe list, not split); the split editor remains a bottom-strip mini-mode. Treat the
+> blanket "no modals" language below as historical — modals are allowed where a list/selection is the
+> natural interaction.
+
 ## Concept
 
 Bring the Pockets TUI in line with the design-doc aspirations in `panel-ux.md` and the two hard constraints the user re-stated on 2026-05-11: **no modal pop-ups** and **no text on the icon/map grid**. Three structural changes plus a cleanup pass:

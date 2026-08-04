@@ -173,6 +173,32 @@ public class GameController
             }
         }
 
+        // Recipe menu is modal-lite (like split mode): while it is open it owns its keys — ↑/↓ move the
+        // selection, Enter/Primary select (set the facility's recipe), Esc/Q close. Every other key is
+        // swallowed. This is a real modal (Aaron reversed the no-modal rule; see the drift report).
+        if (_session.RecipeMenu is not null)
+        {
+            switch (key)
+            {
+                case GameKey.Up:
+                    _session = _session.MoveRecipeMenu(-1);
+                    return ControllerResult.Handle(_session, $"Recipe menu: {_session.RecipeMenu?.SelectedIndex}");
+                case GameKey.Down:
+                    _session = _session.MoveRecipeMenu(+1);
+                    return ControllerResult.Handle(_session, $"Recipe menu: {_session.RecipeMenu?.SelectedIndex}");
+                case GameKey.Confirm:
+                case GameKey.Primary:
+                    _session = _session.ConfirmRecipeMenu();
+                    return ControllerResult.Handle(_session, "Recipe menu: selected");
+                case GameKey.Cancel:
+                case GameKey.LeaveBag:
+                    _session = _session.CloseRecipeMenu();
+                    return ControllerResult.Handle(_session, "Recipe menu: closed");
+                default:
+                    return ControllerResult.Handle(_session, "Recipe menu: ↑/↓ select, Enter set, Esc close");
+            }
+        }
+
         // Begin inline split for the focused cursor cell.
         if (key == GameKey.BeginSplit)
         {
@@ -262,7 +288,7 @@ public class GameController
             GameKey.QuickSplit => _session.ExecuteQuickSplit(_focus),
             GameKey.Sort => _session.ExecuteSort(_focus),
             GameKey.AcquireRandom => _session.ExecuteAcquireRandom(rng ?? new Random()),
-            GameKey.CycleRecipe => _session.ExecuteCycleRecipe(_focus),
+            GameKey.RecipeMenu => _session.OpenRecipeMenu(_focus),
             _ => null
         };
 
@@ -343,6 +369,41 @@ public class GameController
                     {
                         _session = _session.ApplyToolResult(result, () => $"Open World: {bag.EnvironmentType}");
                         _focus = LocationId.W;
+                        return _session;
+                    }
+                }
+            }
+        }
+
+        // Primary/E on a bag that lives in the TOOLBAR panel = PEEK it (open as a C look-in overlay),
+        // never breadcrumb-ENTER it (playtest fix, 2026-08-04). Entering a toolbar bag pushed a
+        // breadcrumb onto the T location and left the toolbar panel showing the nested bag with no way
+        // out — a wedged UI (Q/LeaveBag acts on B, not T, so it could never pop). A toolbar bag is a
+        // carrying container; looking in is what the player wants, and the overlay closes cleanly on Q/C.
+        if (_focus == LocationId.T && focusedCell.HasBag)
+        {
+            var bagId = focusedCell.Stack!.ContainedBagId!.Value;
+            var bag = state.Store.GetById(bagId);
+            if (bag is not null)
+            {
+                // Already peeked → toggle closed (mirrors the B-focus toggle + ExecutePeek).
+                if (state.Locations.TryGet(LocationId.C) is { } cLoc && cLoc.BagId == bagId)
+                {
+                    var closeResult = state.ClosePanel(LocationId.C);
+                    if (closeResult.Success)
+                    {
+                        _session = _session.ApplyToolResult(closeResult, () => $"Close: {bag.EnvironmentType}");
+                        _focus = LocationId.B;
+                        return _session;
+                    }
+                }
+                else
+                {
+                    var openResult = state.OpenAsContainer(bagId);
+                    if (openResult.Success)
+                    {
+                        _session = _session.ApplyToolResult(openResult, () => $"Peek toolbar bag: {bag.EnvironmentType}");
+                        _focus = LocationId.C;
                         return _session;
                     }
                 }
