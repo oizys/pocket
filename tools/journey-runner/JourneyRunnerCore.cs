@@ -5,12 +5,16 @@ using Pockets.Core.Rendering;
 
 namespace Pockets.JourneyRunner;
 
+/// <summary>A golden render capture at a flagged checkpoint (Slice 8): its label + the render probe.</summary>
+public record GoldenCapture(string Label, string RenderProbe);
+
 /// <summary>Outcome of running one script against one driver.</summary>
 public record RunResult(
     string Driver,
     IReadOnlyList<string> Checkpoints,
     IReadOnlyList<string> Failures,
-    IReadOnlyList<string> Notes)
+    IReadOnlyList<string> Notes,
+    IReadOnlyList<GoldenCapture> Goldens)
 {
     public bool Passed => Failures.Count == 0;
 }
@@ -25,11 +29,26 @@ public record RunResult(
 /// </summary>
 public static class JourneyRunnerCore
 {
-    public static RunResult Run(IJourneyDriver driver, JourneyScript script)
+    /// <param name="screenshotDir">
+    /// When non-null and the driver implements <see cref="IScreenshotDriver"/> (real Godot only),
+    /// each golden-flagged checkpoint saves a <c>&lt;label&gt;.png</c> here. Ignored otherwise.
+    /// </param>
+    public static RunResult Run(IJourneyDriver driver, JourneyScript script, string? screenshotDir = null)
     {
         var checkpoints = new List<string>();
         var failures = new List<string>();
         var notes = new List<string>();
+        var goldens = new List<GoldenCapture>();
+
+        var screenshotter = driver as IScreenshotDriver;
+        if (screenshotDir is not null)
+        {
+            if (screenshotter is null)
+                notes.Add($"screenshot capture requested but {driver.Name} has no viewport — skipped " +
+                          "(only the live godot driver captures screenshots; see drift report).");
+            else
+                Directory.CreateDirectory(screenshotDir);
+        }
 
         // Baseline observation before any step drives conservation comparisons.
         var start = driver.Observe();
@@ -93,9 +112,24 @@ public static class JourneyRunnerCore
             }
 
             Emit(checkpoints, i, label, obs.ViewModel);
+
+            // --- Golden capture (Slice 8) — one artifact per flagged ledger-row materialization. ---
+            if (step.Golden)
+            {
+                if (obs.RenderProbe is { } buffer)
+                    goldens.Add(new GoldenCapture(label, buffer));
+                else
+                    notes.Add($"[{i} {label}] golden buffer skipped — {driver.Name} has no render probe.");
+
+                if (screenshotter is not null && screenshotDir is not null)
+                {
+                    try { screenshotter.Screenshot(Path.Combine(screenshotDir, $"{label}.png")); }
+                    catch (Exception ex) { failures.Add($"[{i} {label}] screenshot failed: {ex.Message}"); }
+                }
+            }
         }
 
-        return new RunResult(driver.Name, checkpoints, failures, notes);
+        return new RunResult(driver.Name, checkpoints, failures, notes, goldens);
     }
 
     private static void Act(IJourneyDriver driver, JourneyStep step)

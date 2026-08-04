@@ -1,0 +1,25 @@
+┌ Pockets ─────────────────────────────────────────────────────────────────────┐
+│┌ ► Inventory ───────────────────────────────────────┐┌ Shrine  Log ─────────┐│
+││       Default > ShHand                             ││Enter: Shrine        ▲││
+││                                                    ││Back: returned to par┬││
+││   ←     M    T                                     ││Enter: Quiet 1       │││
+││                                                    ││Dialogue: dismissed f│││
+││                                                    ││Drop: 3 Smooth Pebble│││
+││         C                                          ││Close peek: C        │││
+││                                                    ││Grab: 3 Smooth Pebble│││
+││        ┌  Toolbar─────────────┐                    ││Peek: Chest          │││
+││        │                      │                    ││Close peek: C        │││
+││        │            T 6  C    │                    ││Tick #19             │││
+││        │                      │                    ││✦ Workshop crafted: W│││
+││        │                      │                    ││Tick #17             │││
+│└────────└──────────────────────┘────────────────────┘│Tick #16             ┴││
+│┌ Item ──────────────────────────────────────────────┐│Tick #15             ░││
+││Menu                                                ││Tick #14             ░││
+││Category: Bag                                       ││Drop: 6 Rough Wood   ░││
+││Unique item                                         ││Grab: 6 Rough Wood   ░││
+││                                                    ││Drop: 10 Plain Rock  ░││
+││                                                    ││Grab: 10 Plain Rock  ░││
+││                                                    ││Open Container: Works▼││
+│└────────────────────────────────────────────────────┘│◄├────────────────┤░► ││
+│[1/E:Action] [C:Peek] [2:Half] [3:QuickSplit] [#:Split] [4:Sort] [R:Recipe] [Q│
+└──────────────────────────────────────────────────────────────────────────────┘

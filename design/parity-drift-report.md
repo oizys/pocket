@@ -210,3 +210,152 @@ status cue, and the dialogue beat are wired; the overlay *render* rides the same
 - **Realtime**: the demo profile pins Rogue for a deterministic baseline; the journey's
   realtime-clock beat (Slice 5) will introduce a driver-level clock/`wait` protocol — the
   runner already models `tick`/wait steps for it.
+
+---
+
+# Slice 8 — Full journey assembly + goldens (CLOSING SECTION)
+
+*Dated 2026-08-04. The final slice: no new mechanics — everything below is assembly, goldens,
+and the standing gate. This section closes the drift report for the target-demo build plan.*
+
+## State of parity (as of Slice 8)
+
+The 30-minute journey is assembled, executable, and provable on both in-process drivers with one
+command. Two standing gates, both pre-push (build-plan sync policy):
+
+| Gate | Script | Scope | Status |
+|------|--------|-------|--------|
+| `make parity` | [`journeys/smoke.journey.json`](../journeys/smoke.journey.json) | **Fast** — first ~10 min (through Slice 4 look-in-vs-enter), **76 checkpoints** | tui + mock-godot **diff-clean**, invariants green |
+| `make parity-full` | [`journeys/target-demo.journey.json`](../journeys/target-demo.journey.json) | **Full** — the complete 0:00→30:00 thread, **153 checkpoints** | tui + mock-godot **diff-clean**, invariants green, **goldens clean** |
+
+Smoke is a **proper VM-prefix** of the target demo (identical `label`+`vm` for its first 76
+checkpoints — verified), so any smoke regression is also a target-demo regression, and `parity-full`
+depends on `parity` (a single invocation runs BOTH scripts on BOTH drivers). Suites green: **855 Core
++ 51 App**. `Pockets.Godot` csproj compiles under the Godot .NET SDK (Windows).
+
+### Goldens (committed, regression-checked every `parity-full`)
+
+Under [`journeys/goldens/`](../journeys/goldens/):
+
+- **`target-demo.checkpoints`** — the canonical VM checkpoint stream (driver-independent: byte-
+  identical across drivers by construction, so recorded from tui). `parity-full` diffs a fresh tui run
+  against it — the cross-build parity diff *and* a standing regression diff, in one file.
+- **`buffers/<label>.txt` ×11** — the TUI character-buffer render at each **progressive-UI ledger
+  row**, captured the frame the chrome materializes: `frame-0` (dialogue box), `opening-dismissed`
+  (grid), `inspect-1` (description pane), `pickup-slot-0` (toolbar), `enter-bag` (look-in overlay),
+  `toolbar-depth-1` (breadcrumbs), `s5-enter-shrine` (shrine view), `s5-notice-clock` (clock readout),
+  `s7-craft-start` (action queue), `s7-craft-complete` (minimap), `s5-slot-core` (fullness pips). These
+  are the "buffer-grab asserts the element is ABSENT before its trigger and PRESENT after" checkpoints
+  from the journey doc's ledger, frozen as goldens. Regeneration is deterministic (FakeDriver + fixed
+  `DemoSeed`); `make record-goldens` refreshes them after an intentional change.
+
+The runner grew a `"golden": true` step flag + `--goldens <dir>` (TUI buffer dump) + `--screenshots
+<dir>` (Godot viewport PNG via a screenshot-capable driver interface). These are pure harness
+plumbing — inert unless the corresponding output dir is passed, and they never touch the checkpoint
+stream. The bags-in-bags **hint negative** is asserted in both scripts (`hint-negative` checkpoint:
+the script nests, so no hint dialogue ever fires — see deferred list). The **axe negative** (gatherer
+path out of reach) is asserted positively in the journey's `final-golden` checkpoint (demo-axe known +
+still a recipe card, never a Stone Axe) and definitively by the Core test
+`CraftingTableTests.DemoTables_CraftCompass_Wilderness_AndPouch_ButNeverTheAxe` (`!HasItem "Stone
+Axe"`), since the subset-matcher can only assert presence, not census-level absence.
+
+## What remains Windows-only (needs a Godot runtime)
+
+This WSL env has no `godot`/`godot4` binary and no display, so the real Godot process cannot run
+here. Unchanged from Slices 0–7, and the full-journey extension inherits it:
+
+- **`make parity-godot`** — now runs the **full** target-demo journey against a live Godot build
+  (ws://localhost:9080) and diffs its stream against the TUI baseline. Because the `mock-godot` driver
+  runs the *identical* Core command-dispatch + serializer the real server runs, `make parity-full`
+  already exercises everything except the actual Godot process, its input map, and its rendering. The
+  live pass is a confirmation, not a leap. **Action for Aaron (Windows):** `dotnet build
+  src/Pockets.Godot`, launch, then `make parity-godot`. Expected: diff-clean.
+- **Godot screenshot goldens** — `parity-godot` now passes `--screenshots artifacts/godot-screenshots`,
+  so on the Windows box the runner saves one viewport PNG per ledger row (same 11 labels as the TUI
+  buffers) via the transport-local `screenshot` action. This is the Godot render-golden set for the
+  vision-model pass (agent-testing prong 3). Scripted here; it only fires where a Godot viewport
+  exists (the in-process drivers note-skip), so it never blocks the standing gates.
+- **Godot render gaps** (drift #4, still open) — Godot draws no C/W/T look-in panels and has no focus
+  cycling; a successful peek opens the C location without a visible overlay. The chrome-as-state
+  `ui`/`openPanels` view-model is fully driven; only the *render* of those panels rides the deferred
+  Slice-1-follow-up Godot pass. The screenshots will make this gap visible (and, once closed, provable)
+  on the Windows run.
+
+## Deferred (stays deferred — with reason)
+
+- **Conditional weighted loot-table director** (the drop director: prereq-gated inclusion,
+  known/present exclusion) — specced in the journey doc's three-path-cliff section, its own post-demo
+  slice. The demo uses fixed placements (mechanism 1+2): recipe cards + a seeded-but-reproducible
+  wilderness scatter. No director in the 30.
+- **Sort** — a later *found* feature (hour 2+, when the hoard is real), keeping its keeper line "Order.
+  There you are." (RATIFIED). By :28 there isn't enough mess to need it; fullness was the felt need, so
+  the eye core unlocks pips, not Sort.
+- **Bags-in-bags soft hint + first-nest memory fragment** — both need a nesting-**event** dialogue
+  trigger (fire the hint iff nesting-count==0 by a marker; key the memory fragment to the first nest).
+  Core's `DialogueTriggerKind` has no such kind, and adding one is new mechanics — out of scope. The
+  script *does* nest, so the negative is the test: `hint-negative` asserts no hint fires. The bag
+  **fullness flag** the hint gestures at is itself a banked future Shrine glyph.
+- **Godot render gaps** (above) — C/W/T panels + focus cycling in Godot, the deferred Slice-1-follow-up
+  frontend pass. Everything is ledger-driven and ready to render.
+- **SVG glyph import** — the real `assets/glyphs/basis-quiet-positive.svg` → `Texture2D` import is the
+  deferred Godot glyph pass (`glyphs.md` TODO). In-demo both frontends draw an env-header *approximation*
+  (TUI ASCII staircase `=== == =`, Godot label placeholder) from the VM `env` fields.
+- **Enter-only glyph** (banked) — the eyelid-shut frame + a "see enter-only property" reveal are future
+  Shrine feature unlocks, deliberately outside the 30 (RATIFIED; the first failed peek is the only tell).
+
+## As-built decisions (ratified in code across Slices 0–8)
+
+The demo diverged from a literal reading of the journey doc in several places — each a deliberate,
+ratified-in-code call from a prior slice's Running notes, pulled here into one list so the journey doc
+and the implementation reconcile:
+
+1. **Deterministic demo profile** (Slice 0) — `GameInitializer.CreateDemoProfile(registry, seed?,
+   dialogue)` with `DemoSeed = 20260803`; the wilderness generator threads the seeded RNG. Both
+   frontends load the identical profile, so start states are byte-identical. The `TickMode` started
+   pinned **Rogue** for a deterministic baseline and switched to **Realtime** at Slice 7 (clock-driven
+   craft) — scripted `advanceTime` is the ONLY time source in the harness; the wall clock is never read.
+2. **Parity via a .NET journey-runner + mock transport** (Slice 0) — Godot can't run in WSL, so the
+   gate is one script on two in-process drivers (`tui` = real headless GameView under FakeDriver;
+   `mock-godot` = the exact server-side `DebugCommandHandler` dispatch), sharing one
+   `ViewModelSerializer` → byte-identical streams by construction. The live `godot` driver is the
+   Windows confirmation.
+3. **Dialogue is monotonic / does not undo** (Slice 2, RATIFIED) — queue, line index, fired-beats, and
+   inspected-items carry forward across `Undo`. Fire-once is only sound if fired-beats can't roll back.
+   Beats are data-driven in `/data/dialogue/*.md`, beat-keyed scripted conditions (deterministic, no
+   RNG, no cooldown machinery).
+4. **Pickup-to-toolbar routing is a demo-only `GameState.ToolbarPickup` flag** (Slice 3) — decided in
+   `GameController` where focus is known, gated on `_focus == B`, so grabbing FROM the toolbar/facility
+   panels keeps the classic grab-into-hand cut buffer. Non-demo profiles never take the branch.
+   **Demo toolbar = 1×4** (3 fillable slots + a seeded non-full Coin Pouch in slot 3) — sized so one
+   short journey exercises both slot-fill order AND capacity overflow. **Acquire ordering (RATIFIED):**
+   empties + mergeable stacks first (top-left), then descend into non-full *plain* sub-bags;
+   facility/wilderness bags are never descended into.
+5. **`C` = generic `Peek`, a new key** (Slice 4) — a uniform one-deep look-in over any peekable bag
+   (plain Chest included, which `E`/Primary would instead *enter*); the existing Primary-opens-
+   facility/wilderness routes are left unchanged (keeps earlier checkpoints green). **`Bag.EnterOnly`**
+   refuses the peek — no panel, world untouched — firing a fire-once `FirstFailedPeek` beat + a
+   non-serialized `FeedbackPulse` the frontends flash. **No enter-only marker in the view-model**
+   (RATIFIED: the failed peek is the only tell; no glyph in-demo).
+6. **Shrine = a plain enterable bag** in the home room (Slice 5), not a doorway — simplest reachable
+   placement. **Feature slots** = `FeatureSlotFrame(glyph, locked, filter?)` matching a core by its
+   `Glyph` property, locking irreversibly on slot. **Clock** = injectable `IGameClock` (VirtualGameClock
+   for parity). **Fullness pips** = a Core calc emitted on every bag cell only when the `FullnessPips`
+   chrome is on; `CoreSlotted` flips it game-wide — the first unlock that rewires rendering everywhere.
+7. **Wilderness = the real Quiet 1** (Slice 6) replacing the Slice-4 "Quiet Pocket" placeholder at the
+   same cell; **the eye-core source was re-pointed** from a Slice-5 Chest stopgap to the ruin bag
+   (append-only history: the journey is now wilderness → ruin → core → Shrine). **Unnavigable trees** =
+   `TreeFrame` + `Cell.IsUnnavigable`; the cursor refuses, bumps count, and `NthTreeBump` fires the
+   axe-absence line once at 3. **Recipe-as-item** = `RecipeItemProperty` + `GameState.KnownRecipes`,
+   learned when a recipe item reaches hand/toolbar. Fixed placements (loot director deferred).
+8. **Crafting Table = generic assembler** (Slice 7) — `GetRecipesForFacility` special-cases it to
+   `KnownRecipes ∩ Recipes`. Three pre-loaded tables in the home room so a craft is triggered by
+   *learning a card + advancing time*, not brittle material-loading. **Minimap** lights on *entering* an
+   EnterOnly wilderness (not crafting one) — so litCount is 1 at compass-complete, 2 after entering the
+   crafted Quiet 1. `TickFacilities` iterates in a deterministic GUID-free order (the fix for a 3-craft-
+   on-one-tick log divergence). **The three-path cliff:** explorer (`another-quiet-1` → craft+enter a
+   2nd Quiet 1), organizer (`belt-pouch` → a new carrying bag), gatherer (`demo-axe` known + readable
+   but Iron-Ore-priced → known-but-uncraftable, the axe negative).
+9. **Two journeys, one prefix** (Slice 8) — `smoke` was trimmed from the grown full thread back to a
+   fast core-mechanics gate (through Slice 4) and `target-demo` promoted to the canonical full script +
+   the closing `final-golden`/`hint-negative` beats. A deliberate restructure (append-only history: the
+   full thread is preserved verbatim in target-demo; smoke is its proper prefix).

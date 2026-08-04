@@ -10,11 +10,14 @@ using Pockets.JourneyRunner;
 // Usage:
 //   journey-runner --driver tui|godot|mock-godot --script <file> [--out <file>]
 //                  [--data <dir>] [--seed <int>] [--url ws://host:port] [--dump]
+//                  [--goldens <dir>] [--screenshots <dir>]
+// --goldens captures the TUI character buffer at every golden-flagged checkpoint (Slice 8 ledger-row
+// render goldens); --screenshots captures a Godot viewport PNG at the same checkpoints (real Godot only).
 
 var opts = ParseArgs(args);
 if (opts is null) { PrintUsage(); return 2; }
 
-var (driverName, scriptPath, outPath, dataDir, seed, url, dump) = opts.Value;
+var (driverName, scriptPath, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir) = opts.Value;
 
 var script = JourneyScript.Load(scriptPath);
 
@@ -39,12 +42,22 @@ using IJourneyDriver driver = driverName switch
 
 Console.Error.WriteLine($"[journey-runner] driver={driver.Name} script={script.Name} steps={script.Steps.Count}");
 
-var result = JourneyRunnerCore.Run(driver, script);
+var result = JourneyRunnerCore.Run(driver, script, screenshotsDir);
 
 if (outPath is not null)
 {
     File.WriteAllLines(outPath, result.Checkpoints);
     Console.Error.WriteLine($"[journey-runner] wrote {result.Checkpoints.Count} checkpoints → {outPath}");
+}
+
+// Golden render buffers (Slice 8): one file per flagged ledger-row checkpoint. Only drivers with a
+// render probe (tui) populate them; others emit a note and this loop writes nothing.
+if (goldensDir is not null && result.Goldens.Count > 0)
+{
+    Directory.CreateDirectory(goldensDir);
+    foreach (var g in result.Goldens)
+        File.WriteAllText(Path.Combine(goldensDir, $"{g.Label}.txt"), g.RenderProbe);
+    Console.Error.WriteLine($"[journey-runner] wrote {result.Goldens.Count} golden buffer(s) → {goldensDir}");
 }
 
 if (dump)
@@ -67,10 +80,12 @@ return 1;
 
 // --- arg parsing ---
 
-static (string driver, string script, string? outPath, string dataDir, int? seed, string url, bool dump)?
+static (string driver, string script, string? outPath, string dataDir, int? seed, string url, bool dump,
+        string? goldensDir, string? screenshotsDir)?
     ParseArgs(string[] args)
 {
     string? driver = null, script = null, outPath = null, dataDir = null, url = "ws://localhost:9080";
+    string? goldensDir = null, screenshotsDir = null;
     int? seed = null;
     bool dump = false;
 
@@ -85,6 +100,8 @@ static (string driver, string script, string? outPath, string dataDir, int? seed
             case "--seed": seed = int.Parse(Next(args, ref i)); break;
             case "--url": url = Next(args, ref i); break;
             case "--dump": dump = true; break;
+            case "--goldens": goldensDir = Next(args, ref i); break;
+            case "--screenshots": screenshotsDir = Next(args, ref i); break;
             default:
                 Console.Error.WriteLine($"Unknown argument: {args[i]}");
                 return null;
@@ -93,7 +110,7 @@ static (string driver, string script, string? outPath, string dataDir, int? seed
 
     if (driver is null || script is null) return null;
     dataDir ??= DefaultDataDir();
-    return (driver, script, outPath, dataDir, seed, url, dump);
+    return (driver, script, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir);
 }
 
 static string Next(string[] args, ref int i)
@@ -113,4 +130,7 @@ static string DefaultDataDir()
 
 static void PrintUsage() => Console.Error.WriteLine(
     "Usage: journey-runner --driver tui|godot|mock-godot --script <file> [--out <file>]\n" +
-    "                      [--data <dir>] [--seed <int>] [--url ws://host:port] [--dump]");
+    "                      [--data <dir>] [--seed <int>] [--url ws://host:port] [--dump]\n" +
+    "                      [--goldens <dir>] [--screenshots <dir>]\n" +
+    "  --goldens <dir>      write a TUI character-buffer golden per golden-flagged checkpoint (tui driver)\n" +
+    "  --screenshots <dir>  save a Godot viewport PNG per golden-flagged checkpoint (godot driver)");

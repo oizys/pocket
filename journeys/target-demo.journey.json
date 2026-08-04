@@ -1,0 +1,411 @@
+{
+  "name": "target-demo",
+  "description": "THE FULL 30-MINUTE TARGET DEMO (Slice 8 — the canonical, executable form of design/target-demo-journey.md; smoke.journey.json stays the fast core-mechanics gate). One script, both drivers (tui + mock-godot), byte-identical checkpoint streams by construction, invariant pack green after every step. The complete thread, beat for beat: the frame-0 dialogue-only opening (0:00) → grid (0:45) → description pane on first cursor-rest + the 3rd-unique-inspect amnesia beat, fire-once, no cursor leak (1:30) → the toolbar born on first pickup, slots fill 1→2→3, depth-invariant across an enter/leave, the 4th pickup overflowing INTO the non-full Coin Pouch (bag-as-partial-empty, beat 5 — the first nesting) → a look-in peek + a toolbar-sourced craft (grab-for-move still uses the hand) → the demo Chest C-peek without entering + cross-container carry (7:00) → the enter-only wilderness refusing C (FirstFailedPeek, fire-once) while E crosses the threshold (breadcrumbs, 9:30) → the Shrine: Menu/Toolbar/Clock feature slots + the empty eye slot, Menu peekable, the clock noticed and its readout materialized, Δt asserted deterministically (12:00–15:00) → the Quiet 1 wilderness: Dust palette + Quiet+ glyph, unnavigable trees with the bump-3 axe-absence beat, harvest, the ruin's note / 'another Quiet 1' recipe / eye core (15:30) → the capacity-absence beat while carrying the core (21:00) → the eye core slotted at the Shrine, firing game-wide fullness pips (28:00) asserted on nested + toolbar + room bag cells → the Crafting Table: the action queue materialized on the first timed craft, realtime progress by advanceTime only, completion producing the Quiet Compass → the minimap (24:00–26:00) → and the three-path cliff (30:00): the explorer path (craft + ENTER a second Quiet 1, lighting minimap wedge 2), the organizer path (craft a new Belt Pouch), and the gatherer path (the axe recipe KNOWN + readable but priced in Iron Ore that never appears — known-but-uncraftable, the axe negative). The 11 progressive-UI ledger rows are flagged golden:true (each materialization moment → a committed TUI buffer + a Godot screenshot on Aaron's Windows run). The bags-in-bags soft hint and its first-nest memory fragment need a nesting-event dialogue trigger that Core does NOT have (deferred, drift report); the script nests, so the negative is the test — no hint fires (hint-negative checkpoint). Coordinates are pinned to the deterministic demo profile (GameInitializer.DemoSeed); a content change that shifts them is a deliberate script update (append-only history).",
+  "steps": [
+    { "comment": "DEMO OPENING (journey 0:00) — frame 0 is the dialogue box alone: grid ledger-off, opening beat active. Pure assert (no action).",
+      "checkpoint": "frame-0", "golden": true,
+      "assertViewModel": {
+        "ui": { "dialogueBox": true, "grid": false, "descriptionPane": false, "toolbar": false, "lookInOverlay": false, "breadcrumbs": false, "shrineView": false, "clockReadout": false, "actionQueue": false, "minimap": false, "fullnessPips": false },
+        "dialogue": { "beatId": "opening", "index": 0, "line": "…cold. Was I reaching for something?", "portrait": "groggy" }
+      },
+      "assertRender": "reaching for something" },
+
+    { "comment": "Dismiss the opening beat on Primary — the box drops and the world (grid) fades in (0:45).",
+      "checkpoint": "opening-dismissed", "golden": true, "key": "Primary",
+      "assertViewModel": { "dialogue": null, "ui": { "dialogueBox": true, "grid": true, "descriptionPane": false, "toolbar": false } } },
+
+    { "comment": "BROWSE (journey 1:30) — first cursor-rest on an item materializes the description pane.",
+      "checkpoint": "inspect-1", "golden": true, "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 1 }, "dialogue": null, "ui": { "descriptionPane": true } } },
+    { "checkpoint": "inspect-2", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 2 }, "dialogue": null } },
+    { "comment": "3rd unique item inspected → the amnesia beat fires (exactly once).",
+      "checkpoint": "inspect-3", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 3 }, "dialogue": { "beatId": "amnesia", "index": 0, "line": "I know what these are. Why don't I know where I am?", "portrait": "puzzled" } },
+      "assertRender": "know what these are" },
+
+    { "comment": "Rapid input while the beat shows: a non-Primary key is swallowed — cursor does NOT move (no leak) and the beat does not double-advance.",
+      "checkpoint": "no-cursor-leak", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 3 }, "dialogue": { "beatId": "amnesia", "index": 0 } } },
+
+    { "checkpoint": "amnesia-dismissed", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 0, "col": 3 }, "dialogue": null } },
+
+    { "comment": "Scanning onto a brand-new unique item (4th) does NOT re-fire amnesia (fire-once).",
+      "checkpoint": "no-refire", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 4 }, "dialogue": null } },
+
+    { "comment": "Reposition the cursor back to (0,0) so the original mechanical smoke runs from its pinned start.", "key": "Left" },
+    { "key": "Left" },
+    { "key": "Left" },
+    { "checkpoint": "back-to-origin", "key": "Left",
+      "assertViewModel": { "cursor": { "row": 0, "col": 0 }, "dialogue": null, "ui": { "grid": true, "descriptionPane": true } } },
+
+    { "checkpoint": "move-left-wrap", "key": "Left", "assertViewModel": { "cursor": { "row": 0, "col": 7 }, "ui": { "grid": true, "toolbar": false, "lookInOverlay": false, "breadcrumbs": false } }, "assertRender": "Pockets" },
+    { "checkpoint": "move-right-wrap", "key": "Right", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
+    { "checkpoint": "move-down", "key": "Down", "assertViewModel": { "cursor": { "row": 1, "col": 0 } } },
+    { "checkpoint": "move-up", "key": "Up", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
+
+    { "comment": "SLICE 3 — THE TOOLBAR IS BORN (journey 4:00). Bare pickup (Primary on a resting item, empty hand) flies to the first available TOOLBAR slot, not the hand — the toolbar is where pickups land, the hand stays the reserved cut buffer. The item moves B→toolbar, so the census is conserved and the hand stays empty. Navigate to Plain Rock at (0,2).", "key": "Right" },
+    { "key": "Right", "assertViewModel": { "cursor": { "row": 0, "col": 2 }, "ui": { "toolbar": false } } },
+    { "comment": "First pickup: Rock flies to toolbar slot 0 and the toolbar materializes (FirstPickup fires on the toolbar gaining its first item). Hand stays empty.",
+      "checkpoint": "pickup-slot-0", "golden": true, "key": "Primary",
+      "assertViewModel": { "handEmpty": true, "ui": { "toolbar": true }, "toolbar": [ { "slot": 0, "item": "Plain Rock", "count": 10 } ] },
+      "assertRender": "Toolbar" },
+    { "comment": "Second pickup: Rough Wood (0,3) → slot 1 (left-to-right fill).", "key": "Right" },
+    { "checkpoint": "pickup-slot-1", "key": "Primary",
+      "assertViewModel": { "handEmpty": true, "toolbar": [ { "slot": 0, "item": "Plain Rock" }, { "slot": 1, "item": "Rough Wood", "count": 6 } ] } },
+    { "comment": "Third pickup: Tanned Leather (0,4) → slot 2. Slots 1→2→3 filled left-to-right.", "key": "Right" },
+    { "checkpoint": "pickup-slot-2", "key": "Primary",
+      "assertViewModel": { "handEmpty": true, "toolbar": [ { "slot": 0, "item": "Plain Rock" }, { "slot": 1, "item": "Rough Wood" }, { "slot": 2, "item": "Tanned Leather", "count": 6 } ] } },
+
+    { "comment": "SLICE 3 — TOOLBAR DEPTH-INVARIANCE. The toolbar is a fixed inventory (its own bag), present and unchanged at every depth. Assert its contents at root (depth 0), then enter the Belt Pouch (1,0) — a real breadcrumb push (FirstEnter) — and assert the SAME toolbar contents at depth 1, then leave and assert them again at depth 0." },
+    { "checkpoint": "toolbar-depth-0", "assertViewModel": { "isNested": false, "ui": { "breadcrumbs": false }, "toolbar": [ { "slot": 0, "item": "Plain Rock" }, { "slot": 1, "item": "Rough Wood" }, { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "hasBag": true } ] } },
+    { "checkpoint": "toolbar-depth-1", "golden": true, "click": { "row": 1, "col": 0, "button": "Primary" },
+      "assertViewModel": { "isNested": true, "breadcrumbs": [ "Default", "Belt Pouch" ], "ui": { "breadcrumbs": true }, "toolbar": [ { "slot": 0, "item": "Plain Rock" }, { "slot": 1, "item": "Rough Wood" }, { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "hasBag": true } ] } },
+    { "checkpoint": "toolbar-depth-0-again", "key": "LeaveBag",
+      "assertViewModel": { "isNested": false, "ui": { "breadcrumbs": true }, "toolbar": [ { "slot": 0, "item": "Plain Rock" }, { "slot": 1, "item": "Rough Wood" }, { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "hasBag": true } ] } },
+
+    { "comment": "SLICE 3 — BAG-AS-PARTIAL-EMPTY ACQUIRE (journey beat 5). Every plain toolbar slot is full (three distinct types); the only remaining space is the non-full Coin Pouch in slot 3. A 4th distinct pickup therefore acquires INTO that bag (recursive placement — the carrying-capacity mechanic). Ordering is empties-first-then-partial-bags, so this only fires once the plain slots are full. Cursor is restored to (1,0) after leaving the pouch; go to Woven Fiber (0,5).", "key": "Up" },
+    { "key": "Right" }, { "key": "Right" }, { "key": "Right" }, { "key": "Right" }, { "key": "Right" },
+    { "checkpoint": "overflow-into-toolbar-bag", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 0, "col": 5 }, "handEmpty": true, "toolbar": [ { "slot": 0, "item": "Plain Rock" }, { "slot": 1, "item": "Rough Wood" }, { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "hasBag": true, "contents": [ { "slot": 0, "item": "Woven Fiber", "count": 3 } ] } ] } },
+
+    { "comment": "BAGS-IN-BAGS SOFT HINT — THE NEGATIVE IS THE TEST (journey 21:00–24:00, RATIFIED single soft hint + the first-nest memory fragment). Both beats need a nesting-EVENT dialogue trigger (fire the hint iff nesting-count==0 by a marker; key the memory fragment to the first nest). Core has no such trigger kind (DialogueTriggerKind: GameStart/NthUniqueInspect/FirstFailedPeek/FirstPeekWhileCarrying/CoreSlotted/NthTreeBump) — adding one is new mechanics, so BOTH are deferred (see the drift report's deferred list). The script DID just nest (Woven Fiber acquired INTO the Coin Pouch above), so the sanctioned assertion is that no hint ever fires: dialogue stays null here and through the rest of the run. Pure assert (no action).",
+      "checkpoint": "hint-negative",
+      "assertViewModel": { "dialogue": null, "toolbar": [ { "slot": 0, "item": "Plain Rock" }, { "slot": 1, "item": "Rough Wood" }, { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "hasBag": true, "contents": [ { "slot": 0, "item": "Woven Fiber" } ] } ] } },
+
+    { "comment": "LOOK IN — open the Workshop as a container panel; the look-in overlay materializes (FirstPeek). Peeking is unaffected by pickup routing. Navigate B back to the Workshop at (0,0).", "key": "Left" },
+    { "key": "Left" }, { "key": "Left" }, { "key": "Left" },
+    { "key": "Left", "assertViewModel": { "cursor": { "row": 0, "col": 0 } } },
+    { "checkpoint": "enter-bag", "golden": true, "key": "Primary", "assertViewModel": { "openPanels": { "C": "Workshop" }, "ui": { "lookInOverlay": true } } },
+    { "checkpoint": "exit-bag", "back": true, "assertViewModel": { "openPanels": { "T": "Toolbar" }, "ui": { "lookInOverlay": true } } },
+
+    { "comment": "CRAFT (toolbar-sourced) — the demo carries materials in the toolbar, so crafting delivers FROM the toolbar into the Workshop. Grabbing from the toolbar panel (focus T) uses the classic grab-into-hand cut buffer (routing is B-only), proving grab-for-move stays available. Re-open the Workshop as C." },
+    { "checkpoint": "craft-open", "key": "Primary", "conserves": false, "assertViewModel": { "openPanels": { "C": "Workshop" } } },
+    { "comment": "Focus the toolbar (C→T via FocusPrev), grab Plain Rock from slot 0 into the hand.", "key": "FocusPrev", "conserves": false },
+    { "checkpoint": "craft-grab-rock", "key": "Primary", "conserves": false, "assertViewModel": { "handEmpty": false } },
+    { "comment": "Focus the Workshop (T→C), deliver the rock into input slot 0.", "key": "FocusNext", "conserves": false },
+    { "checkpoint": "craft-drop-rock", "key": "Primary", "conserves": false, "assertViewModel": { "handEmpty": true } },
+    { "comment": "Back to the toolbar, move to slot 1, grab Rough Wood.", "key": "FocusPrev", "conserves": false },
+    { "key": "Right", "conserves": false },
+    { "checkpoint": "craft-grab-wood", "key": "Primary", "conserves": false, "assertViewModel": { "handEmpty": false } },
+    { "comment": "Deliver the wood into the Workshop's second input slot.", "key": "FocusNext", "conserves": false },
+    { "key": "Right", "conserves": false },
+    { "checkpoint": "craft-drop-wood", "key": "Primary", "conserves": false, "assertViewModel": { "handEmpty": true } },
+    { "tick": 1, "conserves": false },
+    { "tick": 1, "conserves": false },
+    { "tick": 1, "conserves": false },
+    { "tick": 1, "conserves": false },
+    { "tick": 1, "conserves": false },
+    { "checkpoint": "crafted", "tick": 1, "conserves": false },
+
+    { "comment": "SLICE 4 — LOOK IN vs ENTER (journey 7:00 chest, 15:30 enter-only). From the post-craft state (focus on the Workshop look-in), C closes the focused overlay and returns focus to B (close-on-C). The Workshop is idle post-craft, so this and every Slice-4 action conserves.",
+      "checkpoint": "s4-close-craft-peek", "key": "Peek", "conserves": false,
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "isNested": false, "cursor": { "row": 0, "col": 0 } } },
+
+    { "comment": "Navigate B to the demo Chest at (1,1) — a plain, peekable carrying bag seeded at a free cell.", "key": "Down" },
+    { "checkpoint": "s4-at-chest", "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 1 } } },
+
+    { "comment": "THE DEMO'S C-PEEK (journey 7:00): C on the plain Chest opens a one-deep look-in overlay of its 4×2 grid WITHOUT entering — B stays at root, breadcrumbs are not pushed. FirstPeek → LookInOverlay materializes (idempotent; already lit earlier in this run).",
+      "checkpoint": "s4-peek-chest", "key": "Peek",
+      "assertViewModel": { "openPanels": { "C": "Chest", "T": "Toolbar" }, "ui": { "lookInOverlay": true, "breadcrumbs": true }, "isNested": false, "cursor": { "row": 1, "col": 1 } } },
+
+    { "comment": "CROSS-CONTAINER MOVE (arrange without being inside): focus is on the Chest overlay (C); grab its Smooth Pebble stack into the hand. Census is conserved — the item moves, nothing is created.",
+      "checkpoint": "s4-cross-grab", "key": "Primary",
+      "assertViewModel": { "handEmpty": false, "hand": [ { "item": "Smooth Pebble", "count": 3 } ] } },
+
+    { "comment": "C closes the focused Chest overlay (close-on-C); focus returns to B, the pebbles still in hand.",
+      "checkpoint": "s4-close-chest-peek", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "handEmpty": false } },
+
+    { "comment": "Complete the cross-container move: carry the pebbles to a free inventory cell and drop them there (Chest → hand → root). Navigate past the enter-only Quiet 1 wilderness at (1,2) to the empty (1,3).", "key": "Right" },
+    { "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 3 } } },
+    { "checkpoint": "s4-cross-drop", "key": "Primary",
+      "assertViewModel": { "handEmpty": true, "cursor": { "row": 1, "col": 3 } } },
+
+    { "comment": "ENTER-ONLY, THE FAILED PEEK (journey 15:30). Move onto the Quiet 1 wilderness at (1,2) and press C. It is enter-only: the peek is REFUSED — no overlay opens, the cursor and world are untouched — and the first-failed-peek beat fires (the only tell; no glyph, RATIFIED).", "key": "Left" },
+    { "checkpoint": "s4-failed-peek", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "isNested": false, "cursor": { "row": 1, "col": 2 },
+        "dialogue": { "beatId": "failed-peek", "index": 0, "line": "Can't just peek at this one.", "portrait": "wary" } },
+      "assertRender": "Can't just peek at this one" },
+
+    { "comment": "Dismiss the beat on Primary.", "checkpoint": "s4-failed-peek-dismissed", "key": "Primary",
+      "assertViewModel": { "dialogue": null, "cursor": { "row": 1, "col": 2 } } },
+
+    { "comment": "FIRE-ONCE: a second refused peek does NOT re-show the beat (the shake still fires, but that is a per-frontend affordance, not a checkpoint signal). Still no overlay, cursor unmoved.",
+      "checkpoint": "s4-failed-peek-no-refire", "key": "Peek",
+      "assertViewModel": { "dialogue": null, "openPanels": { "T": "Toolbar" }, "isNested": false, "cursor": { "row": 1, "col": 2 } } },
+
+    { "comment": "E WORKS WHERE C WON'T: Primary/E on the same enter-only bag crosses the threshold — a real breadcrumb push into the Quiet 1 wilderness. (Slice 6 upgraded the old throwaway 'Quiet Pocket' placeholder at this cell into the real wilderness; the enter-only teaching now uses it directly. The full exploration is the Slice-6 section below.)",
+      "checkpoint": "s4-enter-only-entered", "key": "Primary",
+      "assertViewModel": { "isNested": true, "activeBag": "Quiet 1", "breadcrumbs": [ "Default", "Quiet 1" ], "ui": { "breadcrumbs": true } } },
+
+    { "comment": "Q leaves back to the parent, restoring the cursor to the Quiet 1 cell (1,2).",
+      "checkpoint": "s4-enter-only-left", "key": "LeaveBag",
+      "assertViewModel": { "isNested": false, "cursor": { "row": 1, "col": 2 } } },
+
+    { "comment": "======== SLICE 5 — THE SHRINE, THE CLOCK, THE EYE OF FULLNESS ========" },
+
+    { "comment": "SLICE 5 (journey 12:00). Navigate to the Shrine — a plain, enterable bag item seeded in the home room at (1,4). Fullness pips are still ABSENT (asserted here — the eye core is not slotted yet).", "key": "Right" },
+    { "checkpoint": "s5-at-shrine", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 1, "col": 4 }, "ui": { "shrineView": false, "clockReadout": false, "fullnessPips": false } } },
+
+    { "comment": "Enter the Shrine (E/Primary → breadcrumb push). EnterShrine fires the ShrineView chrome row (journey 12:00). Three pre-slotted, LOCKED feature slots (Menu/Toolbar/Clock) + one empty, unlocked eye slot are present; clock readout + fullness pips are still absent.",
+      "checkpoint": "s5-enter-shrine", "golden": true, "key": "Primary",
+      "assertViewModel": {
+        "isNested": true, "activeBag": "Shrine", "breadcrumbs": [ "Default", "Shrine" ],
+        "ui": { "shrineView": true, "breadcrumbs": true, "clockReadout": false, "fullnessPips": false },
+        "cells": [
+          { "row": 0, "col": 0, "item": "Menu", "hasBag": true, "frame": "FeatureSlotFrame", "glyph": "menu", "locked": true },
+          { "row": 0, "col": 1, "item": "Toolbar", "hasBag": true, "frame": "FeatureSlotFrame", "glyph": "toolbar", "locked": true },
+          { "row": 1, "col": 0, "item": "Clock", "frame": "FeatureSlotFrame", "glyph": "clock", "locked": true },
+          { "row": 1, "col": 1, "empty": true, "frame": "FeatureSlotFrame", "glyph": "eye", "locked": false }
+        ] },
+      "assertRender": "Shrine" },
+
+    { "comment": "MENU IS PEEKABLE (journey 12:00): C on the Menu feature slot opens its bag as a look-in overlay (hand empty → no capacity beat). The Menu's Start/Esc contents are asserted by a Core unit test.",
+      "checkpoint": "s5-menu-peek", "key": "Peek",
+      "assertViewModel": { "openPanels": { "C": "Menu" }, "ui": { "lookInOverlay": true } } },
+    { "checkpoint": "s5-menu-peek-close", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" } } },
+
+    { "comment": "THE CLOCK, DETERMINISTICALLY (journey 15:00). Scripted time advance — the harness NEVER reads the wall clock. The clock is running but not yet noticed, so the readout chrome is still absent.",
+      "checkpoint": "s5-clock-advance-1", "advanceTime": 5000,
+      "assertViewModel": { "ui": { "clockReadout": false }, "clock": { "elapsedMs": 5000, "readout": "00:05" } } },
+    { "comment": "Cursor rests on the Clock slot → NoticeClock fires the ClockReadout chrome (absent→present). \"It was always running.\"",
+      "checkpoint": "s5-notice-clock", "golden": true, "key": "Down",
+      "assertViewModel": { "cursor": { "row": 1, "col": 0 }, "ui": { "clockReadout": true, "fullnessPips": false }, "clock": { "elapsedMs": 5000, "readout": "00:05" } } },
+    { "comment": "Advance again — the readout ticks forward (Δt asserted: 5000 → 15000).",
+      "checkpoint": "s5-clock-delta", "advanceTime": 10000,
+      "assertViewModel": { "clock": { "elapsedMs": 15000, "readout": "00:15" } },
+      "assertRender": "00:15" },
+
+    { "comment": "WRONG-ITEM REJECTION (feature-slot filter language) is asserted structurally: s5-enter-shrine pins the empty eye slot's filter (glyph \"eye\", locked false), and a Core unit test drives a non-matching item into it and asserts the rejection + slot-unchanged. The journey then proves the MATCHING core slots + locks below (s5-slot-core).",
+      "checkpoint": "s5-eye-filter",
+      "assertViewModel": { "cells": [ {}, {}, {}, { "empty": true, "glyph": "eye", "locked": false } ] } },
+
+    { "comment": "======== SLICE 6 — THE QUIET 1 WILDERNESS + FINDS (journey 15:30) ======== The Slice-5 core source is RE-POINTED here (append-only history): the eye core is no longer a Chest stopgap — the journey now runs wilderness → ruin → core → Shrine as one coherent thread. Leave the Shrine (cursor restores to the Shrine cell (1,4)), then walk to the Quiet 1 wilderness at (1,2).",
+      "checkpoint": "s5-leave-shrine", "key": "LeaveBag",
+      "assertViewModel": { "isNested": false, "cursor": { "row": 1, "col": 4 } } },
+    { "key": "Left" },
+    { "checkpoint": "c6-at-wilderness", "key": "Left", "assertViewModel": { "cursor": { "row": 1, "col": 2 } } },
+
+    { "comment": "C-ON-WILDERNESS STILL A NO-OP (enter-only held; first-failed-peek already fired in Slice 4, so fire-once means NO beat re-shows). No overlay opens, cursor + world untouched.",
+      "checkpoint": "c6-wilderness-peek-noop", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "isNested": false, "cursor": { "row": 1, "col": 2 }, "dialogue": null } },
+
+    { "comment": "ENTER (E works where C won't) → the Quiet 1 wilderness. The env header asserts the palette (Dust) + Quiet+ glyph via the VM env fields (both frontends draw an approximation; the SVG texture import is deferred). Cell 0 is open ground (Dry Grass entrance); cell 1 is an unnavigable tree. Slice-7 chrome (minimap/action queue) stays absent.",
+      "checkpoint": "c6-enter-wilderness", "key": "Primary",
+      "assertViewModel": {
+        "isNested": true, "activeBag": "Quiet 1", "breadcrumbs": [ "Default", "Quiet 1" ],
+        "env": { "palette": "Dust", "glyph": "quiet-positive" },
+        "ui": { "breadcrumbs": true, "minimap": false, "actionQueue": false },
+        "cells": [
+          { "row": 0, "col": 0, "item": "Dry Grass" },
+          { "row": 0, "col": 1, "item": "Standing Tree", "frame": "TreeFrame" }
+        ] },
+      "assertRender": "Quiet 1" },
+
+    { "comment": "UNNAVIGABLE TREES — the cursor REFUSES to enter a tree cell (position unchanged), with a bump cue. From the (0,0) entrance, Right targets the tree at (0,1): each press bumps it and the cursor stays at (0,0). Bumps 1 and 2 fire no beat.",
+      "checkpoint": "c6-bump-1", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 0 }, "dialogue": null } },
+    { "checkpoint": "c6-bump-2", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 0 }, "dialogue": null } },
+    { "comment": "THE BUMP-3 BEAT (verbs-by-absence): the 3rd bump fires the axe-absence line, exactly once. Cursor still unmoved.",
+      "checkpoint": "c6-bump-3", "key": "Right",
+      "assertViewModel": {
+        "cursor": { "row": 0, "col": 0 },
+        "dialogue": { "beatId": "axe-absence", "index": 0, "line": "Solid. If I had an axe— …did I used to have an axe?", "portrait": "wary" } },
+      "assertRender": "did I used to have an axe" },
+    { "checkpoint": "c6-bump-dismiss", "key": "Primary",
+      "assertViewModel": { "dialogue": null, "cursor": { "row": 0, "col": 0 } } },
+    { "comment": "FIRE-ONCE: a 4th bump does NOT re-show the beat (the shake still fires — a per-frontend cue, not a checkpoint signal). Cursor unmoved.",
+      "checkpoint": "c6-bump-no-refire", "key": "Right",
+      "assertViewModel": { "cursor": { "row": 0, "col": 0 }, "dialogue": null } },
+
+    { "comment": "HARVEST WITH CONSERVATION: Primary on the (0,0) Dry Grass harvests it into the parent (home room) — the item moves, the census is conserved, the hand stays empty. Cell 0 is now open ground.",
+      "checkpoint": "c6-harvest", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 0, "col": 0 }, "handEmpty": true, "cells": [ { "row": 0, "col": 0, "empty": true } ] } },
+
+    { "comment": "Navigate to the ruin at (2,0) down the open left column (cells 6 and 12 navigable).", "key": "Down" },
+    { "checkpoint": "c6-at-ruin", "key": "Down", "assertViewModel": { "cursor": { "row": 2, "col": 0 } } },
+
+    { "comment": "RUIN PEEK (C works on a ruin bag — only the wilderness itself resists the peek). Hand empty → no capacity beat. The one-deep overlay floats the ruin's 3×1 contents over the wilderness (still nested in it).",
+      "checkpoint": "c6-peek-ruin", "key": "Peek",
+      "assertViewModel": { "openPanels": { "C": "Ruin", "T": "Toolbar" }, "ui": { "lookInOverlay": true }, "isNested": true, "cursor": { "row": 2, "col": 0 }, "dialogue": null } },
+
+    { "comment": "The ruin holds a Scrawled Note (0,0), the 'another Quiet 1' recipe (0,1), and the relocated eye core (0,2). Move the overlay cursor onto the recipe and pick it up.", "key": "Right" },
+    { "comment": "RECIPE-AS-ITEM → KNOWN-RECIPES: grabbing the recipe card into the hand teaches its recipe — knownRecipes gains the 'another-quiet-1' entry (the explorer-path proof). The item moves (census conserved).",
+      "checkpoint": "c6-grab-recipe", "key": "Primary",
+      "assertViewModel": { "handEmpty": false, "hand": [ { "item": "Quiet Recipe" } ], "knownRecipes": [ "another-quiet-1" ] } },
+
+    { "comment": "Move onto the eye core (0,2). With the recipe in the single-slot hand, Primary SWAPS: the core comes to the hand, the (now-known) recipe rides back into the ruin cell. Census conserved; the recipe stays learned.", "key": "Right" },
+    { "checkpoint": "c6-swap-core", "key": "Primary",
+      "assertViewModel": { "handEmpty": false, "hand": [ { "item": "Eye Core" } ], "knownRecipes": [ "another-quiet-1" ] } },
+
+    { "comment": "Close the ruin overlay (close-on-C); focus returns to B, the eye core in hand.",
+      "checkpoint": "c6-close-ruin", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "handEmpty": false } },
+
+    { "comment": "CARRY THE CORE OUT (depth traversal): Q leaves the wilderness, restoring the cursor to the Quiet 1 cell (1,2), the eye core still in hand — the journey now holds the core en route to the Shrine.",
+      "checkpoint": "c6-leave-wilderness", "key": "LeaveBag",
+      "assertViewModel": { "isNested": false, "cursor": { "row": 1, "col": 2 }, "handEmpty": false, "hand": [ { "item": "Eye Core" } ] } },
+
+    { "comment": "CAPACITY-ABSENCE BEAT (journey 21:00). Peering into a bag WHILE CARRYING the core fires the capacity line once (\"…look inside every single one.\"). Walk to the Belt Pouch at (1,0) and peek it.", "key": "Left" },
+    { "checkpoint": "c6-to-pouch", "key": "Left", "assertViewModel": { "cursor": { "row": 1, "col": 0 } } },
+    { "checkpoint": "s5-capacity", "key": "Peek",
+      "assertViewModel": {
+        "openPanels": { "C": "Pouch" },
+        "dialogue": { "beatId": "capacity", "index": 0, "line": "Which one has space? I'd have to look inside every single one.", "portrait": "weary" } },
+      "assertRender": "look inside every single one" },
+    { "checkpoint": "s5-capacity-dismiss", "key": "Primary", "assertViewModel": { "dialogue": null } },
+    { "checkpoint": "s5-close-pouch", "key": "Peek", "assertViewModel": { "handEmpty": false } },
+
+    { "comment": "SLOT THE EYE CORE (journey 28:00). Carry it back to the Shrine and enter.", "key": "Right" },
+    { "key": "Right" }, { "key": "Right" },
+    { "checkpoint": "s5-back-to-shrine", "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 4 } } },
+    { "checkpoint": "s5-reenter-shrine", "key": "Primary",
+      "assertViewModel": { "isNested": true, "activeBag": "Shrine", "ui": { "shrineView": true, "clockReadout": true, "fullnessPips": false } } },
+    { "comment": "Move onto the empty eye slot (via the clock slot — NoticeClock is idempotent).", "key": "Down" },
+    { "checkpoint": "s5-at-eye-2", "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 1 } } },
+    { "comment": "SLOT IT — the glyph matches. The core locks irreversibly, CoreSlotted fires game-wide fullness pips (fullnessPips absent→present), and the resolution beat plays. Pips are asserted on the Shrine's own nested bag cells (Menu full / Toolbar empty).",
+      "checkpoint": "s5-slot-core", "golden": true, "key": "Primary",
+      "assertViewModel": {
+        "ui": { "fullnessPips": true },
+        "dialogue": { "beatId": "slotted", "index": 0, "line": "…Oh. Now I can see.", "portrait": "wonder" },
+        "cells": [
+          { "item": "Menu", "hasBag": true, "pip": "full" },
+          { "item": "Toolbar", "hasBag": true, "pip": "empty" },
+          {},
+          { "item": "Eye Core", "empty": false, "frame": "FeatureSlotFrame", "glyph": "eye", "locked": true }
+        ] },
+      "assertRender": "Now I can see" },
+    { "checkpoint": "s5-slot-dismiss", "key": "Primary",
+      "assertViewModel": { "dialogue": null, "ui": { "fullnessPips": true } } },
+
+    { "comment": "CORE NON-REMOVABLE: Primary on the locked eye slot is refused (a slotted core can't be harvested/grabbed). The slot is unchanged, the hand stays empty. Toolbar pip asserted here too (Coin Pouch partial — the toolbar render surface).",
+      "checkpoint": "s5-core-nonremovable", "key": "Primary",
+      "assertViewModel": {
+        "handEmpty": true,
+        "cells": [ {}, {}, {}, { "item": "Eye Core", "locked": true } ],
+        "toolbar": [ { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "pip": "partial" } ] } },
+
+    { "comment": "GAME-WIDE PIPS (room surface): leave to the home room and assert the fullness pip on every bag cell — Belt Pouch empty, Chest partial, Quiet 1 partial, Shrine full — against known contents.",
+      "checkpoint": "s5-room-pips", "key": "LeaveBag",
+      "assertViewModel": {
+        "isNested": false, "cursor": { "row": 1, "col": 4 },
+        "cells": [
+          {}, {}, {}, {}, {}, {}, {}, {},
+          { "item": "Belt Pouch", "hasBag": true, "pip": "empty" },
+          { "item": "Chest", "hasBag": true, "pip": "partial" },
+          { "item": "Quiet 1", "hasBag": true, "pip": "partial" },
+          {},
+          { "item": "Shrine", "hasBag": true, "pip": "full" }
+        ] } },
+
+    { "comment": "======== SLICE 7 — THE CRAFTING TABLE, THE COMPASS, THE THREE-PATH CLIFF (journey 24:00–30:00) ======== Crafting is now clock-driven (Realtime): three pre-loaded Crafting Tables in the home room stay idle until their recipe is KNOWN and game time is advanced. From the Shrine cell, drop down a row to the three recipe cards and learn them (a pickup routes to the toolbar and teaches the recipe). No time is advanced yet, so the action queue stays absent.",
+      "checkpoint": "s7-start", "key": "Down",
+      "assertViewModel": { "cursor": { "row": 2, "col": 4 }, "ui": { "actionQueue": false, "minimap": false } } },
+
+    { "comment": "Learn the COMPASS recipe (card at (2,5) → toolbar). knownRecipes gains 'compass'; still no craft.", "key": "Right" },
+    { "checkpoint": "s7-learn-compass", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 5 }, "handEmpty": true, "knownRecipes": [ "another-quiet-1", "compass" ], "ui": { "actionQueue": false } } },
+
+    { "comment": "Learn the POUCH recipe (organizer path).", "key": "Right" },
+    { "checkpoint": "s7-learn-pouch", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 6 }, "knownRecipes": [ "another-quiet-1", "belt-pouch", "compass" ] } },
+
+    { "comment": "Learn the AXE recipe — readable + known, but priced in Iron Ore that never appears down here (the gatherer path, deliberately out of reach). It overflows into the Coin Pouch (the plain toolbar slots are full).", "key": "Right" },
+    { "checkpoint": "s7-learn-axe", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 7 }, "knownRecipes": [ "another-quiet-1", "belt-pouch", "compass", "demo-axe" ], "ui": { "actionQueue": false, "minimap": false },
+        "toolbar": [ { "slot": 0, "item": "Compass Recipe" }, { "slot": 1, "item": "Pouch Recipe" }, { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "hasBag": true, "contents": [ { "item": "Woven Fiber" }, { "item": "Axe Recipe" } ] } ] } },
+
+    { "comment": "FIRST TIMED CRAFT (journey 24:00). One scripted second of game time starts every loaded+known table at once — FirstTimedAction materializes the ACTION QUEUE (absent→present). Each row sits at progress 1/3; the clock ticked 15000→16000ms. The minimap is still absent (no compass yet). The axe recipe is known but its table never queues — it is not craftable.",
+      "checkpoint": "s7-craft-start", "golden": true, "advanceTime": 1000,
+      "assertViewModel": {
+        "ui": { "actionQueue": true, "minimap": false },
+        "clock": { "elapsedMs": 16000, "readout": "00:16" },
+        "actionQueue": [
+          { "facility": "Crafting Table", "recipe": "another-quiet-1", "progress": 1, "duration": 3 },
+          { "facility": "Crafting Table", "recipe": "belt-pouch", "progress": 1, "duration": 3 },
+          { "facility": "Crafting Table", "recipe": "compass", "progress": 1, "duration": 3 }
+        ] },
+      "assertRender": "1/3" },
+
+    { "comment": "NO DRIFT — a plain key press advances neither the clock nor any craft: progress stays 1/3 and the clock stays at 16000ms. Only advanceTime moves crafting ('realtime, deterministically').",
+      "checkpoint": "s7-no-drift", "key": "Left",
+      "assertViewModel": {
+        "cursor": { "row": 2, "col": 6 },
+        "clock": { "elapsedMs": 16000 },
+        "actionQueue": [ { "recipe": "another-quiet-1", "progress": 1 }, { "recipe": "belt-pouch", "progress": 1 }, { "recipe": "compass", "progress": 1 } ] } },
+
+    { "comment": "Advance again — every craft ticks to 2/3.",
+      "checkpoint": "s7-craft-progress", "advanceTime": 1000,
+      "assertViewModel": { "clock": { "elapsedMs": 17000 }, "actionQueue": [ { "recipe": "another-quiet-1", "progress": 2 }, { "recipe": "belt-pouch", "progress": 2 }, { "recipe": "compass", "progress": 2 } ] } },
+
+    { "comment": "COMPLETE (journey 26:00). The third tick finishes all three crafts: the Quiet Compass appears → CompassCrafted materializes the MINIMAP (absent→present) and the queue drains. Wedge count == 1 — only the home Quiet 1 has been ENTERED; the freshly-folded one has not. Inputs were consumed + outputs produced (a declared transform).",
+      "checkpoint": "s7-craft-complete", "golden": true, "advanceTime": 1000, "conserves": false,
+      "assertViewModel": {
+        "ui": { "actionQueue": true, "minimap": true },
+        "clock": { "elapsedMs": 18000 },
+        "actionQueue": [],
+        "minimap": { "core": true, "wedges": 12, "litCount": 1, "lit": [ 0 ] },
+        "knownRecipes": [ "another-quiet-1", "belt-pouch", "compass", "demo-axe" ] },
+      "assertRender": "Zones" },
+
+    { "comment": "EXPLORER PATH (journey 30:00). The middle table (1,6) folded a NEW Quiet 1 wilderness from the ruin's 'another Quiet 1' recipe. Open it (facility → look-in) and lift the crafted bag out of its output tray into the hand.", "key": "Up" },
+    { "checkpoint": "s7-open-wildtable", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 1, "col": 6 }, "openPanels": { "C": "Crafting Table" } } },
+    { "key": "Right" },
+    { "checkpoint": "s7-grab-quiet1", "key": "Right", "assertViewModel": { "openPanels": { "C": "Crafting Table" } } },
+    { "checkpoint": "s7-lift-quiet1", "key": "Primary",
+      "assertViewModel": { "handEmpty": false, "hand": [ { "item": "Quiet 1" } ] } },
+    { "checkpoint": "s7-close-wildtable", "key": "Peek",
+      "assertViewModel": { "openPanels": { "T": "Toolbar" }, "handEmpty": false } },
+
+    { "comment": "Carry the crafted Quiet 1 to a free home cell (2,6)=cell 22 and drop it (hand → root). It renders a 'partial' fullness pip (grass + one tree inside) — the new bag exists and is visible in the world.", "key": "Down" },
+    { "checkpoint": "s7-drop-quiet1", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 6 }, "handEmpty": true,
+        "cells": [ {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { "item": "Quiet 1", "hasBag": true, "pip": "partial" } ] } },
+
+    { "comment": "ENTER the crafted wilderness (E works where C won't — it is EnterOnly, Dust-palette, Quiet+-glyphed, exactly like the found one). Entering lights a SECOND minimap wedge: litCount 1 → 2. The env header is asserted from the VM env fields.",
+      "checkpoint": "s7-enter-crafted", "key": "Primary",
+      "assertViewModel": {
+        "isNested": true, "activeBag": "Quiet 1",
+        "env": { "palette": "Dust", "glyph": "quiet-positive" },
+        "ui": { "minimap": true },
+        "minimap": { "litCount": 2, "lit": [ 0, 1 ] } },
+      "assertRender": "Quiet 1" },
+
+    { "checkpoint": "s7-leave-crafted", "key": "LeaveBag",
+      "assertViewModel": { "isNested": false, "cursor": { "row": 2, "col": 6 }, "minimap": { "litCount": 2 } } },
+
+    { "comment": "ORGANIZER PATH (journey 30:00). The loom (1,7) crafted a Belt Pouch. Navigate to it, open it, lift the new bag out.", "key": "Up" },
+    { "checkpoint": "s7-at-loom", "key": "Right", "assertViewModel": { "cursor": { "row": 1, "col": 7 } } },
+    { "checkpoint": "s7-open-loom", "key": "Primary", "assertViewModel": { "openPanels": { "C": "Crafting Table" } } },
+    { "key": "Right" },
+    { "key": "Right" },
+    { "checkpoint": "s7-lift-pouch", "key": "Primary",
+      "assertViewModel": { "handEmpty": false, "hand": [ { "item": "Belt Pouch" } ] } },
+    { "checkpoint": "s7-close-loom", "key": "Peek", "assertViewModel": { "openPanels": { "T": "Toolbar" }, "handEmpty": false } },
+
+    { "comment": "Carry the new Belt Pouch to a free home cell (2,7)=cell 23 and drop it. Fullness pips are on (eye core slotted), so the empty new bag renders an 'empty' pip — the organizer path's proof that the bag recipe crafts a real new carrying space.", "key": "Down" },
+    { "checkpoint": "s7-drop-pouch", "key": "Primary",
+      "assertViewModel": { "cursor": { "row": 2, "col": 7 }, "handEmpty": true,
+        "cells": [ {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { "item": "Belt Pouch", "hasBag": true, "pip": "empty" } ] } },
+
+    { "comment": "======== THE FINAL GOLDEN STATE — THE 30:00 THREE-PATH CLIFF (journey 28:00–30:00) ======== One consolidated pure-assert checkpoint over the whole end-state, standing at the home room (root, not nested). Every progressive-UI ledger row has materialized and stays present (chrome-as-state is monotonic): all 11 booleans true. The clock rests at 00:18 (only advanceTime moved it). The action queue drained. All three self-determination paths are legible from what the demo already showed:",
+      "comment2": "EXPLORER — 'another-quiet-1' known; a second Quiet 1 was crafted AND entered, so the minimap lights 2 of 12 wedges (Core dot + both entered zones). ORGANIZER — 'belt-pouch' known; a fresh Belt Pouch sits dropped at (2,7) rendering an 'empty' fullness pip (a real new carrying space). GATHERER / THE AXE NEGATIVE — 'demo-axe' is KNOWN and readable but priced in Iron Ore that never appears down here, so it is known-but-uncraftable: the Axe Recipe rides as a recipe CARD in the Coin Pouch (slot 3 contents), and NO Stone Axe item exists anywhere. Subset-match can only assert presence, so the census-level negative (no Stone Axe ever produced, no Iron Ore ever present) is proven by the conservation invariant running clean across every step of this run PLUS the Core test DemoProfileTests/CraftingTableTests.DemoTables_CraftCompass_Wilderness_AndPouch_ButNeverTheAxe (asserts demo-axe known + !HasItem Stone Axe). Here we assert the positive three-path evidence + the axe recipe still in card form.",
+      "checkpoint": "final-golden",
+      "assertViewModel": {
+        "isNested": false, "cursor": { "row": 2, "col": 7 }, "handEmpty": true, "dialogue": null,
+        "ui": { "dialogueBox": true, "grid": true, "descriptionPane": true, "toolbar": true, "lookInOverlay": true, "breadcrumbs": true, "shrineView": true, "clockReadout": true, "actionQueue": true, "minimap": true, "fullnessPips": true },
+        "knownRecipes": [ "another-quiet-1", "belt-pouch", "compass", "demo-axe" ],
+        "actionQueue": [],
+        "clock": { "elapsedMs": 18000, "readout": "00:18" },
+        "minimap": { "core": true, "wedges": 12, "litCount": 2, "lit": [ 0, 1 ] },
+        "toolbar": [ { "slot": 0, "item": "Compass Recipe" }, { "slot": 1, "item": "Pouch Recipe" }, { "slot": 2, "item": "Tanned Leather" }, { "slot": 3, "item": "Coin Pouch", "hasBag": true, "pip": "full", "contents": [ { "slot": 0, "item": "Woven Fiber" }, { "slot": 1, "item": "Axe Recipe" } ] } ],
+        "cells": [ {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { "item": "Quiet 1", "hasBag": true, "pip": "partial" }, { "item": "Belt Pouch", "hasBag": true, "pip": "empty" } ] } }
+  ]
+}

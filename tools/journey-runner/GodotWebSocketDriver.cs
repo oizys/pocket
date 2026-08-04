@@ -16,7 +16,7 @@ namespace Pockets.JourneyRunner;
 /// bag store, so the global conservation census is unavailable here (the runner falls back to a
 /// view-model-scoped invariant check and flags conservation as transport-limited).
 /// </summary>
-public sealed class GodotWebSocketDriver : IJourneyDriver
+public sealed class GodotWebSocketDriver : IJourneyDriver, IScreenshotDriver
 {
     private readonly ClientWebSocket _ws = new();
     private readonly Uri _uri;
@@ -53,6 +53,15 @@ public sealed class GodotWebSocketDriver : IJourneyDriver
             ["col"] = pos.Col,
             ["button"] = type.ToString()
         });
+
+    /// <summary>
+    /// Golden screenshot capture (Slice 8): asks the live Godot server to save its viewport to
+    /// <paramref name="path"/> via the transport-local <c>screenshot</c> action (the one command
+    /// <see cref="Pockets.Core.Rendering.DebugCommandHandler"/> does NOT handle — it needs the Godot
+    /// viewport). Runs only on a machine with a Godot runtime as part of <c>make parity-godot</c>.
+    /// </summary>
+    public void Screenshot(string path) =>
+        Send(new JsonObject { ["action"] = "screenshot", ["path"] = path });
 
     private JsonObject Send(JsonObject command)
     {

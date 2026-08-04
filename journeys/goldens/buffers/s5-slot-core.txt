@@ -1,0 +1,25 @@
+┌ Pockets ─────────────────────────────────────────────────────────────────────┐
+│┌ ► Inventory ───────────────────────────────────────┐┌ Clk 00:15  Shrine  ──┐│
+││       Default > ShHand                             ││Drop: 1 Eye Core     ▲││
+││           ●    ○                                   ││Enter: Shrine        ┬││
+││   ←     M    T                                     ││Close peek: C        │││
+││                                                    ││Dialogue: dismissed c│││
+││                                                    ││Peek: Pouch          │││
+││         C    E                                     ││Back: returned to par│││
+││                                                    ││Close peek: C        │││
+││        ┌  Toolbar─────────────┐                    ││Swap: Quiet Recipe ↔ │││
+││        │                   ◐  │                    ││Grab: 1 Quiet Recipe │││
+││        │            T 6  C    │                    ││Peek: Ruin           ┴││
+││        │                      │                    ││Harvest: 2 Dry Grass ░││
+││        │                      │                    ││Dialogue: dismissed a░││
+│└────────└──────────────────────┘────────────────────┘│Enter: Quiet 1       ░││
+│┌ Item ──────────────────────────────────────────────┐│Back: returned to par░││
+│┌ ❝ ─────────────────────────────────────────────────────────────────────────┐│
+││  .---.                                                                     ││
+││  |o.o|    …Oh. Now I can see.                                              ││
+││  '---'                                                                     ││
+││                                                                            ││
+││           ▸ Primary to continue                                            ││
+│└────────────────────────────────────────────────────────────────────────────┘│
+│[1/E:Action] [C:Peek] [2:Half] [3:QuickSplit] [#:Split] [4:Sort] [R:Recipe] [Q│
+└──────────────────────────────────────────────────────────────────────────────┘

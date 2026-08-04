@@ -1,0 +1,25 @@
+┌ Pockets ─────────────────────────────────────────────────────────────────────┐
+│         ┌► Workshop───────┐                          ┌ Action Log ──────────┐│
+│         │                 │                          │Open Container: Worksh││
+│         │                 │                          │Pickup: 3 Woven Fiber ││
+│         │  ▼▼▼  ▼▼▼  ▲▲▲  │                          │Back: returned to pare││
+│         │                 │                          │Enter: Belt Pouch     ││
+│┌   Inventory ───────────────────────────────────────┐│Pickup: 6 Tanned Leath││
+││       Default                                   Han││Pickup: 6 Rough Wood →││
+││                                                    ││Pickup: 10 Plain Rock ││
+││        ┌  Toolbar─────────────┐       F 6  R 4     ││Dialogue: dismissed am││
+││        │                      │                    ││Dialogue: dismissed op││
+││        │  P10  R 6  T 6  C    │                    ││                      ││
+││        │                      │  C    C    C       ││                      ││
+││        │                      │                    ││                      ││
+│└────────└──────────────────────┘────────────────────┘│                      ││
+│┌ Item ──────────────────────────────────────────────┐│                      ││
+││[Input Slot]                                        ││                      ││
+││Accepts: Plain Rock (need 8)                        ││                      ││
+││                                                    ││                      ││
+││--- Workshop ---                                    ││                      ││
+││                                                    ││                      ││
+││Recipes (R to cycle):                               ││                      ││
+│└────────────────────────────────────────────────────┘│◄├──────────────────┤►││
+│[1/E:Action] [C:Peek] [2:Half] [3:QuickSplit] [#:Split] [4:Sort] [R:Recipe] [Q│
+└──────────────────────────────────────────────────────────────────────────────┘

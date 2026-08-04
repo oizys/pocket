@@ -46,3 +46,17 @@ public interface IJourneyDriver : IDisposable
     /// <summary>Clicks a grid cell in the active (B) panel.</summary>
     void Click(Position pos, ClickType type);
 }
+
+/// <summary>
+/// A driver that can capture a per-frontend screenshot at a golden checkpoint (Slice 8). Only the
+/// real Godot driver implements this — the screenshot needs the live Godot viewport, so the capture
+/// runs on a machine with a Godot runtime (Aaron's Windows box) as part of <c>make parity-godot</c>.
+/// The runner probes for this interface and, when <c>--screenshots</c> is set, asks each golden
+/// checkpoint's driver to save a PNG; drivers without a viewport (tui, mock-godot) simply don't
+/// implement it and are skipped with a note.
+/// </summary>
+public interface IScreenshotDriver
+{
+    /// <summary>Saves a screenshot of the current frontend frame to <paramref name="path"/>.</summary>
+    void Screenshot(string path);
+}

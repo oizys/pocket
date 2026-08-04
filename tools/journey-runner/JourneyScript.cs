@@ -33,6 +33,16 @@ public record JourneyStep
     /// completion, ambient plant maturity, acquire/harvest).
     /// </summary>
     public bool Conserves { get; init; } = true;
+
+    /// <summary>
+    /// Marks this step's checkpoint as a golden-capture point (Slice 8). At a golden checkpoint a
+    /// driver that exposes a render surface records it: the TUI dumps its character buffer (→
+    /// <c>--goldens</c>) and the real Godot driver saves a viewport screenshot (→ <c>--screenshots</c>).
+    /// The target-demo journey flags exactly the progressive-UI ledger rows (each materialization
+    /// moment), so the golden set is one artifact per chrome element the moment it comes into being.
+    /// Ignored unless the corresponding output dir is passed; never affects the checkpoint stream.
+    /// </summary>
+    public bool Golden { get; init; }
 }
 
 /// <summary>A grid click target.</summary>
@@ -94,7 +104,8 @@ public record JourneyScript(string Name, string? Description, IReadOnlyList<Jour
             AdvanceTimeMs = o["advanceTime"]?.GetValue<int>(),
             AssertViewModel = o["assertViewModel"] as JsonObject,
             AssertRender = o["assertRender"]?.GetValue<string>(),
-            Conserves = o["conserves"]?.GetValue<bool>() ?? true
+            Conserves = o["conserves"]?.GetValue<bool>() ?? true,
+            Golden = o["golden"]?.GetValue<bool>() ?? false
         };
     }
 }

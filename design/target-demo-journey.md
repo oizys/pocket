@@ -19,6 +19,31 @@ flagged it — every one is reversible in synthesis. Harness hooks assume
 the Stage-3 TUI substrate + seeded fixtures; every UI materialization is
 an assertable absent→present transition.)*
 
+---
+
+> ## ✅ IMPLEMENTED — see [`journeys/target-demo.journey.json`](../journeys/target-demo.journey.json)
+>
+> **This document is now executable.** The whole 0:00→30:00 thread is the target-demo journey
+> script (Slice 8), green + diff-clean on both drivers (`make parity-full`, 153 checkpoints);
+> `make parity` runs the fast first-~10-min prefix (`smoke`, 76 checkpoints). Every section below is
+> **implemented** unless its status line says otherwise. The 11 progressive-UI ledger rows are
+> recorded as goldens (TUI buffers + a Windows Godot screenshot set). Where the build **deliberately
+> diverged** from a literal reading here, the ratified-in-code call is in the drift report's
+> [**as-built decisions list**](parity-drift-report.md#as-built-decisions-ratified-in-code-across-slices-08)
+> (Slice-8 closing section) — the load-bearing ones:
+>
+> | Journey section | Checkpoint(s) | As-built note |
+> |---|---|---|
+> | 0:00–1:30 opening | `frame-0`→`amnesia-dismissed` | Data-driven dialogue in `/data/dialogue/`; monotonic, does not undo. |
+> | 1:30–4:00 description | `inspect-1`..`inspect-3` | 3rd-unique-inspect beat, fire-once. |
+> | 4:00–7:00 toolbar | `pickup-slot-0`..`overflow-into-toolbar-bag` | Pickup→toolbar is a demo-only flag; toolbar 1×4; acquire descends into non-full plain bags. |
+> | 7:00–9:30 chest / enter | `enter-bag`, `s4-*`, `toolbar-depth-1` | `C` = a new generic `Peek`; `EnterOnly` refuses it (no marker — the failed peek is the only tell). |
+> | 12:00–15:30 Shrine | `s5-enter-shrine`..`s5-eye-filter` | Shrine = a plain enterable bag; injectable clock; scripted `advanceTime` only. |
+> | 15:30–21:00 wilderness | `c6-*`, `s5-capacity` | Real Quiet 1; eye-core source re-pointed Chest→ruin; unnavigable trees; recipe-as-item. |
+> | 21:00–24:00 bags-in-bags | `hint-negative` | **Hint + first-nest memory fragment DEFERRED** (no nesting-event trigger in Core); the negative is the test. |
+> | 24:00–28:00 table / compass | `s7-craft-start`..`s7-craft-complete` | Crafting Table = generic assembler (KnownRecipes∩Recipes); minimap lights on *entering*, not crafting. |
+> | 28:00–30:00 eye of fullness + cliff | `s5-slot-core`, `s7-*`, `final-golden` | Fullness (not Sort) is the closing unlock; three-path cliff incl. the axe negative (known-but-uncraftable). |
+
 **Spine in one line:** wake with nothing — not even UI — and let curiosity
 pull verbs, panels, and memory into existence, one noticed absence at a
 time, ending with a compass, an axe recipe, and one Shrine slot filled.

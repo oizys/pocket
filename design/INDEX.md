@@ -32,4 +32,4 @@
 | 22 | Depth-Recipe Progression (Navigation-is-Crafting Data Spine) | Early-Mid | Implemented | [depth-recipes.md](depth-recipes.md) |
 | -- | Target Demo Journey (30-min unified draft — mirror of vault reading copy) | -- | Reference | [target-demo-journey.md](target-demo-journey.md) |
 | -- | Target Demo Build Plan (worker-sized slices — mirror of vault reading copy) | -- | Reference | [target-demo-build-plan.md](target-demo-build-plan.md) |
-| -- | Parity Drift Report (TUI↔Godot divergences, Slice 0) | -- | Reference | [parity-drift-report.md](parity-drift-report.md) |
+| -- | Parity Drift Report (TUI↔Godot divergences, Slices 0–8 + as-built decisions; parity gate = `make parity`/`parity-full`) | -- | Reference | [parity-drift-report.md](parity-drift-report.md) |

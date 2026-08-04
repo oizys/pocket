@@ -1,0 +1,25 @@
+┌ Pockets ─────────────────────────────────────────────────────────────────────┐
+│┌ ► Inventory ───────────────────────────────────────┐┌ Clk 00:16  Shrine  ──┐│
+││       Default                                   Han││Quiet 1 1/3          ▲││
+││           ●    ◐                                   ││Belt Pouch 1/3       ┬││
+││         W    F    D 2                 F 6  R 4     ││Quiet Compass 1/3    │││
+││                                                    ││--------             │││
+││           ○    ◐    ◐         ●    ◐    ◐    ◐     ││Tick #46             │││
+││         B    C    Q    S 3  S    C    C    C       ││Pickup: 1 Axe Recipe │││
+││                                                    ││Pickup: 1 Pouch Recip│││
+││        ┌  Toolbar─────────────┐                    ││Pickup: 1 Compass Rec┴││
+││        │                   ●  │                    ││Back: returned to par░││
+││        │  C    P    T 6  C    │                    ││FAILED: Harvest: 1 Ey░││
+││        │                      │                    ││Dialogue: dismissed s░││
+││        │                      │  G                 ││Drop: 1 Eye Core     ░││
+│└────────└──────────────────────┘────────────────────┘│Enter: Shrine        ░││
+│┌ Item ──────────────────────────────────────────────┐│Close peek: C        ░││
+││(empty)                                             ││Dialogue: dismissed c░││
+││                                                    ││Peek: Pouch          ░││
+││                                                    ││Back: returned to par░││
+││                                                    ││Close peek: C        ░││
+││                                                    ││Swap: Quiet Recipe ↔ ░││
+││                                                    ││Grab: 1 Quiet Recipe ▼││
+│└────────────────────────────────────────────────────┘│◄├────────────────┤░► ││
+│[1/E:Action] [C:Peek] [2:Half] [3:QuickSplit] [#:Split] [4:Sort] [R:Recipe] [Q│
+└──────────────────────────────────────────────────────────────────────────────┘

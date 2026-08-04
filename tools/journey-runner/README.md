@@ -6,29 +6,61 @@ frontend driver and emits a diffable **view-model checkpoint stream**, running t
 gate — see [design/parity-drift-report.md](../../design/parity-drift-report.md) and
 [design/target-demo-build-plan.md](../../design/target-demo-build-plan.md) (principle 2).
 
-## One-command entry point
+## One-command entry points
 
 ```bash
-make parity          # tui + mock-godot over journeys/smoke.journey.json, diff the streams
-make parity-godot    # tui + live Godot (needs a running Godot build; see drift report)
+make parity          # FAST gate: tui + mock-godot over journeys/smoke.journey.json, diff the streams
+make parity-full     # FULL gate: BOTH journeys on both drivers + target-demo golden regression
+make record-goldens  # regenerate journeys/goldens/ after an INTENTIONAL journey/state change
+make parity-godot    # the full journey vs a live Godot build + screenshot set (needs a Godot runtime)
 make test            # the shipping suites (Core + App)
 ```
 
-`make parity` passes when both drivers finish with the invariant pack green **and** their
-checkpoint streams diff clean.
+Two standing gates (build plan sync policy — both pre-push):
+
+- **`make parity`** — the **fast** gate: [`journeys/smoke.journey.json`](../../journeys/smoke.journey.json),
+  the first ~10 minutes (through Slice 4's look-in-vs-enter). Run it constantly. Passes when both
+  drivers finish invariant-green and their checkpoint streams diff clean.
+- **`make parity-full`** — the **full** demo gate:
+  [`journeys/target-demo.journey.json`](../../journeys/target-demo.journey.json), the complete
+  30-minute thread. Runs both journeys on both drivers (it depends on `parity`), then
+  regression-checks the committed **goldens** (below). Smoke is a proper VM-prefix of the target
+  demo, so any smoke regression is also a target-demo regression.
+
+### Goldens (Slice 8)
+
+Committed under [`journeys/goldens/`](../../journeys/goldens/):
+
+- `target-demo.checkpoints` — the canonical VM checkpoint stream (driver-independent — byte-identical
+  across drivers by construction, so recorded from tui). `parity-full` diffs a fresh run against it.
+- `buffers/<label>.txt` — the TUI character-buffer render at each of the 11 progressive-UI **ledger
+  rows** (every chrome materialization moment: dialogue box, grid, description pane, toolbar, look-in
+  overlay, breadcrumbs, shrine view, clock readout, action queue, minimap, fullness pips). Captured at
+  the checkpoints flagged `"golden": true`.
+
+`make record-goldens` regenerates both after an intentional change (then commit the diff). On Aaron's
+Windows box, `make parity-godot` additionally saves a Godot **screenshot** per ledger row into
+`artifacts/godot-screenshots/` — the render-golden set for a vision-model pass (see drift report).
 
 ## Direct usage
 
 ```bash
 dotnet run --project tools/journey-runner -- \
   --driver tui|godot|mock-godot \
-  --script journeys/smoke.journey.json \
+  --script journeys/target-demo.journey.json \
   [--out artifacts/parity/tui.checkpoints] \
+  [--goldens <dir>] [--screenshots <dir>] \
   [--data <dir>] [--seed <int>] [--url ws://localhost:9080] [--dump]
 ```
 
 Exit code `0` = pass, `1` = a failed assertion / invariant / driver error, `2` = bad args.
 `--dump` also prints the checkpoint lines to stdout (handy for authoring scripts).
+
+- `--goldens <dir>` — at every `"golden": true` checkpoint, write the driver's render probe to
+  `<dir>/<label>.txt`. Only drivers with a render surface (tui) populate it; others emit a note.
+- `--screenshots <dir>` — at every `"golden": true` checkpoint, ask a screenshot-capable driver
+  (real **godot** only) to save `<dir>/<label>.png` (the transport-local `screenshot` action). Other
+  drivers note-skip; it never blocks the run.
 
 ## Drivers
 
@@ -57,7 +89,8 @@ drivers run the full census.
       "key": "Primary",
       "assertViewModel": { "handEmpty": false },          // recursive subset match on the VM
       "assertRender": "Inventory",                         // substring in the render probe (tui)
-      "conserves": false },                                // opt out of the conservation check
+      "conserves": false,                                  // opt out of the conservation check
+      "golden": true },                                    // capture render golden here (--goldens/--screenshots)
     { "comment": "notes only, no action" }
   ]
 }
@@ -73,6 +106,9 @@ drivers run the full census.
 - `conserves` (default `true`) asserts the whole-store item census is unchanged versus the
   previous step. Set `false` on steps that legitimately transform totals (craft completion,
   harvest, acquire) — the runner then records the delta as a note instead of failing.
+- `golden` (default `false`) flags this checkpoint as a render-golden capture point (Slice 8). With
+  `--goldens`/`--screenshots` the run saves the driver's render surface here; with neither flag it is
+  inert. The target-demo journey flags exactly the 11 progressive-UI ledger rows.
 
 ## Invariant pack (after every step)
 
