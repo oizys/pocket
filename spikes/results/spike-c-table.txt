@@ -1,0 +1,96 @@
+ rule mode               N  k | exact diffCells maxAbs  sumAbs xDiffCells maxXDiff |  cost
+ P1   bigstep          240  2 | True          0      0       0         48        1 |   120
+ P1   substep          240  2 | True          0      0       0          0        0 |   240
+ P1   bigstep          240  4 | True          0      0       0         78        3 |    60
+ P1   substep          240  4 | True          0      0       0          0        0 |   240
+ P1   bigstep          240  8 | True          0      0       0         78        7 |    30
+ P1   substep          240  8 | True          0      0       0          0        0 |   240
+ P1   p1-catchup       240  - | True          0      0       0          0        0 |     1
+ P1   bigstep          241  2 | True          0      0       0         48        1 |   121
+ P1   substep          241  2 | True          0      0       0          0        0 |   241
+ P1   substep-noflush   241  2 | False        42      2      61          0        0 |   240
+ P1   bigstep          241  4 | True          0      0       0         78        3 |    61
+ P1   substep          241  4 | True          0      0       0          0        0 |   241
+ P1   substep-noflush   241  4 | False        42      2      61          0        0 |   240
+ P1   bigstep          241  8 | True          0      0       0         78        7 |    31
+ P1   substep          241  8 | True          0      0       0          0        0 |   241
+ P1   substep-noflush   241  8 | False        42      2      61          0        0 |   240
+ P1   p1-catchup       241  - | True          0      0       0          0        0 |     1
+ P1   bigstep         2400  2 | True          0      0       0         48        1 |  1200
+ P1   substep         2400  2 | True          0      0       0          0        0 |  2400
+ P1   bigstep         2400  4 | True          0      0       0         78        3 |   600
+ P1   substep         2400  4 | True          0      0       0          0        0 |  2400
+ P1   bigstep         2400  8 | True          0      0       0         78        7 |   300
+ P1   substep         2400  8 | True          0      0       0          0        0 |  2400
+ P1   p1-catchup      2400  - | True          0      0       0          0        0 |     1
+ P2   bigstep          240  2 | False        64     16     656        199        4 |   120
+ P2   substep          240  2 | True          0      0       0          0        0 |   240
+ P2   bigstep          240  4 | False        68    119    5326        246       18 |    60
+ P2   substep          240  4 | True          0      0       0          0        0 |   240
+ P2   bigstep          240  8 | False        87    352   17258        246       49 |    30
+ P2   substep          240  8 | True          0      0       0          0        0 |   240
+ P2   p2-catchup       240  - | True          0      0       0          0        0 |    56
+ P2   bigstep          241  2 | False        64     16     588        199        4 |   121
+ P2   substep          241  2 | True          0      0       0          0        0 |   241
+ P2   substep-noflush   241  2 | False        58      8     312          0        0 |   240
+ P2   bigstep          241  4 | False        68    116    5266        246       18 |    61
+ P2   substep          241  4 | True          0      0       0          0        0 |   241
+ P2   substep-noflush   241  4 | False        58      8     312          0        0 |   240
+ P2   bigstep          241  8 | False        85    353   17138        246       49 |    31
+ P2   substep          241  8 | True          0      0       0          0        0 |   241
+ P2   substep-noflush   241  8 | False        58      8     312          0        0 |   240
+ P2   p2-catchup       241  - | True          0      0       0          0        0 |    56
+ P2   bigstep         2400  2 | True          0      0       0        209        4 |  1200
+ P2   substep         2400  2 | True          0      0       0          0        0 |  2400
+ P2   bigstep         2400  4 | True          0      0       0        256       22 |   600
+ P2   substep         2400  4 | True          0      0       0          0        0 |  2400
+ P2   bigstep         2400  8 | True          0      0       0        256       70 |   300
+ P2   substep         2400  8 | True          0      0       0          0        0 |  2400
+ P2   p2-catchup      2400  - | True          0      0       0          0        0 |    60
+ 
+ BELT L=12 (ChainStep). s=source period, c=sink period. occDiff = cells with different occupancy; cons/emit = full/cand.
+ cfg          mode               N  k | exact occDiff  cons f/c  emit f/c |  cost
+ s3c1 under   substep          240  2 | True        0     76/76     80/80 |   240
+ s3c1 under   naive-jump       240  2 | False       1     76/77     80/80 |   120
+ s3c1 under   substep          240  4 | True        0     76/76     80/80 |   240
+ s3c1 under   naive-jump       240  4 | False       9     76/58     80/69 |    60
+ s3c1 under   substep          240  8 | True        0     76/76     80/80 |   240
+ s3c1 under   naive-jump       240  8 | False       9     76/29     80/40 |    30
+ s3c1 under   belt-catchup     240  - | True        0     76/76     80/80 |    80
+ s3c1 under   substep          241  2 | True        0     77/77     81/81 |   241
+ s3c1 under   naive-jump       241  2 | True        0     77/77     81/81 |   121
+ s3c1 under   substep          241  4 | True        0     77/77     81/81 |   241
+ s3c1 under   naive-jump       241  4 | False       7     77/59     81/70 |    61
+ s3c1 under   substep          241  8 | True        0     77/77     81/81 |   241
+ s3c1 under   naive-jump       241  8 | False       7     77/30     81/41 |    31
+ s3c1 under   belt-catchup     241  - | True        0     77/77     81/81 |    81
+ s3c1 under   substep         2400  2 | True        0   796/796   800/800 |  2400
+ s3c1 under   naive-jump      2400  2 | False       1   796/797   800/800 |  1200
+ s3c1 under   substep         2400  4 | True        0   796/796   800/800 |  2400
+ s3c1 under   naive-jump      2400  4 | False       9   796/598   800/609 |   600
+ s3c1 under   substep         2400  8 | True        0   796/796   800/800 |  2400
+ s3c1 under   naive-jump      2400  8 | False       9   796/299   800/310 |   300
+ s3c1 under   belt-catchup    2400  - | True        0   796/796   800/800 |   800
+ s1c3 backlog substep          240  2 | True        0     76/76     88/88 |   240
+ s1c3 backlog naive-jump       240  2 | True        0     76/76     88/88 |   120
+ s1c3 backlog substep          240  4 | True        0     76/76     88/88 |   240
+ s1c3 backlog naive-jump       240  4 | False       1     76/58     88/69 |    60
+ s1c3 backlog substep          240  8 | True        0     76/76     88/88 |   240
+ s1c3 backlog naive-jump       240  8 | False       1     76/29     88/40 |    30
+ s1c3 backlog belt-catchup     240  - | True        0     76/76     88/88 |    88
+ s1c3 backlog substep          241  2 | True        0     77/77     89/89 |   241
+ s1c3 backlog naive-jump       241  2 | False       1     77/77     89/88 |   121
+ s1c3 backlog substep          241  4 | True        0     77/77     89/89 |   241
+ s1c3 backlog naive-jump       241  4 | False       1     77/59     89/70 |    61
+ s1c3 backlog substep          241  8 | True        0     77/77     89/89 |   241
+ s1c3 backlog naive-jump       241  8 | False       1     77/30     89/41 |    31
+ s1c3 backlog belt-catchup     241  - | True        0     77/77     89/89 |    89
+ s1c3 backlog substep         2400  2 | True        0   796/796   808/808 |  2400
+ s1c3 backlog naive-jump      2400  2 | True        0   796/796   808/808 |  1200
+ s1c3 backlog substep         2400  4 | True        0   796/796   808/808 |  2400
+ s1c3 backlog naive-jump      2400  4 | False       1   796/598   808/609 |   600
+ s1c3 backlog substep         2400  8 | True        0   796/796   808/808 |  2400
+ s1c3 backlog naive-jump      2400  8 | False       1   796/299   808/310 |   300
+ s1c3 backlog belt-catchup    2400  - | True        0   796/796   808/808 |   808
+ 
+

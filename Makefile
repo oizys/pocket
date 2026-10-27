@@ -28,7 +28,7 @@ GOLDENS := journeys/goldens
 OUT     := artifacts/parity
 SHOTS   := artifacts/godot-screenshots
 
-.PHONY: build test parity parity-full record-goldens parity-godot clean-parity
+.PHONY: build test parity parity-full record-goldens parity-godot clean-parity spikes spikes-bench
 
 ## Build the whole solution.
 build:
@@ -83,3 +83,11 @@ parity-godot:
 
 clean-parity:
 	dotnet run --project $(RUNNER) -- --clean $(OUT) $(SHOTS)
+
+## Phase 0 architecture spikes (design/two-layer.md #23) — a separate solution, never part of the game build.
+spikes:
+	dotnet test spikes/Spikes.sln
+
+## Spike B benchmark (Release, Stopwatch harness; ~5 min full, add ARGS=--quick for a fast pass).
+spikes-bench:
+	dotnet run -c Release --project spikes/Pockets.Spikes.Bench -- $(ARGS)
