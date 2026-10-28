@@ -670,3 +670,93 @@ written first and seen failing (compile) before any production code.
   every `Commit` snaps and every time is relative to the latest commit.
 - `Sample` regroups the tracks on every call. That is fine at today's sizes; precompute the groups if
   Godot's per-frame sampling (2.5) shows up in profiles.
+
+## Addendum — Slice 2.3 as built (2026-10-28)
+
+Golden-neutral, with no Core, App or Godot edit. `dotnet test` is green (Core 1032, App 54, Realization 89)
+and `make parity-full` is green. The VM, events and 11 buffer goldens are byte-identical. The tests
+(`ChoreographyTests`, 13 cases) were written first and seen failing (compile) before any production code.
+The existing `TimelineTests` and `TimelineJourneyTests` pass unchanged, so u = 1 still equals the rest scene
+over both journeys.
+
+### Production (`src/Pockets.Realization/`)
+
+- **`TurnPhase { Player = 1, Reaction, Ambient }`** and **`Choreography`** (`Choreography.cs`):
+  - `Phases(events) → ImmutableArray<TurnPhase>` works **by kind and position**, never by intent type.
+    It walks the events with an `ambient` flag, which resets on a new step (a new `Step`, or `Seq == 0`):
+    - an envelope (`IntentApplied`, `IntentRejected` or `Rewound`) is Player and ends ambient;
+    - `TimeAdvanced` is Ambient, and so is everything after it in the same step;
+    - otherwise the kind decides. **Player:** `CursorMoved`, `BagEntered`/`Left`, `PanelOpened`/`Closed`,
+      `Stack*`, `BagRearranged`, `Acquired`, `RecipeSelected`. **Reaction:** everything else (`Bumped`,
+      `Harvested`, craft, plant, dialogue, triggers…).
+    - A composite `Click` (or `SetCursor` + `Primary` in one commit) therefore lays out exactly like one
+      turn (pinned).
+  - `IsClock(events)` is true iff the commit is **non-empty** and every event lies in a clock span. A
+    clock span is opened by a `Tick`/`SetElapsed` envelope or by `TimeAdvanced`; any other envelope,
+    `Rewound` or new step without either closes it. A bare `Bumped` (the controller's failed-peek replay,
+    target-demo lines 72/88) counts as input. **An empty commit is input and snaps**, which keeps 2.2's
+    idle-commit pin.
+- **`Timeline.Commit(events, next, policy, int atMs = 0)`**:
+  - **Snap rule (P2-D13):** a player commit (`!IsClock`) drops every old track (D7). A clock commit keeps
+    the old tracks that end after `atMs` and land in a bag `next` still shows, rebased by
+    `StartMs −= atMs`. `StartMs` may go negative; sampling copes. `atMs` defaults to 0, so existing
+    callers are unchanged. Snap is decided **from the events**, not from `TickMode`. A rogue tool step
+    carries its own non-clock envelope, so it always snaps, and a bare clock `Tick` never does, in either
+    mode.
+  - **Layout:** each event's tracks are built once, in the original order (facings update in that order,
+    as before). They are then added in `(phase, index)` order:
+    - Player tracks start at 0, chained as in 2.2.
+    - Reaction **and** Ambient tracks start at
+      `offset = span0 · ReactionOverlapPercent / 100`, where `span0` is the latest `EndMs` of this
+      commit's Player tracks (0 if there are none). So a refused walk's lunge plays at 0, and a harvest's
+      pops start at 50% of the walk.
+    - Fade tracks count toward `span0`, so a grab's ambient pop waits for half of its 125 ms fade.
+    - In a clock commit there is no Player phase, so ambient tracks start at 0, next to the kept tracks.
+  - **Chaining** now starts a chained track at `max(earlier.EndMs, its own StartMs)`, and it also chains
+    onto kept tracks.
+  - **`Rewound`:** only events after the **last** `Rewound` in the commit build tracks (the same effect
+    as 2.2's clear).
+- `ReactionOverlapPercent` (50) is the only offset knob, used for both reactions and ambient ("ambient
+  starts when the reactions start"). No new policy field was added.
+
+### Tests (`tests/Pockets.Realization.Tests/ChoreographyTests.cs`)
+
+- **Classification:**
+  - the phases by kind and position;
+  - a new envelope or step ends an ambient run;
+  - `IsClock` cases: Tick, SetElapsed, SetElapsed + TimeAdvanced + craft as in the golden, empty, Move,
+    `Rewound`, bare `Bumped`, Grab + TimeAdvanced.
+- **The rogue traces from the acceptance:**
+  - grab-then-tick: the fade at 0, the ambient `Acquired` pop at 64 of a 128 ms phase, and the walk
+    from before is snapped;
+  - a walk into a tree: only the lunge, `StartMs = 0`, with the 2.2 trace;
+  - a harvest: the walk at 0, and both pops (the tree cell and the shown yield) at 64. The same turn as
+    `SetCursor` + `Primary` gives identical tracks.
+  - Overlap at 0/50/100% gives a reaction start of 0/64/128.
+- **Realtime:**
+  - A tick at 40 ms mid-walk does not snap: the new 0 ms sample equals the old 40 ms sample, and the span
+    is 88.
+  - A key at 40 ms snaps.
+  - A tick adds its pop at 0 next to the kept walk (`StartMs −40`), and a tick at 200 ms drops the
+    finished walk.
+  - `atMs` defaults to 0 and keeps the tracks in place.
+
+### Notes for 2.4
+
+- **What to pass as `atMs`:** `DebugCommandHandler` (and the TUI driver) should pass the clock delta of
+  an `advanceTime`/`tick` response, i.e. the ms the clock advanced. Every other response passes 0; it
+  snaps anyway.
+  - In the journeys every `advanceTime` is ≥ 1000 ms, longer than any track, so clock commits in the
+    golden normally keep nothing and show only their own ambient tracks.
+  - Whatever the choice, it must be deterministic (never wall-clock), or the pose golden flaps.
+  - `TimelineJourneyTests` passes 0 throughout. That is harmless for its u = 1 property, but it is not
+    what a real driver does.
+- **`SpanMs` after a clock commit** can include kept tracks with a negative `StartMs`. Sampling
+  "u ∈ {0, ¼, ½, ¾, 1} of the last commit's span" over `[0, SpanMs]` is still right: 0 is "now", and kept
+  tracks are mid-flight there.
+- In v0, ambient events produce almost no tracks. Only an `Acquired`/`Harvested` after `TimeAdvanced`
+  pops; craft and plant events re-render at n = 1 (P2-D3). Expect target-demo's clock commits to be
+  mostly empty pose blocks.
+- **For 2.7:** `FineTick` should join `IsClock`'s clock envelopes (no snap). The timeline should add no
+  body walk for integrator-originated `CursorMoved` (2.7's own rule). `IsClock`'s pattern match on
+  `Intent.Tick or Intent.SetElapsed` is the one place to extend.

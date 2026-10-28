@@ -4,8 +4,8 @@ using Pockets.Core.Sim;
 namespace Pockets.Realization;
 
 /// <summary>
-/// A scene plus the tracks that animate towards it (slice 2.2). Tracks are relative to the commit's 0 ms; a new
-/// commit drops all old tracks (D7 snap). Facings persist across commits.
+/// A scene plus the tracks that animate towards it (slice 2.2). Tracks are relative to the commit's 0 ms; a player
+/// commit drops all old tracks (D7 snap); a clock commit keeps them rebased (P2-D13). Facings persist across commits.
 /// </summary>
 /// <param name="Scene">The rest scene the tracks land on.</param>
 /// <param name="Tracks">The live tracks.</param>
@@ -22,11 +22,16 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
     // ==================== Commit ====================
 
     /// <summary>
-    /// Commits <paramref name="events"/> leading to <paramref name="next"/>: drops all existing tracks, builds the
-    /// new ones from the events and updates the facings.
+    /// Commits <paramref name="events"/> leading to <paramref name="next"/> and updates the facings. A player commit
+    /// snaps (D7): all old tracks are dropped. A clock commit (only Tick/SetElapsed envelopes and TimeAdvanced runs,
+    /// P2-D13) keeps the live tracks that end after <paramref name="atMs"/> and still have a column layout, rebased by
+    /// <paramref name="atMs"/>. New tracks are staged by phase: Player tracks play at 0 ms, Reaction and Ambient tracks
+    /// start at the policy's overlap percent of the Player phase's span.
     /// </summary>
-    public Timeline Commit(IEnumerable<SimEvent> events, Scene next, RealizationPolicy policy)
+    public Timeline Commit(IEnumerable<SimEvent> events, Scene next, RealizationPolicy policy, int atMs = 0)
     {
+        var list = events.ToList();
+        var snap = !Choreography.IsClock(list);
         var facings = Facings;
         var applied = next with
         {
@@ -34,10 +39,9 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
                 p.Entity is EntityKey.Body b && facings.TryGetValue(b.Loc, out var f) ? p with { Facing = f } : p)
                 .ToImmutableArray()
         };
-        var tracks = new List<Track>();
-        foreach (var ev in events)
+        var built = new List<List<Track>>();
+        foreach (var ev in list)
         {
-            if (ev is SimEvent.Rewound) { tracks.Clear(); continue; }
             var (added, loc, facing) = Build(ev, applied, policy);
             if (loc is { } l && facing is { } fc)
             {
@@ -48,7 +52,34 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
                         .ToImmutableArray()
                 };
             }
-            foreach (var t in added) { if (ev is SimEvent.BagRearranged) tracks.Add(t); else Add(tracks, t); }
+            built.Add(added);
+        }
+
+        var tracks = snap
+            ? new List<Track>()
+            : Tracks.Where(t => t.EndMs > atMs && next.Columns.ContainsKey(t.To.Bag))
+                .Select(t => t with { StartMs = t.StartMs - atMs }).ToList();
+        var keptCount = tracks.Count;
+        var phases = Choreography.Phases(list);
+        var lastRewind = list.FindLastIndex(e => e is SimEvent.Rewound);
+        var order = Enumerable.Range(0, list.Count).Where(i => i > lastRewind)
+            .OrderBy(i => (int)phases[i]).ThenBy(i => i).ToList();
+
+        var offset = 0;
+        var offsetSet = false;
+        foreach (var i in order)
+        {
+            if (!offsetSet && phases[i] != TurnPhase.Player)
+            {
+                var span0 = tracks.Skip(keptCount).Select(t => t.EndMs).DefaultIfEmpty(0).Max();
+                offset = span0 * policy.ReactionOverlapPercent / 100;
+                offsetSet = true;
+            }
+            foreach (var t0 in built[i])
+            {
+                var t = phases[i] == TurnPhase.Player ? t0 : t0 with { StartMs = t0.StartMs + offset };
+                if (list[i] is SimEvent.BagRearranged) tracks.Add(t); else Add(tracks, t);
+            }
         }
         return new Timeline(applied, tracks.ToImmutableArray(), facings);
     }
@@ -62,7 +93,7 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
         if (i < 0) { tracks.Add(t); return; }
         var e = tracks[i];
         tracks[i] = e with { To = e.To with { Entity = t.To.Entity } };
-        tracks.Add(t with { Entity = e.Entity, StartMs = e.EndMs });
+        tracks.Add(t with { Entity = e.Entity, StartMs = e.EndMs > t.StartMs ? e.EndMs : t.StartMs });
     }
 
     /// <summary>The tracks (and any facing change) one event produces.</summary>
