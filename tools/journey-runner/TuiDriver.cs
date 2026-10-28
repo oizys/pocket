@@ -104,6 +104,23 @@ public sealed class TuiDriver : IJourneyDriver, ISessionDriver
     }
 
     /// <summary>
+    /// Slice 2.7: the TUI has no key-up, so it cannot steer (P2-D14); the driver calls the controller directly, as the
+    /// debug <c>steer</c> command does, and commits the result as input (atMs 0).
+    /// </summary>
+    public void Steer(LocationId at, Direction8? dir)
+    {
+        Record(_view.Controller.Steer(at, dir).Events, atMs: 0);
+        Render();
+    }
+
+    /// <summary>Slice 2.7: sets the movement flag through the controller, as the debug <c>setMovement</c> command does.</summary>
+    public void SetMovement(LocationId at, MovementModel model)
+    {
+        Record(_view.Controller.SetMovement(at, model).Events, atMs: 0);
+        Render();
+    }
+
+    /// <summary>
     /// Scripted clock advance (Slice 5). The harness GameView is built with enableTickTimer:false, so
     /// its controller keeps the default VirtualGameClock — this is the only thing that moves game time
     /// here. No wall clock is ever read.

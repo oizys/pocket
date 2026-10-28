@@ -160,4 +160,24 @@ public abstract record Intent
     /// Handled by the session shell like <see cref="Undo"/>, which owns the fine state; it never reaches Step.
     /// </summary>
     public sealed record SetFineOffset(LocationId At, int Index, int Dx, int Dy) : Intent;
+
+    /// <summary>
+    /// Holds the body of <paramref name="At"/> in direction <paramref name="Dir"/>, or releases it when null (D2-B).
+    /// Handled by the session shell like <see cref="Undo"/>, which owns the fine state; it never reaches Step. Logged
+    /// only when it changes the held direction.
+    /// </summary>
+    public sealed record Steer(LocationId At, Direction8? Dir) : Intent;
+
+    /// <summary>
+    /// One 8 Hz tick of the shell's integrator (D2-B). Handled by the session shell; it never reaches Step. A cell
+    /// crossing becomes an ordinary <see cref="Move"/> run through Step, not logged separately; an idle tick is a
+    /// no-op and is not logged.
+    /// </summary>
+    public sealed record FineTick : Intent;
+
+    /// <summary>
+    /// Debug / journey: sets the movement flag of <paramref name="At"/>'s active bag. Handled by the session shell;
+    /// no step, no event, no undo push.
+    /// </summary>
+    public sealed record SetMovement(LocationId At, MovementModel Model) : Intent;
 }

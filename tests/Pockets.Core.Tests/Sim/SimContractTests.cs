@@ -164,14 +164,15 @@ public class SimContractTests
 
         // Slice 1.3 deletes the transitional closure-carrying Tool case (1.2) and declares one data-only
         // case per controller path, each naming its target location where it acts on a panel (P1-D5).
+        // Slice 2.6 adds the shell-handled SetFineOffset; 2.7 adds the shell-handled FineTick, Steer and SetMovement (D2-B).
         Assert.Equal(
             new[]
             {
                 "AcquireRandom", "AdjustSplit", "AdvanceDialogue", "BeginSplit", "CancelSplit", "Click",
                 "CloseRecipeMenu", "CommitSplit", "ConfirmRecipeMenu", "CycleRecipe", "Drop", "Dsl", "EnterBag",
-                "Grab", "Harvest", "Interact", "Leave", "LeaveBag", "ModalSplit", "Move", "MoveRecipeMenu",
+                "FineTick", "Grab", "Harvest", "Interact", "Leave", "LeaveBag", "ModalSplit", "Move", "MoveRecipeMenu",
                 "OpenRecipeMenu", "Peek", "Primary", "QuickSplit", "Secondary", "SetCursor", "SetElapsed", "SetFineOffset",
-                "Sort", "Tick", "ToolPrimary", "Undo"
+                "SetMovement", "Sort", "Steer", "Tick", "ToolPrimary", "Undo"
             },
             cases.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray());
         Assert.Equal(new Intent.Tick(), new Intent.Tick());

@@ -56,6 +56,14 @@ public sealed class GodotWebSocketDriver : IJourneyDriver, IScreenshotDriver
 
     public void Tick() => Commit(new JsonObject { ["action"] = "tick" });
 
+    /// <summary>Slice 2.7: the debug <c>steer</c> command over the socket (a null direction releases).</summary>
+    public void Steer(LocationId at, Direction8? dir) =>
+        Commit(new JsonObject { ["action"] = "steer", ["loc"] = at.ToString(), ["dir"] = dir?.ToString() ?? "none" });
+
+    /// <summary>Slice 2.7: the debug <c>setMovement</c> command over the socket.</summary>
+    public void SetMovement(LocationId at, MovementModel model) =>
+        Commit(new JsonObject { ["action"] = "setMovement", ["loc"] = at.ToString(), ["model"] = model.ToString() });
+
     public void AdvanceTime(TimeSpan delta) =>
         Commit(new JsonObject { ["action"] = "advanceTime", ["ms"] = (long)delta.TotalMilliseconds });
 

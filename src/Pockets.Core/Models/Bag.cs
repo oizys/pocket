@@ -44,6 +44,13 @@ public record Bag(
     public Sim.BagClock Clock { get; init; } = Sim.BagClock.Observed;
 
     /// <summary>
+    /// This bag's movement model (P2-D12, D2-A or D2-B). Travels with the bag. Honoured only by the shell's fine path,
+    /// when the session is realtime and the bag is a world bag; nothing in the simulation reads it. Not projected
+    /// into the VM.
+    /// </summary>
+    public MovementModel Movement { get; init; } = MovementModel.GridLocked;
+
+    /// <summary>
     /// Places item stacks into this bag's grid. Returns a new Bag with the updated grid
     /// and any stacks that couldn't be placed. Optional skipIndices excludes specific cells.
     /// </summary>

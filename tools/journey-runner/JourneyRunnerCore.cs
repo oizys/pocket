@@ -251,6 +251,8 @@ public static class JourneyRunnerCore
 
     private static void Act(IJourneyDriver driver, JourneyStep step)
     {
+        if (step.SetMovement is { } movement) driver.SetMovement(movement.Loc, movement.Model);
+        if (step.Steer is { } steer) driver.Steer(steer.Loc, steer.Dir);
         if (step.Key is { } key) driver.Key(key);
         if (step.Back) driver.Back();
         if (step.Click is { } click) driver.Click(new Position(click.Row, click.Col), click.Button);

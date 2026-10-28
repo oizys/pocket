@@ -1107,6 +1107,23 @@ own player the same commit with the same deterministic `atMs`.
    - holding or mashing the arrow keys gives no lag and no queued animation, because each press snaps (D7);
    - Ctrl-Z mid-walk leaves the body at its cell centre (A3).
    - Also check that the rest frame looks as it did before 2.5 (stack tiles fill their cells).
+4. **D2-B (the 2.7 part; same build).** Disconnect any socket client first: the scene sends fine ticks from its frame
+   loop only while no client is connected. Then play into Quiet 1 by hand. Send
+   `{"action":"setMovement","loc":"B","model":"Free"}` from a one-shot client (for example a tiny `websocat` call), then
+   close it, or run the scratch free-move steps through `parity-godot` once 2.8 adds the journey.
+   - **setMovement B Free:** after it, an arrow press no longer jumps one cell.
+   - **Held-arrow glide:** a held arrow glides the body smoothly at about 2 cells/s. It crosses into the next cell about
+     every half second. The highlight follows the body's sub-cell position.
+   - **Diagonals:** two arrows held together (or the stick at 45°) glide diagonally. A diagonal crossing steps X then Y
+     in the same tick.
+   - **Tree stop:** gliding into a tree stops the body just short of the tree's cell. The "✕ A tree" cue fires **once**,
+     and holding the key longer gives no repeated bumps or lunge.
+   - **Edge clamp:** gliding at the outer grid edge stops there. No wrap.
+   - **Settle to centre:** on release the body eases back to its cell centre within about 2 ticks (a quarter second).
+   - **Stack nudge:** walking through a stack shifts it a little in the walk direction, by up to 6/16 of a cell.
+     Harvesting it or moving it re-centres it.
+   - **Feel notes for 2.9:** whether 8 Hz steps look smooth enough without an interpolation track (none was added; see
+     the 2.7 addendum), and whether the constant 2 cells/s speed needs acceleration.
 
 ### Notes for 2.7 (D2-B)
 
@@ -1126,3 +1143,172 @@ own player the same commit with the same deterministic `atMs`.
   than frames, 2.7 may want a short interpolation track for fine moves, which is a policy and golden question.
 - `GridDrawControl` already draws a body's fine `SubX`/`SubY` through `TileOrigin`, because rest poses carry
   `BodyOffset`. No Godot draw change should be needed for D2-B.
+
+## Addendum — Slice 2.7 as built (2026-10-28)
+
+D2-B is in: the per-bag flag, the fixed-point integrator, the three shell-handled intents and steering input. **No
+golden was added or changed.** The flag is off in both journeys and nothing steers, so every `FineTick` is an idle
+no-op, or is never sent at all. The VM checkpoints, `target-demo.events`, the 11 buffer goldens and `target-demo.poses`
+are byte-identical (`git status journeys/` is clean).
+
+- `dotnet test` is green: Core 1144 (up from 1085), App 54, Realization 163 (up from 136).
+- `make parity-full` is green.
+- `dotnet build src/Pockets.Godot/Pockets.Godot.csproj --no-incremental` gives 0 warnings and 0 errors in WSL.
+- The tests were written first and seen failing (58 compile errors: `Integrator`, `MovementModel`, `Steer`/`FineTick`,
+  `Scene.Driven`, …) before any production code.
+
+**`Simulation.Step` review flag: not raised.** No file under `Sim/Simulation*.cs` was edited. Step's dispatch already
+throws `InvalidOperationException("Unhandled intent …")` in its `default:` case, and that is how it rejects the three
+shell intents (`FreeMoveSessionTests.Step_RejectsTheThreeShellHandledIntents`). The only `Sim/**` edit is three new
+records in `Intent.cs`.
+
+### Deviation: three shell intents, not two
+
+The plan names "the two shell-handled intents" (`Steer`, `FineTick`). The flag also needs a replayable setter, so there
+is a third: **`Intent.SetMovement(At, MovementModel)`**, a debug/journey intent shaped like `SetFineOffset`.
+
+- It is shell-handled and writes `bag with { Movement }` into `Current.Store`. It runs no Step and emits no event, it
+  pushes no undo, and it is logged only on change.
+- It is the one shell path that writes **L1 state** (the flag lives on `Bag`, per P2-D12). L1 never *reads* the flag.
+  `FineWallTests.SimAndModels_DoNotReadTheMovementFlag_ExceptTheBagAndTheSessionShell` scans for `.Movement` reads.
+- The alternatives were worse:
+  - a Step-handled intent would be an L1 edit, breaking principle 7;
+  - a non-intent debug write would not replay.
+- **Undo caveat:** a snapshot taken before `setMovement` restores `GridLocked`. The next `FineTick` then drops the
+  stale body. This is accepted for a debug-set flag.
+- Deleting D2-B means deleting `Fine/Integrator.cs`, `Fine/FinePolicy.cs`, the three intents and their `GameSession`
+  branches, `Bag.Movement` + `MovementModel`, the controller and debug wrappers, and the Realization driven-body rule.
+
+Shape pin: 33 → 36 intent cases (`FineTick`, `SetMovement`, `Steer`).
+
+### Production (Core)
+
+- **`Models/MovementModel.cs`:** `{ GridLocked = 1, Free }`. **`Bag.Movement`** is an init property defaulting to
+  `GridLocked`. It is not in the VM.
+- **`Fine/FinePolicy.cs`:** `(OrthogonalSpeed 4, DiagonalSpeed 3, SettleSpeed 4, TicksPerSecond 8)`, so
+  `TickMs = 125`, with `Half = 8` and `Clamp = 7`. These are the policy table, so tuning them is a re-record of the 2.8
+  goldens and nothing else.
+- **`Fine/Integrator.cs`** (pure, ints only):
+  - `IsWorldBag` is the same rule as `Scene.IsWorldBag` (wilderness type or enter-only), pinned by a cross-test.
+  - `IsFree(game, mode, at)` means realtime, a world bag at `at`, and the `Free` flag.
+  - `Steer` sets `Held`. It is a no-op unless the body is free.
+  - `Advance(body, cell, cols, rows, policy)` works per axis:
+    - a held axis gets `v = ±speed` (diagonal 3), and `p += v`;
+    - an unheld axis settles: `step = clamp(−p, ±4)`, with `v = 0` once `p` reaches 0;
+    - a **blocked** axis (held, `v == 0`, and `p == ±7` in the held direction) stays put. This is how a tree bumps
+      **once** instead of 8 times a second;
+    - passing ±8 is a crossing, X before Y. At the outer edge it clamps to ±7 with `v = 0` and no crossing (P2-D10).
+  - `Resolve(body, dir, accepted)`: an accepted crossing gives `p −= 16·s`. A refused one gives `p = ±7` and that axis
+    `v = 0`.
+  - `Nudge` (P2-D11): a moving body pushes every non-empty, **navigable** cell it overlaps by ≥ 8/16 on both axes, by
+    `sign(v)` per tick, capped at ±6. In practice that is its own cell, plus the neighbour at exactly `p = ±8`. Trees
+    are never nudged.
+  - `ActiveBodies` / `StaleBodies`.
+- **`GameSession`** (still the only L1-side file naming `Pockets.Core.Fine`):
+  - Three `Dispatch` branches before `Expand`. `FineTickCore` works like this:
+    - inert when there are no bodies or a dialogue beat shows;
+    - drops stale bodies (bag left or no longer free);
+    - then, per active body in `LocationId` order: `Advance` → each crossing runs through **`RunStep(Move)`** (reconciled,
+      retained and checkpointed like a key press) → `Resolve` on whether a `CursorMoved` for that location came back →
+      **write the body back after the derived step's reconcile**, which is how the re-anchor is skipped → `Nudge`.
+  - The derived Move is not logged; the `FineTick` is (`ApplyTraced` logs it because the session changed).
+  - Public queries: `IsFree(at)`, `NeedsFineTick` (any stored body), and `FineTickLengthMs`. The last exists so that
+    `GameController`, which is behind the wall, never names `FinePolicy`.
+- **`GameController`:**
+  - `Steer`, `FineTick` and `SetMovement` wrappers.
+  - `SyncClockCore` (and so `advanceTime`) drives fine ticks from the same accumulator. **When no body is stored at the
+    start of the sync, it runs the old loop unchanged**, which is the golden-neutrality guarantee.
+  - Otherwise it walks every 125 ms boundary: a `FineTick`, plus a `Tick` on each whole second (fine first). The Tick
+    count is identical.
+- **Debug protocol:**
+  - `{"action":"setMovement","loc":"B","model":"Free"}`;
+  - `{"action":"steer","loc":"B","dir":"E"}`, where `loc` defaults to B and `dir` absent, null or `"none"` releases;
+  - a bad field is an error with `mutated = false`.
+
+### Production (Realization)
+
+- **`IFineView.IsDriven(loc, bag)`** is a default member, false by default. In the state view it means a stored body
+  with `Held` or non-zero `v`. **`Scene.Driven`** is the set of shown locations whose world-bag body is driven.
+- **P2-D13 (the 2.5 open question), answered in two places:**
+  - `Choreography.IsClock(events, driven)`: an `IntentApplied(Move)` at a driven location opens a clock-like span, and
+    so does a tree `Bumped` there. So an `advanceTime` commit that carries derived Moves **does not snap**.
+  - `Timeline.Commit(…, bool fineTick = false)`: an explicit fine commit never snaps. This exists for Godot's
+    event-less frame-driven ticks, because an empty commit otherwise counts as input.
+  - In both cases a driven body's `CursorMoved` and tree `Bumped` add **no walk or lunge track**; only the facing
+    updates. The body's pose is its cell plus `(Px, Py)` from L2a.
+  - With no driven body and `fineTick = false`, behaviour is unchanged, as the pose golden proves.
+- **`PosePlayer.Commit(…, bool fineTick = false)`** on both overloads.
+- **`SteerInput`** (integer, for Godot):
+  - `FromArrows(up, down, left, right)` is 8-way, and opposite arrows cancel;
+  - `FromStick(x, y, deadZone)` takes milli-units with y down, and splits at tan 22.5° ≈ 414/1000;
+  - `FromComponents`.
+- A TUI key Move of an **undriven** body in a free bag still walks (D2-A, P2-D14), and `Reconcile` re-anchors it.
+
+### Runner (journey steps, ready for 2.8)
+
+- Journey steps `"steer": "E"` (or `{"loc","dir"}`, with `"none"` to release) and
+  `"setMovement": {"loc":"B","model":"Free"}`.
+- They go through `IJourneyDriver.Steer`/`SetMovement`: the TUI driver calls the controller directly (atMs 0), and
+  mock-godot and the live Godot driver send the debug commands.
+- An uncommitted scratch journey ran on tui and mock-godot with `--replay-check`: target-demo up to entering Quiet 1,
+  then `setMovement`, steer E (tree bump), SE (crossing), W (edge), release. All three streams were byte-identical
+  cross-driver, and the replay check passed.
+
+### Godot files changed (exactly these two)
+
+- **`Scripts/GameSceneController.cs`:**
+  - When `Steering` (B is free, no split or recipe menu, B focused):
+    - arrow press and release (tracked in `_heldArrows`) and the left stick (`InputEventJoypadMotion`, quantized by
+      `SteerInput`) send a `Steer` on change, committed as input (it snaps, D7);
+    - arrow echo is swallowed.
+  - Otherwise arrows are the old Move presses.
+  - `_Process` computes one frame delta and runs `DriveFineTicks`: one `FineTick` per 125 ms of frame time (at most 4
+    per frame) while `NeedsFineTick` **and no socket client is connected**. Each is committed with `fineTick: true`
+    through `CommitFineTick`, every tick including event-less ones, so the body moves.
+  - The bump cue is factored into `ShowBumpCue` and also fires on derived bumps.
+- **`Scripts/DebugWebSocketServer.cs`:** `HasPeers`, plus the two commands in the protocol doc. The handler itself
+  already routes `steer`/`setMovement` through `PoseDebugCommandHandler` → Core.
+
+### Tests
+
+- `IntegratorTests` (28): the policy table, components, crossing ticks, diagonal X-then-Y, the refusal clamp, the
+  blocked axis, the edges and the corner, settle, nudge cap, boundary and tree, world bags, and the flag enum.
+- `FreeMoveSessionTests` (22):
+  - the flag, `IsFree`, Step rejection, Steer logging and no-ops;
+  - idle tick, glide and cross as an ordinary `Move` (not logged, no undo, no TickCount change);
+  - the edge clamp with no log, the tree bumping once, diagonal, settle, nudge plus a grab clearing it;
+  - a TUI Move re-anchoring, rogue = D2-A, the dialogue gate, stale-body drop;
+  - replay, undo, `AdvanceClock` boundaries, and the controller wrappers.
+- `FreeMoveDebugCommandTests` (8), and the wall scan for `.Movement`.
+- Realization `FreeMoveTests` (27):
+  - zoomed-ASCII traces (n = 4) through the real shell: held E crossing at tick 3 with the tree refusing at 7, the
+    diagonal into the corner, the outer edge, settle, and the nudge cap;
+  - `Scene.Driven`;
+  - no body track and no snap for a derived Move, with a concurrent pop kept;
+  - no lunge;
+  - an undriven key Move still walking;
+  - `IsClock` with driven, the fine commit not snapping, `PosePlayer`'s fine commit;
+  - `IsWorldBag` parity, and the `SteerInput` tables.
+
+### Notes for 2.8
+
+- **The free-move journey can be written now** with the new `steer`/`setMovement` steps. Drive fine ticks with
+  `advanceTime` (125 ms each), and enter Quiet 1 first: it is cursor (0,0), with a tree immediately E, so "held E"
+  bumps at once. The scratch journey above (target-demo steps 0–73, then free steps) is a working starting point.
+- **The pose stream does not show the glide.** `PoseStream.Lines` writes only entities with tracks, and a driven body
+  has none. So `free-move.poses` will show pops and slides but not the body's sub-cell walk. For the golden to pin the
+  glide, 2.8 must add the driven body's rest pose to the lines of a commit (a format addition only for driven commits,
+  so `target-demo.poses` stays identical), or rely on the `fine` query and `FineText` in checkpoints. That is 2.8's
+  decision.
+- **Fuzz caveat:** `--fuzz-fine` overwrites body `(Px, Py)` after each step. In a journey that keeps steering, the next
+  `FineTick`'s derived Moves then differ, so the L1 stream *will* diverge. Either fuzz only offsets and bodies with no
+  `Held`, skip the fuzz while `NeedsFineTick`, or run the fuzz on smoke and target-demo only, as the plan says. A
+  fuzzed body at `p = ±7` with `v = 0` and a matching `Held` also reads as blocked.
+- **L1-projection test:** collect the `IntentApplied(Move)` envelopes from the steps of `FineTick`-handled intents. A
+  `FineTick` can carry up to 2 Moves per body. Replay them on a D2-A session from the same start state, and remember
+  the `SetMovement` entries. It is harmless to replay them, because L1 never reads the flag.
+- **Intent-log growth (risk 6) is real:** every moving fine tick is logged, at 8 per second while a body moves or
+  settles.
+- **Interpolation:** none was added. In Godot the body moves in 4/16-cell steps, 8 times a second (`PosePlayer.Advance`
+  has no track to play between fine ticks). If Aaron's pass says it stutters, a short `Body` interpolation track over
+  `TickMs` for fine commits is the candidate. It is a policy and golden change.

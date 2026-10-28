@@ -58,6 +58,15 @@ public interface IJourneyDriver : IDisposable
 
     /// <summary>Clicks a grid cell in the active (B) panel.</summary>
     void Click(Position pos, ClickType type);
+
+    /// <summary>
+    /// Slice 2.7 (P2-D8): holds <paramref name="dir"/> at <paramref name="at"/>, or releases with null (the debug
+    /// <c>steer</c> command). A no-op outside a free world bag. Fine ticks then come from <see cref="AdvanceTime"/>.
+    /// </summary>
+    void Steer(LocationId at, Direction8? dir);
+
+    /// <summary>Slice 2.7 (P2-D12): sets the movement flag of <paramref name="at"/>'s active bag (the debug <c>setMovement</c>).</summary>
+    void SetMovement(LocationId at, MovementModel model);
 }
 
 /// <summary>

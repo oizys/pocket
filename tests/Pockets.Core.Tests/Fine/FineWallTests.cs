@@ -57,6 +57,28 @@ public class FineWallTests
         Assert.True(hits.Count == 0, "L1 references L2a:\n" + string.Join("\n", hits));
     }
 
+    /// <summary>
+    /// Slice 2.7 (P2-D12): L1 never reads the per-bag movement flag. Only the bag declares it and the session shell (which
+    /// sets it and hands it to the integrator) reads it; nothing else under <c>Sim/**</c> or <c>Models/**</c> does.
+    /// </summary>
+    [Fact]
+    public void SimAndModels_DoNotReadTheMovementFlag_ExceptTheBagAndTheSessionShell()
+    {
+        var root = TestPaths.RepoRoot;
+        var allowed = new[] { "src/Pockets.Core/Models/GameSession.cs", "src/Pockets.Core/Models/Bag.cs" };
+        var rx = new Regex(@"\.Movement\b");
+        var hits = new[] { "src/Pockets.Core/Sim", "src/Pockets.Core/Models" }
+            .SelectMany(d => Directory.EnumerateFiles(Path.Combine(root, d), "*.cs", SearchOption.AllDirectories))
+            .Where(f => !f.Split(Path.DirectorySeparatorChar).Any(part => part is "obj" or "bin"))
+            .Where(f => !allowed.Contains(Path.GetRelativePath(root, f).Replace(Path.DirectorySeparatorChar, '/')))
+            .SelectMany(f => File.ReadLines(f).Select((line, i) => (File: f, Line: i + 1, Text: line)))
+            .Where(l => rx.IsMatch(l.Text))
+            .Select(l => $"{Path.GetRelativePath(root, l.File)}:{l.Line}: {l.Text.Trim()}")
+            .ToList();
+
+        Assert.True(hits.Count == 0, "L1 reads Bag.Movement:\n" + string.Join("\n", hits));
+    }
+
     [Fact]
     public void SimulationStep_TakesAndReturnsNoFineType()
     {

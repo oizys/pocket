@@ -20,6 +20,8 @@ namespace Pockets.Godot.Scripts;
 ///   {"action": "advanceTime", "ms": 5000}           → AdvanceClock (scripted clock advance)
 ///   {"action": "state"}                             → Return current state (no mutation)
 ///   {"action": "poses"}                             → The last commit's pose lines (Slice 2.4; no mutation)
+///   {"action": "setMovement", "loc": "B", "model": "Free"} → SetMovement (Slice 2.7, D2-B flag)
+///   {"action": "steer", "loc": "B", "dir": "E"}      → Steer (Slice 2.7; dir null/"none" releases)
 ///   {"action": "screenshot", "path": "/tmp/ss.png"} → Save viewport screenshot
 ///
 /// Response: {"handled": bool, "status": "...", "state": {...}, "events": [...], "poses": [...]}
@@ -42,6 +44,12 @@ public partial class DebugWebSocketServer : Node
     /// the scene commits it to its own drawing timeline. Set by GameSceneController.
     /// </summary>
     public System.Action<ControllerResult, int>? OnCommit { get; set; }
+
+    /// <summary>
+    /// Slice 2.7: true while any client is connected. The scene drives D2-B fine ticks from its frame loop only while
+    /// this is false, so a socket-driven run (parity-godot) sees every fine tick through the handler's stream.
+    /// </summary>
+    public bool HasPeers => _peers.Count > 0;
 
     public override void _Ready()
     {

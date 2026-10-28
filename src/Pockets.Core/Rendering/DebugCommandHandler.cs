@@ -25,6 +25,8 @@ namespace Pockets.Core.Rendering;
 ///   {"action":"state"}                                        → serialize (no mutation)
 ///   {"action":"fine"}                                         → the L2a fine state as a <c>fine</c> line array (no mutation)
 ///   {"action":"setOffset","loc":"B","index":3,"dx":2,"dy":-1} → SetFineOffset (test-only, P2-D11)
+///   {"action":"setMovement","loc":"B","model":"Free"} → SetMovement (the per-bag D2-A/D2-B flag, P2-D12)
+///   {"action":"steer","loc":"B","dir":"E"} → Steer (dir absent, null or "none" releases; loc defaults to B)
 /// <c>Pockets.Realization.PoseDebugCommandHandler</c> wraps this dispatch with a <c>poses</c> query and a
 /// <c>poses</c> field on every success response (Slice 2.4), because Core cannot reference Realization; it plugs in
 /// through the <c>extend</c> callback of the four-argument <see cref="Handle(GameController, string, out bool, Action{JsonNode, ControllerResult, JsonObject}?)"/>.
@@ -114,6 +116,10 @@ public static class DebugCommandHandler
                     });
             case "setOffset":
                 return HandleSetOffset(controller, cmd, extend, out mutated);
+            case "setMovement":
+                return HandleSetMovement(controller, cmd, extend, out mutated);
+            case "steer":
+                return HandleSteer(controller, cmd, extend, out mutated);
             default:
                 return Error($"Unknown action: {action}");
         }
@@ -155,6 +161,66 @@ public static class DebugCommandHandler
 
         mutated = true;
         return Success(controller, controller.SetFineOffset(loc, index, dx, dy), cmd, extend);
+    }
+
+    /// <summary>Parses a defined <see cref="LocationId"/> name (any case); false for numbers and unknown names.</summary>
+    private static bool TryLoc(string? name, out LocationId loc)
+    {
+        loc = default;
+        return name is not null && System.Enum.TryParse(name, ignoreCase: true, out loc)
+            && System.Enum.GetNames<LocationId>().Contains(name, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// <c>setMovement</c>: validates <c>loc</c> (as <c>setOffset</c> does) and <c>model</c> (a defined
+    /// <see cref="MovementModel"/> name), then sets the flag. Any missing or bad field is an error and no mutation.
+    /// </summary>
+    private static string HandleSetMovement(GameController controller, JsonNode cmd,
+        Action<JsonNode, ControllerResult, JsonObject>? extend, out bool mutated)
+    {
+        mutated = false;
+        var locName = cmd["loc"]?.GetValue<string>();
+        if (!TryLoc(locName, out var loc))
+            return Error($"Missing or unknown 'loc': {locName}. Valid: {string.Join(", ", System.Enum.GetNames<LocationId>())}");
+        var modelName = cmd["model"]?.GetValue<string>();
+        if (modelName is null || !System.Enum.TryParse<MovementModel>(modelName, ignoreCase: true, out var model)
+            || !System.Enum.GetNames<MovementModel>().Contains(modelName, StringComparer.OrdinalIgnoreCase))
+            return Error($"Missing or unknown 'model': {modelName}. Valid: {string.Join(", ", System.Enum.GetNames<MovementModel>())}");
+
+        mutated = true;
+        return Success(controller, controller.SetMovement(loc, model), cmd, extend);
+    }
+
+    /// <summary>
+    /// <c>steer</c>: <c>loc</c> optional (default B, else validated as <c>setOffset</c> does); <c>dir</c> absent, null
+    /// or "none" releases, otherwise a defined <see cref="Direction8"/> name. A bad field is an error and no mutation.
+    /// </summary>
+    private static string HandleSteer(GameController controller, JsonNode cmd,
+        Action<JsonNode, ControllerResult, JsonObject>? extend, out bool mutated)
+    {
+        mutated = false;
+        var loc = LocationId.B;
+        if (cmd["loc"] is { } locNode)
+        {
+            var locName = locNode is JsonValue lv && lv.TryGetValue<string>(out var ls) ? ls : null;
+            if (!TryLoc(locName, out loc))
+                return Error($"Unknown 'loc': {locNode}. Valid: {string.Join(", ", System.Enum.GetNames<LocationId>())}");
+        }
+        Direction8? dir = null;
+        if (cmd["dir"] is { } dirNode)
+        {
+            var dirName = dirNode is JsonValue dv && dv.TryGetValue<string>(out var ds) ? ds : null;
+            if (dirName is null || !string.Equals(dirName, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                if (dirName is null || !System.Enum.TryParse<Direction8>(dirName, ignoreCase: true, out var parsed)
+                    || !System.Enum.GetNames<Direction8>().Contains(dirName, StringComparer.OrdinalIgnoreCase))
+                    return Error($"Unknown 'dir': {dirNode}. Valid: none, {string.Join(", ", System.Enum.GetNames<Direction8>())}");
+                dir = parsed;
+            }
+        }
+
+        mutated = true;
+        return Success(controller, controller.Steer(loc, dir), cmd, extend);
     }
 
     /// <summary>Reads <paramref name="field"/> of <paramref name="cmd"/> as an int; false when absent or not an int.</summary>

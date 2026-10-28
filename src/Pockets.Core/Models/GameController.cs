@@ -77,11 +77,28 @@ public class GameController
     {
         var before = _session.Elapsed;
         var now = _clock.Elapsed;
+        var fine = _session.NeedsFineTick;
         Send(new Intent.SetElapsed(now));
 
-        var ticks = (long)(now.TotalMilliseconds / TickLengthMs) - (long)(before.TotalMilliseconds / TickLengthMs);
-        for (long t = 0; t < ticks; t++)
-            Send(new Intent.Tick());
+        if (!fine)
+        {
+            var ticks = (long)(now.TotalMilliseconds / TickLengthMs) - (long)(before.TotalMilliseconds / TickLengthMs);
+            for (long t = 0; t < ticks; t++)
+                Send(new Intent.Tick());
+        }
+        else
+        {
+            // Bodies are in motion: interleave fine ticks (every boundary) with whole-second ticks, fine first.
+            var fineMs = GameSession.FineTickLengthMs;
+            var from = (long)(before.TotalMilliseconds / fineMs);
+            var to = (long)(now.TotalMilliseconds / fineMs);
+            for (var b = from + 1; b <= to; b++)
+            {
+                Send(new Intent.FineTick());
+                if (b * fineMs % TickLengthMs == 0)
+                    Send(new Intent.Tick());
+            }
+        }
 
         return ControllerResult.Handle(_session, "Clock: sync");
     }
@@ -423,6 +440,37 @@ public class GameController
         {
             Send(new Intent.SetFineOffset(at, index, dx, dy));
             return ControllerResult.Handle(_session, "Fine offset");
+        });
+
+    /// <summary>
+    /// Holds the body of <paramref name="at"/> in <paramref name="dir"/>, or releases it when null
+    /// (<see cref="Intent.Steer"/>). No Step runs; the shell changes the session's fine state.
+    /// </summary>
+    public ControllerResult Steer(LocationId at, Direction8? dir) =>
+        Collect(() =>
+        {
+            Send(new Intent.Steer(at, dir));
+            return ControllerResult.Handle(_session, "Steer");
+        });
+
+    /// <summary>
+    /// Runs one integrator tick (<see cref="Intent.FineTick"/>); a cell crossing runs as an ordinary move.
+    /// </summary>
+    public ControllerResult FineTick() =>
+        Collect(() =>
+        {
+            Send(new Intent.FineTick());
+            return ControllerResult.Handle(_session, "Fine tick");
+        });
+
+    /// <summary>
+    /// Sets the movement flag of <paramref name="at"/>'s active bag (<see cref="Intent.SetMovement"/>). No Step runs.
+    /// </summary>
+    public ControllerResult SetMovement(LocationId at, MovementModel model) =>
+        Collect(() =>
+        {
+            Send(new Intent.SetMovement(at, model));
+            return ControllerResult.Handle(_session, "Movement model");
         });
 
     private ControllerResult HandleDslCore(string dslExpression)

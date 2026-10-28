@@ -209,7 +209,11 @@ public record GameSession(
         return (next with { IntentLog = IntentLog.Add((TickCount + 1, intent)) }, trace, events);
     }
 
-    /// <summary>Routes one intent: undo to the shell, a composite to its sub-intents, anything else to one step.</summary>
+    /// <summary>
+    /// Routes one intent: undo and the fine intents (<see cref="Intent.SetFineOffset"/>, and the 2.7 shell intents
+    /// <see cref="Intent.SetMovement"/>, <see cref="Intent.Steer"/>, <see cref="Intent.FineTick"/>) to the shell, a
+    /// composite to its sub-intents, anything else to one step.
+    /// </summary>
     private (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) Dispatch(Intent intent)
     {
         if (intent is Intent.Undo)
@@ -222,6 +226,21 @@ public record GameSession(
             var fine = FineLogic.SetOffset(Fine, Current, o.At, o.Index, o.Dx, o.Dy);
             return (ReferenceEquals(fine, Fine) ? this : this with { Fine = fine }, null, ImmutableArray<SimEvent>.Empty);
         }
+        if (intent is Intent.SetMovement m)
+        {
+            if (Current.Locations.TryGet(m.At) is null) return (this, null, ImmutableArray<SimEvent>.Empty);
+            var bag = Current.ActiveBagAt(m.At);
+            if (bag.Movement == m.Model) return (this, null, ImmutableArray<SimEvent>.Empty);
+            return (this with { Current = Current with { Store = Current.Store.Set(bag.Id, bag with { Movement = m.Model }) } },
+                null, ImmutableArray<SimEvent>.Empty);
+        }
+        if (intent is Intent.Steer st)
+        {
+            var fine = Integrator.Steer(Fine, Current, TickMode, st.At, st.Dir);
+            return (ReferenceEquals(fine, Fine) ? this : this with { Fine = fine }, null, ImmutableArray<SimEvent>.Empty);
+        }
+        if (intent is Intent.FineTick)
+            return FineTickCore();
 
         var subs = Simulation.Expand(ToSimState(), intent);
         if (subs.Count == 1 && ReferenceEquals(subs[0], intent))
@@ -237,6 +256,56 @@ public record GameSession(
         }
         return (session, last, all.ToImmutable());
     }
+
+    /// <summary>
+    /// One 8 Hz integrator tick (D2-B). Every stale body (its bag is no longer the active free bag) is dropped; every
+    /// active body is advanced, and each cell crossing it reports is run through Step as an ordinary
+    /// <see cref="Intent.Move"/> (so it reconciles, retains and checkpoints like any step) and then settled as accepted
+    /// or refused by whether the cursor moved. The integrator-moved body is written back after its derived moves'
+    /// reconcile, then nudges the stacks it walks through. Returns this same instance when nothing changed. Inert
+    /// while a dialogue beat shows.
+    /// </summary>
+    private (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) FineTickCore()
+    {
+        var none = ImmutableArray<SimEvent>.Empty;
+        if (Fine.Bodies.IsEmpty || Current.Dialogue.IsActive) return (this, null, none);
+
+        var session = this;
+        foreach (var stale in Integrator.StaleBodies(Fine, Current, TickMode))
+            session = session with { Fine = session.Fine.WithBody(stale.Loc, stale.Bag, FineBody.Rest) };
+        StepTrace? last = null;
+        var all = ImmutableArray.CreateBuilder<SimEvent>();
+        foreach (var key in Integrator.ActiveBodies(Fine, Current, TickMode))
+        {
+            var body = session.Fine.BodyAt(key.Loc, key.Bag);
+            var cursor = session.Current.Locations.Get(key.Loc).Cursor.Position;
+            var grid = session.Current.ActiveBagAt(key.Loc).Grid;
+            var (moved, crossings) = Integrator.Advance(body, cursor, grid.Columns, grid.Rows, FinePolicy.Default);
+            body = moved;
+            foreach (var crossing in crossings)
+            {
+                (session, var trace, var events) = session.RunStep(new Intent.Move(key.Loc, crossing));
+                last = trace ?? last;
+                all.AddRange(events);
+                var accepted = events.Any(e => e is SimEvent.CursorMoved c && c.Loc == key.Loc);
+                body = Integrator.Resolve(body, crossing, accepted);
+            }
+            var fine = session.Fine.WithBody(key.Loc, key.Bag, body);
+            fine = Integrator.Nudge(fine, session.Current.ActiveBagAt(key.Loc),
+                session.Current.Locations.Get(key.Loc).Cursor.Position, body);
+            if (!ReferenceEquals(fine, session.Fine)) session = session with { Fine = fine };
+        }
+        return (session, last, all.ToImmutable());
+    }
+
+    /// <summary>True when the body of <paramref name="at"/> is integrated: realtime, a world bag, and the free movement flag.</summary>
+    public bool IsFree(LocationId at) => Integrator.IsFree(Current, TickMode, at);
+
+    /// <summary>True when some body is stored, so the frontend should keep sending <see cref="Intent.FineTick"/>.</summary>
+    public bool NeedsFineTick => !Fine.Bodies.IsEmpty;
+
+    /// <summary>The length of one fine tick in milliseconds (the integrator's rate).</summary>
+    public static int FineTickLengthMs => FinePolicy.Default.TickMs;
 
     /// <summary>
     /// Shell around one <see cref="Simulation.Step"/> of one intent. When the step changed state it counts

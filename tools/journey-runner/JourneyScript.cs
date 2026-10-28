@@ -21,6 +21,15 @@ public record JourneyStep
     /// <summary>Scripted clock advance in milliseconds (Slice 5 — deterministic, never wall-clock).</summary>
     public int? AdvanceTimeMs { get; init; }
 
+    /// <summary>
+    /// Slice 2.7: <c>"steer": "E"</c> (or <c>{"loc": "B", "dir": "E"}</c>) holds a direction; <c>"none"</c> or null
+    /// releases. Null here means the step has no steer.
+    /// </summary>
+    public SteerSpec? Steer { get; init; }
+
+    /// <summary>Slice 2.7: <c>"setMovement": {"loc": "B", "model": "Free"}</c>.</summary>
+    public SetMovementSpec? SetMovement { get; init; }
+
     // --- Assertions evaluated after the action. ---
     /// <summary>Subset match against the observed view-model (recursive containment).</summary>
     public JsonObject? AssertViewModel { get; init; }
@@ -57,6 +66,12 @@ public record JourneyStep
 
 /// <summary>A grid click target.</summary>
 public record ClickSpec(int Row, int Col, ClickType Button);
+
+/// <summary>Slice 2.7: a steer step, the held direction at a location (null releases).</summary>
+public record SteerSpec(LocationId Loc, Direction8? Dir);
+
+/// <summary>Slice 2.7: a setMovement step, the movement flag for a location's active bag.</summary>
+public record SetMovementSpec(LocationId Loc, MovementModel Model);
 
 /// <summary>A whole journey: ordered steps driven identically on every driver.</summary>
 public record JourneyScript(string Name, string? Description, IReadOnlyList<JourneyStep> Steps)
@@ -103,6 +118,25 @@ public record JourneyScript(string Name, string? Description, IReadOnlyList<Jour
             click = new ClickSpec(c["row"]?.GetValue<int>() ?? 0, c["col"]?.GetValue<int>() ?? 0, bt);
         }
 
+        SteerSpec? steer = null;
+        if (o.ContainsKey("steer"))
+            steer = o["steer"] switch
+            {
+                JsonObject so => new SteerSpec(ParseLoc(so["loc"]?.GetValue<string>(), index), ParseDir(so["dir"]?.GetValue<string>(), index)),
+                JsonValue sv => new SteerSpec(LocationId.B, ParseDir(sv.GetValue<string>(), index)),
+                _ => new SteerSpec(LocationId.B, null)
+            };
+
+        SetMovementSpec? setMovement = null;
+        if (o["setMovement"] is JsonObject m)
+        {
+            var modelName = m["model"]?.GetValue<string>();
+            if (modelName is null || !Enum.GetNames<MovementModel>().Contains(modelName, StringComparer.OrdinalIgnoreCase))
+                throw new FormatException($"Step {index}: unknown movement model '{modelName}'");
+            setMovement = new SetMovementSpec(ParseLoc(m["loc"]?.GetValue<string>(), index),
+                Enum.Parse<MovementModel>(modelName, ignoreCase: true));
+        }
+
         IReadOnlyDictionary<string, int>? expectDelta = null;
         if (o["expectDelta"] is JsonObject ed)
             expectDelta = ed.ToDictionary(kv => kv.Key, kv => kv.Value!.GetValue<int>());
@@ -116,11 +150,31 @@ public record JourneyScript(string Name, string? Description, IReadOnlyList<Jour
             Back = o["back"]?.GetValue<bool>() ?? false,
             Click = click,
             AdvanceTimeMs = o["advanceTime"]?.GetValue<int>(),
+            Steer = steer,
+            SetMovement = setMovement,
             AssertViewModel = o["assertViewModel"] as JsonObject,
             AssertRender = o["assertRender"]?.GetValue<string>(),
             Conserves = o["conserves"]?.GetValue<bool>() ?? true,
             ExpectDelta = expectDelta,
             Golden = o["golden"]?.GetValue<bool>() ?? false
         };
+    }
+
+    /// <summary>A step's location name (default B when absent); a FormatException for an unknown name.</summary>
+    private static LocationId ParseLoc(string? name, int index)
+    {
+        if (name is null) return LocationId.B;
+        if (!Enum.GetNames<LocationId>().Contains(name, StringComparer.OrdinalIgnoreCase))
+            throw new FormatException($"Step {index}: unknown location '{name}'");
+        return Enum.Parse<LocationId>(name, ignoreCase: true);
+    }
+
+    /// <summary>A step's held direction: null for absent or "none", else a <see cref="Direction8"/> name.</summary>
+    private static Direction8? ParseDir(string? name, int index)
+    {
+        if (name is null || name.Equals("none", StringComparison.OrdinalIgnoreCase)) return null;
+        if (!Enum.GetNames<Direction8>().Contains(name, StringComparer.OrdinalIgnoreCase))
+            throw new FormatException($"Step {index}: unknown steer direction '{name}'");
+        return Enum.Parse<Direction8>(name, ignoreCase: true);
     }
 }

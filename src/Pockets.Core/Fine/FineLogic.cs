@@ -13,8 +13,8 @@ public static class FineLogic
     /// BagRearranged bag is dropped, and so is any offset whose cell is empty or gone in <paramref name="next"/>.
     /// CursorMoved re-anchors that body to its cell centre (keeping velocity and held direction); BagEntered and
     /// BagLeft re-anchor every body of the location. A body that becomes rest is removed. Returns the same
-    /// instance when nothing changes. Note for 2.7: a CursorMoved that originates from the integrator must not
-    /// re-anchor the body.
+    /// instance when nothing changes. A CursorMoved derived from the integrator also re-anchors here; the
+    /// shell overwrites the integrator-moved body after the derived Move's reconcile.
     /// </summary>
     public static FineState Reconcile(FineState fine, IEnumerable<SimEvent> events, GameState next)
     {

@@ -56,8 +56,19 @@ public sealed record Scene(ImmutableArray<Pose> Poses)
             .Select(loc => state.ActiveBagAt(loc))
             .GroupBy(bag => bag.Id)
             .ToImmutableDictionary(g => g.Key, g => g.First().Grid.Columns);
-        return new Scene(poses) { Columns = columns };
+        var driven = shown
+            .Where(loc => state.Locations.TryGet(loc) is not null)
+            .Where(loc =>
+            {
+                var bag = state.ActiveBagAt(loc);
+                return IsWorldBag(bag) && view.IsDriven(loc, bag.Id);
+            })
+            .ToImmutableHashSet();
+        return new Scene(poses) { Columns = columns, Driven = driven };
     }
+
+    /// <summary>The shown locations whose body is being integrated (D2-B): their moves are clock-like (P2-D13).</summary>
+    public ImmutableHashSet<LocationId> Driven { get; init; } = ImmutableHashSet<LocationId>.Empty;
 
     /// <summary>The grid column count of every shown bag, keyed by bag id.</summary>
     public ImmutableDictionary<Guid, int> Columns { get; init; } = ImmutableDictionary<Guid, int>.Empty;

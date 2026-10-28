@@ -15,6 +15,12 @@ public interface IFineView
 
     /// <summary>The fine offset of the body of <paramref name="loc"/> in bag <paramref name="bag"/>, centre-relative.</summary>
     (int Px, int Py) BodyOffset(LocationId loc, Guid bag);
+
+    /// <summary>
+    /// True when the body of <paramref name="loc"/> in <paramref name="bag"/> is being integrated: stored with a held
+    /// direction or a non-zero velocity (D2-B). Views that know nothing of bodies in motion say false.
+    /// </summary>
+    bool IsDriven(LocationId loc, Guid bag) => false;
 }
 
 /// <summary>Ready-made <see cref="IFineView"/> instances.</summary>
@@ -41,6 +47,13 @@ public static class FineView
             var body = fine.BodyAt(loc, bag);
             return (body.Px, body.Py);
         }
+
+        /// <summary>True when the stored body has a held direction or a non-zero velocity.</summary>
+        public bool IsDriven(LocationId loc, Guid bag)
+        {
+            var body = fine.BodyAt(loc, bag);
+            return body.Held is not null || body.Vx != 0 || body.Vy != 0;
+        }
     }
 
     /// <summary>The all-zero fine view.</summary>
@@ -51,5 +64,8 @@ public static class FineView
 
         /// <summary>Always (0, 0).</summary>
         public (int Px, int Py) BodyOffset(LocationId loc, Guid bag) => (0, 0);
+
+        /// <summary>Always false.</summary>
+        public bool IsDriven(LocationId loc, Guid bag) => false;
     }
 }

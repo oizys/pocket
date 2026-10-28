@@ -23,6 +23,14 @@ namespace Pockets.Godot.Scripts;
 /// time moves only through socket tick/advanceTime. No clock commit can happen outside the socket, which is why
 /// parity-godot's "tui vs live-godot poses" cannot diverge at clock commits. If a live clock is ever added, route its
 /// syncs through the debug handler (so the handler's stream sees them) or keep it paused while the debug server is driven.
+///
+/// Slice 2.7 (D2-B): in a free bag (<see cref="GameSession.IsFree"/>, set by the debug <c>setMovement</c>) the arrow keys
+/// and the left stick map to a held <c>Steer</c> (8-way, <see cref="SteerInput"/>) on press and release
+/// instead of a <c>Move</c> per press. While a body needs it, <see cref="_Process"/> sends a <c>FineTick</c> every 125 ms of
+/// frame time and commits each result as a fine tick (no snap, no body track, P2-D13); the body's motion is its fine
+/// (Px, Py), re-read on every commit. Under the debug server (a client connected) the frame loop sends no fine ticks: the
+/// socket drives them through <c>advanceTime</c>, the same rule as the clock. No interpolation track is added between
+/// fine ticks (a policy and golden question, left for Aaron's pass).
 /// </summary>
 public partial class GameSceneController : Control
 {
@@ -31,6 +39,20 @@ public partial class GameSceneController : Control
     // Slice 2.5: this scene's own drawing timeline and its integer frame clock (sampling only, never the L1 clock).
     private PosePlayer _poses = null!;
     private readonly FrameClock _frameClock = new();
+
+    // Slice 2.7 (D2-B): the debug server (frame fine ticks pause while it has a client), the frame time owed to the next
+    // fine tick, the arrows held down, the left stick in milli-units, and the last held direction sent as Steer.
+    private DebugWebSocketServer _server = null!;
+    private int _fineAccumMs;
+    private readonly HashSet<Key> _heldArrows = new();
+    private int _stickX, _stickY;
+    private Direction8? _steer;
+
+    /// <summary>The stick dead zone in milli-units of the axis range.</summary>
+    private const int StickDeadZone = 300;
+
+    /// <summary>At most this many fine ticks per frame, so a long frame stall cannot spiral.</summary>
+    private const int MaxFineTicksPerFrame = 4;
 
     // UI references
     private GridDrawControl _gridPanel = null!;
@@ -62,10 +84,10 @@ public partial class GameSceneController : Control
 
     private void StartDebugServer()
     {
-        var server = new DebugWebSocketServer();
-        server.Controller = _controller;
-        server.OnCommit = CommitPoses;
-        AddChild(server);
+        _server = new DebugWebSocketServer();
+        _server.Controller = _controller;
+        _server.OnCommit = CommitPoses;
+        AddChild(_server);
     }
 
     /// <summary>
@@ -85,11 +107,80 @@ public partial class GameSceneController : Control
         RefreshUI();
     }
 
-    /// <summary>Advances the drawing timeline by this frame's integer ms and redraws while it is animating.</summary>
+    /// <summary>
+    /// Commits one fine tick's result (Slice 2.7): as a fine commit, which neither snaps nor adds body tracks (P2-D13),
+    /// so a concurrent pop or slide plays on while the body glides. Raises the tree cue on a derived bump.
+    /// </summary>
+    private void CommitFineTick(ControllerResult result)
+    {
+        var session = _controller.Session;
+        _poses.Commit(result.Events, session.Current, 0, FineView.Of(session.Fine), fineTick: true);
+        RefreshUI();
+        ShowBumpCue(result);
+    }
+
+    /// <summary>
+    /// Advances the drawing timeline by this frame's integer ms and redraws while it is animating. Slice 2.7: first sends
+    /// the fine ticks this frame owes (one per 125 ms while a body needs them, none while the debug server has a client).
+    /// </summary>
     public override void _Process(double delta)
     {
-        if (_poses.Advance(_frameClock.Tick((long)Time.GetTicksMsec())))
+        var deltaMs = _frameClock.Tick((long)Time.GetTicksMsec());
+        DriveFineTicks(deltaMs);
+        if (_poses.Advance(deltaMs))
             PushPoses();
+    }
+
+    /// <summary>
+    /// The frame-driven D2-B scheduler: accumulates <paramref name="deltaMs"/> and sends a FineTick per
+    /// <see cref="GameSession.FineTickLengthMs"/>, while the session has a body to integrate and no socket client is
+    /// driving it (then the socket's advanceTime is the only source, so the handler's stream misses nothing).
+    /// </summary>
+    private void DriveFineTicks(int deltaMs)
+    {
+        if (_server.HasPeers || !_controller.Session.NeedsFineTick)
+        {
+            _fineAccumMs = 0;
+            return;
+        }
+        _fineAccumMs += deltaMs;
+        for (var i = 0; i < MaxFineTicksPerFrame && _fineAccumMs >= GameSession.FineTickLengthMs; i++)
+        {
+            _fineAccumMs -= GameSession.FineTickLengthMs;
+            CommitFineTick(_controller.FineTick());
+        }
+        if (_fineAccumMs > GameSession.FineTickLengthMs)
+            _fineAccumMs = GameSession.FineTickLengthMs;
+    }
+
+    /// <summary>
+    /// True when B's bag takes steering (a free world bag in realtime) and the arrows would reach B's cursor: no inline
+    /// split or recipe menu owns them and B has focus. Otherwise arrows are presses mapped to Move, as before.
+    /// </summary>
+    private bool Steering =>
+        _controller.Session.IsFree(LocationId.B) && _controller.Session.SplitMode is null
+        && _controller.Session.RecipeMenu is null && _controller.Focus == LocationId.B;
+
+    /// <summary>
+    /// Sends the held direction (arrows first, else the stick) as a Steer when it differs from the last one sent, and
+    /// commits it as input (it snaps, D7). Returns false when B is not steering, after forgetting the last direction.
+    /// </summary>
+    private bool UpdateSteer()
+    {
+        if (!Steering)
+        {
+            _steer = null;
+            return false;
+        }
+        var dir = SteerInput.FromArrows(_heldArrows.Contains(Key.Up), _heldArrows.Contains(Key.Down),
+                      _heldArrows.Contains(Key.Left), _heldArrows.Contains(Key.Right))
+                  ?? SteerInput.FromStick(_stickX, _stickY, StickDeadZone);
+        if (dir != _steer)
+        {
+            _steer = dir;
+            CommitPoses(_controller.Steer(LocationId.B, dir), 0);
+        }
+        return true;
     }
 
     /// <summary>Hands the current sample to the grid (active bag, cursor of B) and hand panels.</summary>
@@ -359,6 +450,31 @@ public partial class GameSceneController : Control
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        // Slice 2.7: the left stick (quantized to 8-way) steers a free body; it never maps to a Move.
+        if (@event is InputEventJoypadMotion motion && motion.Axis is JoyAxis.LeftX or JoyAxis.LeftY)
+        {
+            var milli = (int)System.Math.Round(motion.AxisValue * 1000);
+            if (motion.Axis == JoyAxis.LeftX) _stickX = milli; else _stickY = milli;
+            if (UpdateSteer()) GetViewport().SetInputAsHandled();
+            return;
+        }
+
+        // Slice 2.7: arrow press and release are tracked always; in a free bag they steer instead of moving.
+        if (@event is InputEventKey arrow && arrow.Keycode is Key.Up or Key.Down or Key.Left or Key.Right && !arrow.Echo)
+        {
+            if (arrow.Pressed) _heldArrows.Add(arrow.Keycode); else _heldArrows.Remove(arrow.Keycode);
+            if (UpdateSteer())
+            {
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+        }
+        else if (@event is InputEventKey { Keycode: Key.Up or Key.Down or Key.Left or Key.Right, Echo: true } && Steering)
+        {
+            GetViewport().SetInputAsHandled(); // held-key repeat: the steer is already held
+            return;
+        }
+
         if (@event is not InputEventKey key || !key.Pressed)
             return;
 
@@ -369,20 +485,27 @@ public partial class GameSceneController : Control
         CommitPoses(result, 0); // every mapped key is input: it commits (and so snaps, D7) even when unhandled
         if (result.Handled)
         {
-            // Thin equivalent of the TUI shake/flash, from the key's Bumped event (Slice 1.6): on a refused
-            // enter-only peek, surface the cue on the status line for this frame (the next RefreshUI
-            // overwrites it). The fire-once FirstFailedPeek beat renders in the shared dialogue box; this
-            // fires on every refusal.
-            switch (result.Events.OfType<Core.Sim.SimEvent.Bumped>().FirstOrDefault()?.Reason)
-            {
-                case Core.Sim.BumpReason.FailedPeek:
-                    _statusLabel.Text = "✕ Enter-only — can't just peek. Press E to enter.\n" + _statusLabel.Text;
-                    break;
-                case Core.Sim.BumpReason.Unnavigable: // Slice 6: a cursor move refused by a tree (fires on every bump).
-                    _statusLabel.Text = "✕ A tree. Solid — no way through.\n" + _statusLabel.Text;
-                    break;
-            }
+            ShowBumpCue(result);
             GetViewport().SetInputAsHandled();
+        }
+    }
+
+    /// <summary>
+    /// Thin equivalent of the TUI shake/flash, from a result's Bumped event (Slice 1.6): on a refused enter-only peek or
+    /// a tree refusal (a key Move, or since 2.7 an integrator-derived Move), surface the cue on the status line for this
+    /// frame (the next RefreshUI overwrites it). The fire-once beats render in the shared dialogue box; this fires on
+    /// every refusal.
+    /// </summary>
+    private void ShowBumpCue(ControllerResult result)
+    {
+        switch (result.Events.OfType<Core.Sim.SimEvent.Bumped>().FirstOrDefault()?.Reason)
+        {
+            case Core.Sim.BumpReason.FailedPeek:
+                _statusLabel.Text = "✕ Enter-only — can't just peek. Press E to enter.\n" + _statusLabel.Text;
+                break;
+            case Core.Sim.BumpReason.Unnavigable: // Slice 6: a cursor move refused by a tree (fires on every bump).
+                _statusLabel.Text = "✕ A tree. Solid — no way through.\n" + _statusLabel.Text;
+                break;
         }
     }
 

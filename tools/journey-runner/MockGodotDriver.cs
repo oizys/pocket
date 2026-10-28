@@ -51,6 +51,14 @@ public sealed class MockGodotDriver : IJourneyDriver, ISessionDriver
     public void AdvanceTime(TimeSpan delta) =>
         Send(new JsonObject { ["action"] = "advanceTime", ["ms"] = (long)delta.TotalMilliseconds });
 
+    /// <summary>Slice 2.7: the debug <c>steer</c> command (a null direction releases).</summary>
+    public void Steer(LocationId at, Direction8? dir) =>
+        Send(new JsonObject { ["action"] = "steer", ["loc"] = at.ToString(), ["dir"] = dir?.ToString() ?? "none" });
+
+    /// <summary>Slice 2.7: the debug <c>setMovement</c> command.</summary>
+    public void SetMovement(LocationId at, MovementModel model) =>
+        Send(new JsonObject { ["action"] = "setMovement", ["loc"] = at.ToString(), ["model"] = model.ToString() });
+
     public void Back() =>
         Send(new JsonObject { ["action"] = "back" });
 

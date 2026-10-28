@@ -1,3 +1,4 @@
+using Pockets.Core.Models;
 using Pockets.Core.Sim;
 
 namespace Pockets.Realization;
@@ -55,7 +56,13 @@ public static class Choreography
     /// True when the commit is a clock commit: non-empty and every event lies in a span opened by a Tick or SetElapsed
     /// envelope or by a <see cref="SimEvent.TimeAdvanced"/>. An empty commit is input, not clock.
     /// </summary>
-    public static bool IsClock(IReadOnlyList<SimEvent> events)
+    public static bool IsClock(IReadOnlyList<SimEvent> events) => IsClock(events, ImmutableHashSet<LocationId>.Empty);
+
+    /// <summary>
+    /// <see cref="IsClock(IReadOnlyList{SimEvent})"/>, where a move of a <paramref name="driven"/> location (the
+    /// integrator's derived Move) also opens a clock-like span, and so does a tree bump at such a location.
+    /// </summary>
+    public static bool IsClock(IReadOnlyList<SimEvent> events, IReadOnlySet<LocationId> driven)
     {
         if (events.Count == 0) return false;
         var clock = false;
@@ -66,8 +73,10 @@ public static class Choreography
             prev = ev;
             if (ev is SimEvent.IntentApplied { Intent: Intent.Tick or Intent.SetElapsed }
                 or SimEvent.IntentRejected { Intent: Intent.Tick or Intent.SetElapsed }) clock = true;
+            else if (ev is SimEvent.IntentApplied { Intent: Intent.Move m } && driven.Contains(m.At)) clock = true;
             else if (IsEnvelope(ev)) clock = false;
             else if (ev is SimEvent.TimeAdvanced) clock = true;
+            else if (ev is SimEvent.Bumped { Reason: BumpReason.Unnavigable } b && driven.Contains(b.Loc)) clock = true;
             if (!clock) return false;
         }
         return true;

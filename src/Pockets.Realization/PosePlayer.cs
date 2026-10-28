@@ -49,11 +49,12 @@ public sealed class PosePlayer
     /// <summary>
     /// Commits <paramref name="events"/> leading to <paramref name="next"/> at clock delta <paramref name="atMs"/> and
     /// restarts the frame time. Input snaps every live track inside <see cref="Timeline.Commit"/> (D7) and a
-    /// <c>Rewound</c> resets (A3), so the caller does nothing extra for either.
+    /// <c>Rewound</c> resets (A3), so the caller does nothing extra for either. <paramref name="fineTick"/> marks an integrator tick's commit, which
+    /// never snaps (P2-D13).
     /// </summary>
-    public void Commit(IEnumerable<SimEvent> events, Scene next, int atMs = 0)
+    public void Commit(IEnumerable<SimEvent> events, Scene next, int atMs = 0, bool fineTick = false)
     {
-        Timeline = Timeline.Commit(events, next, _policy, atMs);
+        Timeline = Timeline.Commit(events, next, _policy, atMs, fineTick);
         ElapsedMs = 0;
     }
 
@@ -61,8 +62,8 @@ public sealed class PosePlayer
     /// Commits against <paramref name="next"/>'s scene, built as <see cref="PoseStream"/> builds it (the shown
     /// locations, <paramref name="fine"/>'s offsets, the timeline's facings), so the drawing matches the pose golden.
     /// </summary>
-    public void Commit(IEnumerable<SimEvent> events, GameState next, int atMs, IFineView? fine) =>
-        Commit(events, Scene.FromState(next, PoseStream.Shown, fine, Timeline.Facings), atMs);
+    public void Commit(IEnumerable<SimEvent> events, GameState next, int atMs, IFineView? fine, bool fineTick = false) =>
+        Commit(events, Scene.FromState(next, PoseStream.Shown, fine, Timeline.Facings), atMs, fineTick);
 
     /// <summary>
     /// Advances the frame time by <paramref name="deltaMs"/>, clamped at the span. Returns true when the drawn poses

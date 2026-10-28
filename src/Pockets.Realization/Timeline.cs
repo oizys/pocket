@@ -26,12 +26,15 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
     /// snaps (D7): all old tracks are dropped. A clock commit (only Tick/SetElapsed envelopes and TimeAdvanced runs,
     /// P2-D13) keeps the live tracks that end after <paramref name="atMs"/> and still have a column layout, rebased by
     /// <paramref name="atMs"/>. New tracks are staged by phase: Player tracks play at 0 ms, Reaction and Ambient tracks
-    /// start at the policy's overlap percent of the Player phase's span.
+    /// start at the policy's overlap percent of the Player phase's span. A fine tick (<paramref name="fineTick"/>, P2-D13)
+    /// never snaps, and the moves and tree bumps of a driven body (<see cref="Scene.Driven"/>) add no walk or lunge
+    /// track: the body's pose is already its cell plus its sub-cell position (facing still updates).
     /// </summary>
-    public Timeline Commit(IEnumerable<SimEvent> events, Scene next, RealizationPolicy policy, int atMs = 0)
+    public Timeline Commit(IEnumerable<SimEvent> events, Scene next, RealizationPolicy policy, int atMs = 0,
+        bool fineTick = false)
     {
         var list = events.ToList();
-        var snap = !Choreography.IsClock(list);
+        var snap = !fineTick && !Choreography.IsClock(list, next.Driven);
         var facings = Facings;
         var applied = next with
         {
@@ -113,7 +116,7 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
                 if (body is { } b)
                 {
                     var face = FacingOf(Norm(dc), Norm(dr));
-                    if (jump) return (none, m.Loc, face);
+                    if (jump || next.Driven.Contains(m.Loc)) return (none, m.Loc, face);
                     var origin0 = b with { CellCol = m.From.Col, CellRow = m.From.Row, SubX = 0, SubY = 0, Facing = face };
                     var to = b with { CellCol = m.To.Col, CellRow = m.To.Row, SubX = 0, SubY = 0, Facing = face };
                     return (new List<Track> { new(b.Entity, origin0, to, 0, policy.WalkMs, curve, Channel.Motion) }, m.Loc, face);
@@ -133,6 +136,14 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
             case SimEvent.Bumped { Reason: BumpReason.Unnavigable, Dir: { } dir } bump:
             {
                 if (BodyPose(next, bump.Loc, bump.Bag) is not { } b) return (none, null, null);
+                if (next.Driven.Contains(bump.Loc))
+                    return (none, bump.Loc, dir switch
+                    {
+                        Direction.Up => Facing.N,
+                        Direction.Down => Facing.S,
+                        Direction.Left => Facing.W,
+                        _ => Facing.E
+                    });
                 var (ux, uy) = dir switch
                 {
                     Direction.Right => (4, 0),
