@@ -726,7 +726,9 @@ public static partial class Simulation
         // source cell (or leave the remainder) on the post-acquire store.
         var sourceBag = afterAcquire.ActiveBag;
         var newCell = remaining is not null ? cell with { Stack = remaining } : cell with { Stack = null };
-        var clearedGrid = sourceBag.Grid.SetCell(state.Cursor.Position, newCell);
+        var writer = new ImmutableBagWriter(sourceBag.Grid);
+        writer.Set(state.Cursor.Position.ToIndex(sourceBag.Grid.Columns), newCell);
+        var clearedGrid = writer.Commit();
         var newState = afterAcquire with
         {
             Store = afterAcquire.Store.Set(afterAcquire.ActiveBagId, sourceBag with { Grid = clearedGrid })

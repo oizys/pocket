@@ -170,14 +170,15 @@ public static class FacilityLogic
     /// </summary>
     private static (Bag Facility, IReadOnlyList<Bag> NewBags) CompleteCraft(Bag facility, Recipe recipe, Random rng)
     {
-        var grid = facility.Grid;
+        // All grid writes go through one writer: a single commit per craft (the Slice 1.4 SetItem ban).
+        var writer = new Sim.ImmutableBagWriter(facility.Grid);
         var newBags = new List<Bag>();
 
         // Consume inputs
         var remaining = recipe.Inputs.ToDictionary(i => i.ItemType, i => i.Count);
-        for (int i = 0; i < grid.Cells.Length; i++)
+        for (int i = 0; i < writer.Count; i++)
         {
-            var cell = grid.GetCell(i);
+            var cell = writer.Cell(i);
             if (cell.Frame is not InputSlotFrame || cell.IsEmpty)
                 continue;
 
@@ -188,9 +189,9 @@ public static class FacilityLogic
             var consume = Math.Min(stack.Count, needed);
             remaining[stack.ItemType] = needed - consume;
 
-            grid = consume >= stack.Count
-                ? grid.SetCell(i, cell with { Stack = null })
-                : grid.SetCell(i, cell with { Stack = stack with { Count = stack.Count - consume } });
+            writer.Set(i, consume >= stack.Count
+                ? cell with { Stack = null }
+                : cell with { Stack = stack with { Count = stack.Count - consume } });
         }
 
         // Produce outputs into output slots
@@ -199,19 +200,19 @@ public static class FacilityLogic
         newBags.AddRange(recipeOutput.NewBags);
 
         var outputIndex = 0;
-        for (int i = 0; i < grid.Cells.Length && outputIndex < outputs.Count; i++)
+        for (int i = 0; i < writer.Count && outputIndex < outputs.Count; i++)
         {
-            var cell = grid.GetCell(i);
+            var cell = writer.Cell(i);
             if (cell.Frame is not OutputSlotFrame || !cell.IsEmpty)
                 continue;
 
-            grid = grid.SetCell(i, cell with { Stack = outputs[outputIndex] });
+            writer.Set(i, cell with { Stack = outputs[outputIndex] });
             outputIndex++;
         }
 
         return (facility with
         {
-            Grid = grid,
+            Grid = writer.Commit(),
             FacilityState = facility.FacilityState! with { RecipeId = null }
         }, newBags);
     }

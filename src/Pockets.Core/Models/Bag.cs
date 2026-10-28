@@ -37,6 +37,13 @@ public record Bag(
     public string Glyph { get; init; } = "";
 
     /// <summary>
+    /// This bag's scheduler clock (two-layer #23, §Time; Slice 1.4). Always
+    /// <see cref="Sim.BagClock.Observed"/> (rate 1) in Phase 1, and nothing reads it yet: the Phase 4
+    /// scheduler does. Not projected into the VM.
+    /// </summary>
+    public Sim.BagClock Clock { get; init; } = Sim.BagClock.Observed;
+
+    /// <summary>
     /// Places item stacks into this bag's grid. Returns a new Bag with the updated grid
     /// and any stacks that couldn't be placed. Optional skipIndices excludes specific cells.
     /// </summary>

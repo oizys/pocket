@@ -10,6 +10,8 @@ namespace Pockets.Core.Sim;
 /// apply the tool → (if time advances) tick facilities → tick plants → run the transition hooks.
 /// Slice 1.3: every controller path is a data <see cref="Intent"/> dispatched here (see
 /// <c>Simulation.Intents.cs</c>); the session is the shell around it: undo, action log, intent log.
+/// Slice 1.4: the tick phase runs the registered rules (<see cref="RuleRegistry"/>); the facility tick
+/// moved into <see cref="FacilityCraftRule"/>.
 /// </summary>
 public static partial class Simulation
 {
@@ -180,8 +182,9 @@ public static partial class Simulation
     }
 
     /// <summary>
-    /// The time phase: tick facilities (emitting <see cref="SimEvent.TimeAdvanced"/> and one
-    /// <see cref="SimEvent.CraftCompleted"/> per finished craft, in facility order), then plants.
+    /// The time phase: emits <see cref="SimEvent.TimeAdvanced"/>, then runs <see cref="RuleRegistry.TickPhase"/>
+    /// in order (Slice 1.4): <see cref="FacilityCraftRule"/> (one <see cref="SimEvent.CraftCompleted"/> per
+    /// finished craft, in facility order), then <see cref="PlantGrowthRule"/>.
     /// <paramref name="preStep"/> supplies the known-recipe set, exactly as the session read
     /// <c>Current.KnownRecipes</c> (the pre-action state) while ticking the post-tool state. Recipe
     /// outputs draw from <paramref name="rng"/>'s <see cref="SimStream.Craft"/> stream, which is advanced in place.
@@ -192,10 +195,11 @@ public static partial class Simulation
     {
         pending.Add(seq => new SimEvent.TimeAdvanced(step, seq));
         var craftRandom = rng.AsRandom(SimStream.Craft);
-        state = TickFacilities(state, preStep.KnownRecipes, content, craftRandom, (facilityId, recipeId) =>
-            pending.Add(seq => new SimEvent.CraftCompleted(step, seq, facilityId, recipeId)));
+        var context = new RuleContext(step, preStep.KnownRecipes, content, craftRandom, pending.Add);
+        foreach (var rule in RuleRegistry.TickPhase)
+            state = rule.Apply(state, context);
         rng = craftRandom.Rng;
-        return PlantLogic.TickPlants(state);
+        return state;
     }
 
     /// <summary>
@@ -209,55 +213,6 @@ public static partial class Simulation
             .OrderBy(f => f.EnvironmentType, StringComparer.Ordinal)
             .ThenBy(f => f.FacilityState?.ActiveRecipeId ?? f.FacilityState?.RecipeId ?? "", StringComparer.Ordinal)
             .ThenBy(f => state.Store.GetOwnerOf(f.Id)?.CellIndex ?? 0);
-
-    /// <summary>
-    /// Ticks all facility bags found via the BagRegistry.
-    /// Updates each facility in-place within the bag tree.
-    /// Uses FacilityRecipeMap when available, falls back to RecipeRegistry.
-    /// Reports each craft completion (facility id, recipe id) through <paramref name="completed"/>. Output
-    /// factories draw from <paramref name="random"/> in facility order.
-    /// </summary>
-    private static GameState TickFacilities(
-        GameState state, ImmutableHashSet<string> knownRecipes, SimContent content, Random random,
-        Action<Guid, string> completed)
-    {
-        if (content.Recipes.IsDefaultOrEmpty)
-            return state;
-
-        var facilities = OrderedFacilities(state).ToList();
-        if (facilities.Count == 0)
-            return state;
-
-        foreach (var facility in facilities)
-        {
-            var facilityRecipes = content.RecipesForFacility(facility.EnvironmentType, knownRecipes);
-            if (facilityRecipes.Count == 0)
-                continue;
-
-            // Read current progress from the owning ItemStack's properties (shared owner lookup).
-            int currentProgress = state.Store.GetOwnerStack(facility.Id)?.GetInt("Progress") ?? 0;
-
-            var wasCrafting = facility.FacilityState?.RecipeId;
-            var (ticked, newProgress, newBags) = FacilityLogic.Tick(facility, currentProgress, facilityRecipes, random);
-            if (ticked == facility && newProgress == currentProgress)
-                continue;
-
-            // Detect craft completion: was crafting, now reset to null
-            if (wasCrafting is not null && ticked.FacilityState?.RecipeId is null)
-                completed(facility.Id, wasCrafting);
-
-            // Register any newly created bags from the output factory
-            if (newBags.Count > 0)
-                state = state with { Store = state.Store.AddRange(newBags) };
-
-            // Update both the facility bag and the owning stack's progress property
-            var progressValue = newProgress;
-            state = state.ReplaceBagById(facility.Id, ticked,
-                stack => stack.WithProperty("Progress", new IntValue(progressValue)));
-        }
-
-        return state;
-    }
 
     /// <summary>
     /// Runs the shared state→state transition hooks after any successful mutation, whether from a

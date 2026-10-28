@@ -35,12 +35,13 @@ public static class PlantLogic
 
         foreach (var bag in state.Store.All)
         {
-            var grid = bag.Grid;
+            // One writer per bag with growing plants, committed once (the Slice 1.4 SetItem ban).
+            var writer = new Sim.ImmutableBagWriter(bag.Grid);
             var changed = false;
 
-            for (int i = 0; i < grid.Cells.Length; i++)
+            for (int i = 0; i < bag.Grid.Cells.Length; i++)
             {
-                var cell = grid.GetCell(i);
+                var cell = bag.Grid.GetCell(i);
                 if (!IsPlant(cell))
                     continue;
 
@@ -53,13 +54,13 @@ public static class PlantLogic
 
                 var newProgress = progress + 1;
                 var updatedStack = stack.WithProperty("Progress", new IntValue(newProgress));
-                grid = grid.SetCell(i, cell with { Stack = updatedStack });
+                writer.Set(i, cell with { Stack = updatedStack });
                 changed = true;
             }
 
             if (changed)
             {
-                var updatedBag = bag with { Grid = grid };
+                var updatedBag = bag with { Grid = writer.Commit() };
                 updatedStore = updatedStore.Set(bag.Id, updatedBag);
             }
         }

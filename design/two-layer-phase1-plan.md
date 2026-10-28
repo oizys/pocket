@@ -204,7 +204,7 @@ dependencies are given in §Order below.
 - **Risk:** medium. The controller holds hidden state (`_focus`, split modal, recipe menu).
   P1-D5 decides which of it becomes L1.
 
-### Slice 1.4 — Rule registry, `TimeClass` everywhere, `IBagView`/`IBagWriter`, SetItem ban
+### Slice 1.4 — Rule registry, `TimeClass` everywhere, `IBagView`/`IBagWriter`, SetItem ban ✓ landed (see §Addendum — Slice 1.4)
 - Add `IBagView` (read-only: `Columns`, `Rows`, `Cell(i)`, `Neighbourhood(i)`) and
   `IBagWriter` (`Set(i, cell)`, `Commit() → Grid`).
   - The one Phase 1 implementation is `ImmutableBagWriter`, backed by
@@ -611,3 +611,41 @@ decision for later.
 - `SimContent` is now 4 fields (with `TickMode`). A `BagClock` per bag can sit beside it without touching intents.
 - `Route`/`StepTrace` is internal and small. Don't build on it; 1.5's events should replace it, after
   which the shell's log lines (P1-D6) and the controller's focus can read events instead.
+
+## Addendum — Slice 1.4 as built (2026-10-28)
+
+**Golden-neutral.** The VM checkpoint golden and the 11 TUI buffer goldens are byte-identical. All 15
+parity artifacts (the 11 buffers plus the smoke and target-demo checkpoint streams on tui and mock-godot)
+are byte-identical to a baseline captured at `f871e5a`. No action-log text changed and no golden was
+re-recorded.
+
+| Piece | Where | Notes |
+|---|---|---|
+| `IBagView` / `IBagWriter` | `Sim/IBagView.cs` | View: `Columns`, `Rows`, `Count`, `Cell(i)`, `Neighbourhood(i)`. The neighbourhood is the in-bounds **Moore** set (up to 8, no wrap), because field rules gather from Moore (#23 §Rule kinds); nothing calls it yet. Writer: `Set(i, cell)`, `Commit() → Grid`. A writer is single-use, and `Commit` with no writes returns the **source grid instance**, so an untouched bag stays reference-equal (the no-op checks depend on it). |
+| `ImmutableBagWriter` | `Sim/ImmutableBagWriter.cs` | The a1 style, re-implemented under TDD. The first `Set` copies the cells into one `Cell[]`; `Commit` wraps it with `ImmutableCollectionsMarshal.AsImmutableArray`, so there is no second copy. It is a **struct**, so the writer itself allocates nothing. The plan's `ImmutableArray<Cell>.Builder` was dropped because the builder object made a single-write commit (the owner-progress write) cost more than the old `SetCell`, which would break acceptance 4. Use it as a local, never copy it; boxing to `IBagView` for reads is fine. |
+| `ITickRule : IRule`, `RuleContext`, `RuleRegistry.TickPhase` | `Sim/Rules/RuleRegistry.cs` | `ITickRule.Apply(GameState, RuleContext)` is one coarse whole-state pass per step. Phase 3's `IFieldRule`/`ITransferRule` replace it. `RuleContext(Step, KnownRecipes /*pre-step*/, Content, CraftRandom, Emit)`: `Emit` queues a `seq → SimEvent` factory, so `Seq` stays step-global. The registry is `[FacilityCraftRule, PlantGrowthRule]`. |
+| `FacilityCraftRule` | `Sim/Rules/FacilityCraftRule.cs` | Transfer / `EventSkippable`, `EventKinds = [CraftCompleted]`. **Moved verbatim** from `Simulation.TickFacilities` (now deleted). It runs in the same `OrderedFacilities` order, keeps the list snapshot, the `ticked == facility` skip and the one Craft cursor per tick phase, and applies each facility to the state in turn. The owner `Progress` write (the old `ReplaceBagById` owner transform) goes through `ImmutableBagWriter`, using one owner lookup instead of two. The seedling's wilderness draw is part of this rule. |
+| `PlantGrowthRule` | `Sim/Rules/PlantGrowthRule.cs` | Field (own cell) / `ClosedForm`, no events. It delegates to `PlantLogic.TickPlants`, whose public signature is unchanged. |
+| `AdvanceTime` | `Sim/Simulation.cs` | It emits `TimeAdvanced`, builds one `RuleContext`, runs `RuleRegistry.TickPhase` in order, then commits the Craft cursor. The order is unchanged (facilities, then plants), and both callers (rogue tool, tick) still reach it. |
+| The ban, ported | `FacilityLogic.CompleteCraft`, `PlantLogic.TickPlants`, `Simulation.Intents.PickupToToolbar` | Consume and output now share **one writer and one commit per craft** (it was 3 arrays). Plants use one writer per bag, committed only if a plant grew. The pickup-to-toolbar source clear is **routed** through `IBagWriter` rather than exempted (the handoff's preference); the result is identical. `FacilityLogic.Tick`'s signature is unchanged. |
+| `BagClock` | `Sim/BagClock.cs`, `Bag.Clock` | `BagClock(Rate, Mode)` with `BagClockMode { Observed = 1, Background, Dormant, Frozen }` (the #23 §Time modes; no zero member). It is a per-bag **init property on `Bag`**, defaulting to the shared `BagClock.Observed` (1, Observed). Putting it on `Bag` rather than in `SimContent` makes it travel with the bag through grab/drop/sort, like `EnterOnly`. Nothing reads it, and the VM does not project it. |
+
+**Acceptance:**
+1. Goldens are identical; `make parity-full` is green (and baseline-diffed, see above).
+2. The facility and plant unit tests pass **unmodified**: `FacilityLogicTests`, `FacilityProgressResolutionTests` and `PlantLogicTests` are untouched. No existing test was edited in this slice.
+3. Architecture tests, in `Sim/RuleArchitectureTests` (9):
+   - **The ban scan.** It covers `Models/*Logic.cs`, `Sim/**` and `Rules/**` (the last does not exist; the rules live in `Sim/Rules/`), looks for `.SetCell(` / `.SetItem(` on non-comment lines, and fails on any hit. It has **one exemption, with its reason:** `Sim/SimRng.cs` `_draws.SetItem(`, the RNG's per-stream counter dictionary, which is not a grid.
+   - **The registry checks.** The registry holds every concrete `IRule` type exactly once, in facilities-then-plants order. Each declares a defined `Kind`/`Time` on its own type. `BoundedCatchUp` requires `MaxDelta > 0`, and every other class requires 0. `EventKinds` are sealed `SimEvent` cases. Each rule has its planned kind and class. `Bag.Clock` defaults to Observed/1.
+4. **Allocations**, in `Sim/FacilityCraftRuleAllocationTests` (3). "Today" is kept **inside the test** as a verbatim copy of the pre-1.4 `TickFacilities` + `FacilityLogic.Tick`/`CompleteCraft`, so both are measured in the same process: 50 warm-up passes, then 500 measured with `GC.GetAllocatedBytesForCurrentThread`. This avoids a machine-specific byte constant. The test also asserts the rule's result equals the legacy result. On the Workbench, owned in an 8×4 root: start 3976 vs 4160 B/pass, countdown 3736 vs 3920, completion 4776 vs 5016 (rule vs legacy). The plan said "the Workshop"; the facility actually measured is the Workbench, the loaded-recipe facility the step tests already use.
+- `ImmutableBagWriterTests` (10).
+- `dotnet test`: Core 951 (929 + 22 new), App 53, spikes 109. All green.
+- **Godot:** no Godot file changed, so no Windows build check is needed.
+
+**Known, kept (Phase 7 hot-set material):**
+- A parent bag that owns N facilities is still materialized N times per step: one owner-progress commit per facility, applied in sequence. That matches the old `ReplaceBagById` semantics exactly. Batching it into one writer per bag per step would change behaviour in the nested-facility edge cases (a facility inside another facility's slots, where the old code lets the later whole-bag replace win). It is left for the hot set.
+- A bag touched by both rules (facility owners and planters in the same root) commits once per rule.
+
+**For 1.5 (the SimEvent stream):**
+- Rules emit through `RuleContext.Emit(seq => …)`. That is the hook for new rule-phase events, and the `EventKinds` on each rule must list them, because the architecture test checks that they are `SimEvent` cases. `FacilityCraftRule` is the natural home for any craft-start or progress event. `PlantGrowthRule` emits nothing today; a `Grown` event would be its first, so add it to `EventKinds`.
+- `StepTrace`/`Route` is untouched. The rule phase does not feed it.
+- `TimeAdvanced` is still emitted by `AdvanceTime` before any rule, not by a rule.
