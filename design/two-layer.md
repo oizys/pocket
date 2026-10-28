@@ -231,9 +231,12 @@ IntentRejected(intent, reason)        → L2 reconciles its prediction
 
 Contract rules:
 
-1. **Completeness:** replaying `events[0..n]` onto snapshot `s0` must give `s_n` exactly
-   (checked in CI, Phase 1). This is what makes the event log a valid long-term
-   representation (A4) and a valid replay format (A6).
+1. **Completeness:** replay(intents) ≡ state; events cover every change. Replaying the
+   intent log from snapshot `s0` must give `s_n` exactly, and every cell, slot or cursor
+   that differs between `s` and `s'` must be named by at least one event of that step
+   (both checked in CI, Phase 1). *(Amended by P1-D1, ratified 2026-10-28. The stronger
+   form, replaying `events[0..n]` onto `s0` gives `s_n` with no intents, moves to Phase 7,
+   when the event log becomes the save format (A4).)*
 2. **Order is part of the contract:** `(Step, ScheduleOrder(bag), Seq)`. It never depends
    on dictionary or hash order.
 3. **Granularity is semantic.** Field rules emit **threshold crossings**, not per-tick
@@ -774,7 +777,8 @@ Findings:
 
 ## Status
 
-**Ratified; Phase 0 complete.** Next: Phase 1 slice plan (worker-sized, parity-gated).
+**Ratified; Phase 0 complete.** Phase 1 slice plan written and its decisions P1-D1…D9
+ratified 2026-10-28 (all as recommended); Slice 1.0 (contract types) in progress.
 Open questions carried forward:
 
 - Lint spawn determinism on observe (entropy Q3) now has an architectural default:

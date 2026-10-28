@@ -12,9 +12,8 @@ of that commit: `GameSession` ≈ 1,200 lines with `ApplyResult` / `TickFaciliti
 `AdvanceClock` / `Tick`), `DebugCommandHandler` shared by Godot and mock-godot, the
 journey runner with VM and buffer goldens, and `make parity` / `parity-full`.)*
 
-**PLAN ONLY.** Nothing here is implemented yet. Decisions that need Aaron are numbered
-**P1-D1 … P1-D9** at the end. Each has a recommendation, and the slices assume the
-recommendation unless Aaron says otherwise.
+**PLAN.** Decisions are numbered **P1-D1 … P1-D9** at the end. **Ratified 2026-10-28:
+Aaron accepted all nine as recommended.**
 
 ## Goal
 
@@ -98,7 +97,7 @@ dependencies are given in §Order below.
     VM, so they must be L1.
   - **Session shell:** `UndoStack`, `ActionLog`, and the event log to come.
   - **Frontend-ephemeral:** controller `_focus` and the `FeedbackPulse` field.
-  - **Open:** modal state (`SplitMode`, `RecipeMenu`). See P1-D5.
+  - **Modal state** (`SplitMode`, `RecipeMenu`, dialogue): L1, per P1-D5 (ratified).
 - **Acceptance:** the types compile, and there are unit tests for `SimEvent` ordering and
   equality. Zero call sites change, so the goldens trivially stay identical.
 - *Depends on: nothing. Everything depends on it.*
@@ -389,17 +388,20 @@ dependencies are given in §Order below.
 
 ## Decisions for Aaron
 
-| # | Decision | Options | Recommendation |
-|---|---|---|---|
-| **P1-D1** | Event **completeness** in Phase 1 | (a) state reconstructible from events alone (heavy: every payload carries full data); (b) **intent-log replay determinism + an event coverage check** (every changed cell/slot is named by some event) | **(b)**. Amend contract rule 1 of two-layer.md to "replay(intents) ≡ state; events cover every change". Full state-from-events moves to Phase 7, when the log becomes the save format. |
-| **P1-D2** | Realtime player actions: immediate, or queued to the next step | (a) **immediate, intent-only step, no time advance** (today's behaviour); (b) queue to the next tick, with prediction | **(a)** in Phase 1, because (b) is a behaviour change. Queuing plus dry-run prediction is Phase 5 (D6). |
-| **P1-D3** | `BeltAdvanced` event granularity | (a) per-item `Moved` (spike B: ≈ 203 events/step); (b) **one `BeltAdvanced(chain, dir, count, head)` per chain per step**, with per-item events only at chain boundaries | **(b)**. L2 derives per-item poses from the chain plus occupancy. Only the shape is declared in Phase 1, because no belts exist yet. |
-| **P1-D4** | Step rate in Phase 1 | (a) **keep `TickLengthMs = 1000`** (1 tick/s, crafting durations unchanged); (b) switch to 8 Hz now | **(a)**. 8 Hz rescales every duration and is a behaviour change. It moves to Phase 3/5 with a `StepsPerSecond` constant and durations in seconds. |
-| **P1-D5** | Is modal UI state (split modal, recipe menu, dialogue cursor, panel focus) L1? | (a) all of it is L1, via intents; (b) **state that changes outcomes or is in the VM is L1; pure presentation is frontend-only** | **(b)**. Recipe menu and dialogue are serialized in the VM, and `SplitMode` lives on `GameSession` and decides the split amount. All three therefore must replay, so they are L1 and are changed by intents. **Panel focus** stays a controller field, but every intent carries its **target location explicitly** (as `ExecutePrimary(loc)` already does), so replay never depends on focus. `FeedbackPulse` becomes the `Bumped` event. |
-| **P1-D6** | Action-log strings | (a) **keep them produced as today** (they are in the VM golden); (b) derive them from events now | **(a)**. Deriving the log from events is a nice follow-up but a golden risk. Revisit in Phase 3. |
-| **P1-D7** | Init-time seeded `Random` and the `double` weights in `WildernessTemplate` | (a) **keep both in Phase 1** (golden-neutral; they are init-time, or in-step only via the seedling); (b) convert everything to `SimRng` and per-mille ints now (re-records goldens) | **(a)**, recorded as open G1/G2 debt. Convert them in Phase 3, when the rule engine re-homes generation. The cross-runtime risk (`System.Random`'s seeded sequence is not contractual) is accepted for single-player until then. |
-| **P1-D8** | How events reference bags (ids are process-fresh GUIDs) | (a) deterministic bag ids now (G7: counter in state; touches every `new Bag`); (b) **canonical renaming at serialization** (`bag#1, bag#2…` in order of first appearance in the stream; in-memory events keep the GUIDs) | **(b)** for Phase 1. It makes the golden and the cross-driver diff deterministic at zero refactor cost. Deterministic ids (G7) stay with Phase 3, where they are needed for multiplayer and save/replay. |
-| **P1-D9** | Event-log retention | (a) unbounded; (b) **back to the oldest retained snapshot, 8 MB hard cap, dropped (Phase 7: flushed to the save)** | **(b)**. Spike B: ~23 MB per 10 minutes for one fully churning bag, so unbounded is not an option for realtime. |
+**Ratified 2026-10-28: all as recommended** (Aaron: "Go with recs"). P1-D1's amendment is
+applied to contract rule 1 in [two-layer.md](two-layer.md).
+
+| # | Decision | Options | Recommendation | Status |
+|---|---|---|---|---|
+| **P1-D1** | Event **completeness** in Phase 1 | (a) state reconstructible from events alone (heavy: every payload carries full data); (b) **intent-log replay determinism + an event coverage check** (every changed cell/slot is named by some event) | **(b)**. Amend contract rule 1 of two-layer.md to "replay(intents) ≡ state; events cover every change". Full state-from-events moves to Phase 7, when the log becomes the save format. | ✓ Ratified 2026-10-28 |
+| **P1-D2** | Realtime player actions: immediate, or queued to the next step | (a) **immediate, intent-only step, no time advance** (today's behaviour); (b) queue to the next tick, with prediction | **(a)** in Phase 1, because (b) is a behaviour change. Queuing plus dry-run prediction is Phase 5 (D6). | ✓ Ratified 2026-10-28 |
+| **P1-D3** | `BeltAdvanced` event granularity | (a) per-item `Moved` (spike B: ≈ 203 events/step); (b) **one `BeltAdvanced(chain, dir, count, head)` per chain per step**, with per-item events only at chain boundaries | **(b)**. L2 derives per-item poses from the chain plus occupancy. Only the shape is declared in Phase 1, because no belts exist yet. | ✓ Ratified 2026-10-28 |
+| **P1-D4** | Step rate in Phase 1 | (a) **keep `TickLengthMs = 1000`** (1 tick/s, crafting durations unchanged); (b) switch to 8 Hz now | **(a)**. 8 Hz rescales every duration and is a behaviour change. It moves to Phase 3/5 with a `StepsPerSecond` constant and durations in seconds. | ✓ Ratified 2026-10-28 |
+| **P1-D5** | Is modal UI state (split modal, recipe menu, dialogue cursor, panel focus) L1? | (a) all of it is L1, via intents; (b) **state that changes outcomes or is in the VM is L1; pure presentation is frontend-only** | **(b)**. Recipe menu and dialogue are serialized in the VM, and `SplitMode` lives on `GameSession` and decides the split amount. All three therefore must replay, so they are L1 and are changed by intents. **Panel focus** stays a controller field, but every intent carries its **target location explicitly** (as `ExecutePrimary(loc)` already does), so replay never depends on focus. `FeedbackPulse` becomes the `Bumped` event. | ✓ Ratified 2026-10-28 |
+| **P1-D6** | Action-log strings | (a) **keep them produced as today** (they are in the VM golden); (b) derive them from events now | **(a)**. Deriving the log from events is a nice follow-up but a golden risk. Revisit in Phase 3. | ✓ Ratified 2026-10-28 |
+| **P1-D7** | Init-time seeded `Random` and the `double` weights in `WildernessTemplate` | (a) **keep both in Phase 1** (golden-neutral; they are init-time, or in-step only via the seedling); (b) convert everything to `SimRng` and per-mille ints now (re-records goldens) | **(a)**, recorded as open G1/G2 debt. Convert them in Phase 3, when the rule engine re-homes generation. The cross-runtime risk (`System.Random`'s seeded sequence is not contractual) is accepted for single-player until then. | ✓ Ratified 2026-10-28 |
+| **P1-D8** | How events reference bags (ids are process-fresh GUIDs) | (a) deterministic bag ids now (G7: counter in state; touches every `new Bag`); (b) **canonical renaming at serialization** (`bag#1, bag#2…` in order of first appearance in the stream; in-memory events keep the GUIDs) | **(b)** for Phase 1. It makes the golden and the cross-driver diff deterministic at zero refactor cost. Deterministic ids (G7) stay with Phase 3, where they are needed for multiplayer and save/replay. | ✓ Ratified 2026-10-28 |
+| **P1-D9** | Event-log retention | (a) unbounded; (b) **back to the oldest retained snapshot, 8 MB hard cap, dropped (Phase 7: flushed to the save)** | **(b)**. Spike B: ~23 MB per 10 minutes for one fully churning bag, so unbounded is not an option for realtime. | ✓ Ratified 2026-10-28 |
 
 ## Worker notes
 
