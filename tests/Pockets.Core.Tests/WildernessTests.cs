@@ -3,6 +3,7 @@ using Pockets.Core;
 using Pockets.Core.Data;
 using Pockets.Core.Models;
 using Pockets.Core.Rendering;
+using Pockets.Core.Sim;
 using Xunit;
 
 namespace Pockets.Core.Tests;
@@ -40,21 +41,24 @@ public class WildernessTests
     // ==================== Unnavigable tree cells ====================
 
     [Fact]
-    public void MovingIntoTree_LeavesCursorUnchanged_AndQueuesBumpPulse()
+    public void MovingIntoTree_LeavesCursorUnchanged_AndEmitsBump()
     {
         var c = World(Grass(), Tree(), Grass()); // cursor at (0,0)
-        c.HandleKey(GameKey.Right);              // → would enter the tree at (0,1)
+        var r = c.HandleKey(GameKey.Right);      // → would enter the tree at (0,1)
         Assert.Equal(new Position(0, 0), c.Session.Current.Cursor.Position); // refused: unchanged
-        Assert.Equal(FeedbackPulse.Bump, c.ConsumeFeedbackPulse());          // bump cue queued
+        var bump = Assert.Single(r.Events.OfType<SimEvent.Bumped>());       // the bump cue's event
+        Assert.Equal(BumpReason.Unnavigable, bump.Reason);
+        Assert.Equal(Direction.Right, bump.Dir);
     }
 
     [Fact]
     public void MovingIntoOpenCell_MovesNormally_NoBump()
     {
         var c = World(Grass(), Grass(), Grass());
-        c.HandleKey(GameKey.Right);
+        var r = c.HandleKey(GameKey.Right);
         Assert.Equal(new Position(0, 1), c.Session.Current.Cursor.Position);
-        Assert.Equal(FeedbackPulse.None, c.ConsumeFeedbackPulse());
+        Assert.Empty(r.Events.OfType<SimEvent.Bumped>());
+        Assert.Single(r.Events.OfType<SimEvent.CursorMoved>());
     }
 
     [Fact]

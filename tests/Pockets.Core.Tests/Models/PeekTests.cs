@@ -11,7 +11,7 @@ namespace Pockets.Core.Tests.Models;
 /// Slice 4 — look-in vs. enter; enter-only bags. The generic <c>C</c> peek opens a one-deep look-in
 /// overlay over ANY peekable bag (a plain chest included), toggling closed on C; Q also closes.
 /// An <see cref="Bag.EnterOnly"/> bag refuses the peek — no panel, cursor/world untouched — surfacing
-/// a failed-peek affordance (the <see cref="FeedbackPulse.FailedPeek"/> shake + a fire-once
+/// a failed-peek affordance (a <see cref="SimEvent.Bumped"/> FailedPeek shake + a fire-once
 /// <see cref="DialogueTriggerKind.FirstFailedPeek"/> beat). E still enters it via breadcrumbs.
 /// The refused peek is the only tell — there is deliberately no visible enter-only marking (RATIFIED).
 /// </summary>
@@ -193,20 +193,20 @@ public class PeekTests
     }
 
     [Fact]
-    public void Peek_OnEnterOnly_QueuesFailedPeekPulse_EveryTime()
+    public void Peek_OnEnterOnly_EmitsFailedPeekBump_EveryTime()
     {
         var c = MakeController();
         c.HandleKey(GameKey.Right); // to the pocket
 
-        c.HandleKey(GameKey.Peek);
-        Assert.Equal(FeedbackPulse.FailedPeek, c.ConsumeFeedbackPulse());
-        Assert.Equal(FeedbackPulse.None, c.ConsumeFeedbackPulse()); // consumed on read
+        var refused = c.HandleKey(GameKey.Peek);
+        Assert.Equal(BumpReason.FailedPeek, Assert.Single(refused.Events.OfType<SimEvent.Bumped>()).Reason);
 
-        // After dismissing the once-only beat, the shake still fires on a repeat refusal — the pulse
-        // is the tell that survives the spent dialogue.
-        c.HandleKey(GameKey.Primary); // dismiss
-        c.HandleKey(GameKey.Peek);
-        Assert.Equal(FeedbackPulse.FailedPeek, c.ConsumeFeedbackPulse());
+        // After dismissing the once-only beat, the shake still fires on a repeat refusal — the Bumped
+        // event is the tell that survives the spent dialogue. The dismiss itself bumps nothing.
+        var dismissed = c.HandleKey(GameKey.Primary);
+        Assert.Empty(dismissed.Events.OfType<SimEvent.Bumped>());
+        var again = c.HandleKey(GameKey.Peek);
+        Assert.Equal(BumpReason.FailedPeek, Assert.Single(again.Events.OfType<SimEvent.Bumped>()).Reason);
     }
 
     [Fact]

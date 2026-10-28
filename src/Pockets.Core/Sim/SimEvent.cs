@@ -55,7 +55,7 @@ public abstract record SimEvent
         : SimEvent(Step, Seq);
 
     /// <summary>
-    /// A refused move or look (replaces the controller's <c>FeedbackPulse</c>): <paramref name="Loc"/>'s
+    /// A refused move or look (replaced the controller's <c>FeedbackPulse</c>; the frontends play their shake/flash from it): <paramref name="Loc"/>'s
     /// cursor at <paramref name="At"/> in <paramref name="Bag"/> bumped, in <paramref name="Dir"/> (null when
     /// the refusal has no direction, as with a failed peek), for <paramref name="Reason"/>. Nothing moved.
     /// </summary>

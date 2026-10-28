@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Terminal.Gui;
 using Pockets.Core.Models;
+using Pockets.Core.Sim;
 using Pockets.App.Rendering;
 
 namespace Pockets.App.Views;
@@ -37,6 +38,12 @@ public class GameView : Window
     /// runner's TUI driver) can read the session view-model without reflection.
     /// </summary>
     public GameController Controller => _controller;
+
+    /// <summary>
+    /// The events of the last input this view handed to the controller (Slice 1.6), empty when the last key
+    /// reached no controller call. The view plays its one-shot cues from them; the harness reads them too.
+    /// </summary>
+    public ImmutableArray<SimEvent> LastEvents { get; private set; } = ImmutableArray<SimEvent>.Empty;
 
     public GameView(
         GameState initialState,
@@ -213,6 +220,7 @@ public class GameView : Window
     public override bool ProcessKey(KeyEvent keyEvent)
     {
         var gameKey = MapKey(keyEvent);
+        LastEvents = ImmutableArray<SimEvent>.Empty;
         if (gameKey is null)
             return base.ProcessKey(keyEvent);
 
@@ -226,36 +234,45 @@ public class GameView : Window
         }
 
         var result = _controller.HandleKey(gameKey.Value);
+        LastEvents = result.Events;
         if (result.Handled)
-            UpdateUI();
+            UpdateUI(result.Events);
         return result.Handled || base.ProcessKey(keyEvent);
     }
 
     private void OnGridCellClicked(Position pos)
     {
-        _controller.HandleGridClick(pos, ClickType.Primary);
-        UpdateUI();
+        Apply(_controller.HandleGridClick(pos, ClickType.Primary));
     }
 
     private void OnGridCellRightClicked(Position pos)
     {
-        _controller.HandleGridClick(pos, ClickType.Secondary);
-        UpdateUI();
+        Apply(_controller.HandleGridClick(pos, ClickType.Secondary));
     }
 
     private void OnBackClicked()
     {
-        _controller.HandleBackClick();
-        UpdateUI();
+        Apply(_controller.HandleBackClick());
     }
 
     private void OnPanelCellClicked(LocationId panelId, Position pos, ClickType type)
     {
-        _controller.HandleGridClick(panelId, pos, type);
-        UpdateUI();
+        Apply(_controller.HandleGridClick(panelId, pos, type));
     }
 
-    private void UpdateUI()
+    /// <summary>Records a click's events and refreshes the view from them (Slice 1.6).</summary>
+    private void Apply(ControllerResult result)
+    {
+        LastEvents = result.Events;
+        UpdateUI(result.Events);
+    }
+
+    /// <summary>
+    /// Re-renders every panel from the session's view of the state, then plays the one-shot cues of
+    /// <paramref name="events"/> (the step's events at n = 1: applied instantly). Timer and harness refreshes
+    /// pass none, so a cue never replays on a later frame.
+    /// </summary>
+    private void UpdateUI(ImmutableArray<SimEvent> events = default)
     {
         var state = _controller.Session.Current;
         _gridPanel.UpdateState(state);
@@ -312,17 +329,18 @@ public class GameView : Window
 
         UpdatePanelLayout();
 
-        // One-shot presentation cues (consumed on read). The enter-only failed peek flashes the
+        // One-shot presentation cues, from this input's Bumped event. The enter-only failed peek flashes the
         // command strip — the TUI half of the shake/flash affordance. The first-failed-peek dialogue
         // beat (shared chrome) handles the once-only teaching line; this fires on every refused peek.
-        switch (_controller.ConsumeFeedbackPulse())
+        var bump = events.IsDefault ? null : events.OfType<SimEvent.Bumped>().FirstOrDefault();
+        switch (bump?.Reason)
         {
-            case FeedbackPulse.FailedPeek:
+            case BumpReason.FailedPeek:
                 _commandStrip.Flash("✕ Enter-only — can't just peek. Press E to enter.");
                 break;
             // Slice 6: a cursor move refused by a tree. Fires on every bump (the fire-once axe-absence
             // beat is the shared-chrome teaching line); this is the per-frame "solid, no path" flash.
-            case FeedbackPulse.Bump:
+            case BumpReason.Unnavigable:
                 _commandStrip.Flash("✕ A tree. Solid — no way through.");
                 break;
         }

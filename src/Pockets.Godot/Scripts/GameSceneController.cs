@@ -323,15 +323,16 @@ public partial class GameSceneController : Control
         if (result.Handled)
         {
             RefreshUI();
-            // Thin equivalent of the TUI shake/flash: on a refused enter-only peek, surface the cue on
-            // the status line for this frame (the next RefreshUI overwrites it). The fire-once
-            // FirstFailedPeek beat renders in the shared dialogue box; this fires on every refusal.
-            switch (_controller.ConsumeFeedbackPulse())
+            // Thin equivalent of the TUI shake/flash, from the key's Bumped event (Slice 1.6): on a refused
+            // enter-only peek, surface the cue on the status line for this frame (the next RefreshUI
+            // overwrites it). The fire-once FirstFailedPeek beat renders in the shared dialogue box; this
+            // fires on every refusal.
+            switch (result.Events.OfType<Core.Sim.SimEvent.Bumped>().FirstOrDefault()?.Reason)
             {
-                case FeedbackPulse.FailedPeek:
+                case Core.Sim.BumpReason.FailedPeek:
                     _statusLabel.Text = "✕ Enter-only — can't just peek. Press E to enter.\n" + _statusLabel.Text;
                     break;
-                case FeedbackPulse.Bump: // Slice 6: a cursor move refused by a tree (fires on every bump).
+                case Core.Sim.BumpReason.Unnavigable: // Slice 6: a cursor move refused by a tree (fires on every bump).
                     _statusLabel.Text = "✕ A tree. Solid — no way through.\n" + _statusLabel.Text;
                     break;
             }

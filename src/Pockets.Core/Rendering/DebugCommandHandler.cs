@@ -1,5 +1,7 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Pockets.Core.Models;
+using Pockets.Core.Sim;
 
 namespace Pockets.Core.Rendering;
 
@@ -20,10 +22,20 @@ namespace Pockets.Core.Rendering;
 ///   {"action":"tick"}                                         → Tick
 ///   {"action":"advanceTime","ms":5000}                        → AdvanceClock (scripted clock advance)
 ///   {"action":"state"}                                        → serialize (no mutation)
-/// Response: {"handled":bool,"status":"...","state":{...}} or {"error":"..."}.
+/// Response: {"handled":bool,"status":"...","state":{...},"events":["…"]} or {"error":"..."}.
+/// <c>events</c> (Slice 1.6) is the command's <see cref="ControllerResult.Events"/> as canonical
+/// <see cref="EventText"/> lines (P1-D8), so the Godot WebSocket driver and mock-godot see the same stream the
+/// TUI consumes; it is empty for a query. Bags are named <c>bag#N</c> by one stream per controller, so a bag
+/// keeps its name across responses.
 /// </summary>
 public static class DebugCommandHandler
 {
+    /// <summary>
+    /// One <see cref="EventText"/> stream per controller (a debug run), held weakly so a dropped controller
+    /// takes its naming with it. The handler is static and the transports pass only the controller.
+    /// </summary>
+    private static readonly ConditionalWeakTable<GameController, EventText> Streams = new();
+
     /// <summary>
     /// Handles a single JSON command string against the controller and returns the JSON
     /// response string. Mutating commands advance the controller in place. Returns true in
@@ -60,19 +72,16 @@ public static class DebugCommandHandler
                 return HandleClick(controller, cmd);
             case "back":
                 mutated = true;
-                var back = controller.HandleBackClick();
-                return Success(controller, back.Handled, back.StatusMessage);
+                return Success(controller, controller.HandleBackClick());
             case "tick":
                 mutated = true;
-                var tick = controller.Tick();
-                return Success(controller, tick.Handled, tick.StatusMessage);
+                return Success(controller, controller.Tick());
             case "advanceTime":
                 mutated = true;
                 var ms = cmd["ms"]?.GetValue<long>() ?? 0;
-                var adv = controller.AdvanceClock(System.TimeSpan.FromMilliseconds(ms));
-                return Success(controller, adv.Handled, adv.StatusMessage);
+                return Success(controller, controller.AdvanceClock(System.TimeSpan.FromMilliseconds(ms)));
             case "state":
-                return Success(controller, true, "State query");
+                return Success(controller, ControllerResult.Handle(controller.Session, "State query"));
             default:
                 return Error($"Unknown action: {action}");
         }
@@ -93,8 +102,7 @@ public static class DebugCommandHandler
         if (!System.Enum.TryParse<GameKey>(keyName, ignoreCase: true, out var gameKey))
             return Error($"Unknown key: {keyName}. Valid: {string.Join(", ", System.Enum.GetNames<GameKey>())}");
 
-        var result = controller.HandleKey(gameKey);
-        return Success(controller, result.Handled, result.StatusMessage);
+        return Success(controller, controller.HandleKey(gameKey));
     }
 
     private static string HandleClick(GameController controller, JsonNode cmd)
@@ -108,17 +116,22 @@ public static class DebugCommandHandler
         if (!System.Enum.TryParse<ClickType>(buttonName, ignoreCase: true, out var clickType))
             clickType = ClickType.Primary;
 
-        var result = controller.HandleGridClick(new Position(row, col), clickType);
-        return Success(controller, result.Handled, result.StatusMessage);
+        return Success(controller, controller.HandleGridClick(new Position(row, col), clickType));
     }
 
-    private static string Success(GameController controller, bool handled, string? status)
+    /// <summary>
+    /// The success response for <paramref name="result"/>: handled, status, the canonical view-model, and the
+    /// result's events as this controller's <see cref="EventText"/> lines.
+    /// </summary>
+    private static string Success(GameController controller, ControllerResult result)
     {
+        var text = Streams.GetValue(controller, _ => new EventText());
         var response = new JsonObject
         {
-            ["handled"] = handled,
-            ["status"] = status,
-            ["state"] = ViewModelSerializer.Serialize(controller.Session)
+            ["handled"] = result.Handled,
+            ["status"] = result.StatusMessage,
+            ["state"] = ViewModelSerializer.Serialize(controller.Session),
+            ["events"] = new JsonArray(result.Events.Select(e => (JsonNode?)JsonValue.Create(text.Line(e))).ToArray())
         };
         return response.ToJsonString();
     }

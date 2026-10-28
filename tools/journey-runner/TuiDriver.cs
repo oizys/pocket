@@ -1,8 +1,10 @@
+using System.Collections.Immutable;
 using System.Text;
 using Terminal.Gui;
 using Pockets.Core;
 using Pockets.Core.Models;
 using Pockets.Core.Rendering;
+using Pockets.Core.Sim;
 using Pockets.App.Views;
 using TgKey = Terminal.Gui.Key; // disambiguate from this class's Key(GameKey) method
 
@@ -22,6 +24,12 @@ public sealed class TuiDriver : IJourneyDriver
     private readonly GameView _view;
     private readonly int _cols;
     private readonly int _rows;
+
+    /// <summary>One canonical event stream for the run (Slice 1.6), so a bag keeps its <c>bag#N</c> name.</summary>
+    private readonly EventText _text = new();
+
+    /// <summary>The event lines the view's controller emitted since the last <see cref="Observe"/>.</summary>
+    private readonly List<string> _events = new();
 
     public TuiDriver(DemoProfile profile)
     {
@@ -48,12 +56,15 @@ public sealed class TuiDriver : IJourneyDriver
     {
         var session = _view.Controller.Session;
         var vm = ViewModelSerializer.Serialize(session);
-        return new DriverObservation(vm, session.Current, DumpBuffer());
+        var events = _events.ToList();
+        _events.Clear();
+        return new DriverObservation(vm, session.Current, DumpBuffer(), events);
     }
 
     public void Key(GameKey key)
     {
         _view.ProcessKey(new KeyEvent(MapToKey(key), new KeyModifiers()));
+        Record(_view.LastEvents);
         Render();
     }
 
@@ -64,13 +75,13 @@ public sealed class TuiDriver : IJourneyDriver
     {
         // Rogue demo profile ticks per action; a wait step advances a facility tick explicitly,
         // matching the realtime timer's Controller.Tick(). (Render refreshes on the next key.)
-        _view.Controller.Tick();
+        Record(_view.Controller.Tick().Events);
         Render();
     }
 
     public void Click(Position pos, ClickType type)
     {
-        _view.Controller.HandleGridClick(pos, type);
+        Record(_view.Controller.HandleGridClick(pos, type).Events);
         Render();
     }
 
@@ -81,10 +92,13 @@ public sealed class TuiDriver : IJourneyDriver
     /// </summary>
     public void AdvanceTime(TimeSpan delta)
     {
-        _view.Controller.AdvanceClock(delta);
+        Record(_view.Controller.AdvanceClock(delta).Events);
         _view.RefreshUi();
         Render();
     }
+
+    /// <summary>Appends <paramref name="events"/> to the pending lines, in this run's naming.</summary>
+    private void Record(ImmutableArray<SimEvent> events) => _events.AddRange(events.Select(_text.Line));
 
     // --- Terminal.Gui plumbing ---
 

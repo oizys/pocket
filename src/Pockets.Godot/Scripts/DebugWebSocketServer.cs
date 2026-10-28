@@ -127,7 +127,8 @@ public partial class DebugWebSocketServer : Node
         {
             ["handled"] = true,
             ["status"] = $"Screenshot saved to {path}",
-            ["state"] = Core.Rendering.ViewModelSerializer.Serialize(Controller!.Session)
+            ["state"] = Core.Rendering.ViewModelSerializer.Serialize(Controller!.Session),
+            ["events"] = new JsonArray() // Slice 1.6: every response carries events; a screenshot emits none
         };
         return response.ToJsonString();
     }

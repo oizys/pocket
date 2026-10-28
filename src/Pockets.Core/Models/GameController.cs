@@ -3,29 +3,6 @@ using Pockets.Core.Sim;
 namespace Pockets.Core.Models;
 
 /// <summary>
-/// A transient, non-serialized presentation cue the frontends read after an input to play a
-/// one-shot affordance. NOT part of the game state or the parity view-model (so it never perturbs
-/// checkpoints/goldens) — it lives on the per-frontend <see cref="GameController"/> and is consumed
-/// on read (<see cref="GameController.ConsumeFeedbackPulse"/>). The demo's only pulse today is the
-/// enter-only <see cref="FailedPeek"/> shake/flash; the beat teaches the rule once, the pulse fires
-/// every time so the tell survives after the dialogue is spent. Since Slice 1.5 the controller raises it
-/// from the step's <see cref="SimEvent.Bumped"/> events; Slice 1.6 moves the frontends onto the events and
-/// deletes it.
-/// </summary>
-public enum FeedbackPulse
-{
-    None,
-    FailedPeek,
-
-    /// <summary>
-    /// A cursor move refused by an unnavigable tree cell (Slice 6, journey 15:30). Fired every time
-    /// the player bumps a tree — "solid, no path" — while the fire-once axe-absence beat only plays
-    /// on the Nth bump. The frontends play a one-shot shake/flash, same posture as <see cref="FailedPeek"/>.
-    /// </summary>
-    Bump
-}
-
-/// <summary>
 /// Pure input→state pipeline for the game. Maps abstract GameKeys, mouse clicks, DSL and the clock to
 /// <see cref="Intent"/>s and hands them to <see cref="GameSession.Apply"/> (Slice 1.3) — it never changes
 /// the session any other way. No UI framework dependency — testable with xUnit. Tracks which panel has
@@ -35,7 +12,6 @@ public class GameController
 {
     private GameSession _session;
     private LocationId _focus = LocationId.B;
-    private FeedbackPulse _feedbackPulse = FeedbackPulse.None;
 
     /// <summary>
     /// The injected game clock (Slice 5). Defaults to a <see cref="VirtualGameClock"/> so every
@@ -94,7 +70,10 @@ public class GameController
     /// refresh) drive timed crafts identically; the harness stays deterministic because it only ever
     /// moves the clock through scripted <c>advanceTime</c>.
     /// </summary>
-    public ControllerResult SyncClock()
+    public ControllerResult SyncClock() =>
+        Collect(SyncClockCore);
+
+    private ControllerResult SyncClockCore()
     {
         var before = _session.Elapsed;
         var now = _clock.Elapsed;
@@ -120,29 +99,17 @@ public class GameController
     }
 
     /// <summary>
-    /// Reads and clears the pending one-shot presentation cue (see <see cref="FeedbackPulse"/>).
-    /// Frontends call this once per UI refresh; it returns <see cref="FeedbackPulse.None"/> when
-    /// there is nothing to play. Consume-on-read keeps the cue from leaking into a later frame.
-    /// </summary>
-    public FeedbackPulse ConsumeFeedbackPulse()
-    {
-        var pulse = _feedbackPulse;
-        _feedbackPulse = FeedbackPulse.None;
-        return pulse;
-    }
-
-    /// <summary>
     /// Handles a logical key press: maps it (with the modal state and the panel focus) to one
-    /// <see cref="Intent"/> naming its target location, hands it to the session, and updates the focus,
-    /// the status message and the one-shot cue from how the step resolved. Returns a ControllerResult with
-    /// the updated session, a status message, and whether the key was handled. Frontends own no randomness:
+    /// <see cref="Intent"/> naming its target location, hands it to the session, and updates the focus
+    /// and the status message from how the step resolved. Returns a ControllerResult with the updated
+    /// session, a status message, whether the key was handled, and the step's events. Frontends own no randomness:
     /// AcquireRandom draws inside the step from the session's SimRng (Slice 1.1).
     /// </summary>
-    public ControllerResult HandleKey(GameKey key)
-    {
-        // One-shot presentation cues are per-key: clear any un-consumed pulse before handling.
-        _feedbackPulse = FeedbackPulse.None;
+    public ControllerResult HandleKey(GameKey key) =>
+        Collect(() => HandleKeyCore(key));
 
+    private ControllerResult HandleKeyCore(GameKey key)
+    {
         // Dialogue is modal-lite: while a beat is showing, Primary advances/dismisses it and every
         // other key is swallowed (handled, no state change) — the input's first job is turning pages,
         // before movement exists, and nothing leaks to the cursor underneath.
@@ -241,11 +208,9 @@ public class GameController
 
         if (direction is not null)
         {
-            // A move refused by an unnavigable tree queues the one-shot bump shake/flash (the fire-once
-            // axe-absence beat is handled inside the step; this cue fires on every bump).
+            // A move refused by an unnavigable tree emits Bumped(Unnavigable) on every bump; the frontends
+            // play their shake/flash from it (the fire-once axe-absence beat is handled inside the step).
             Send(new Intent.Move(_focus, direction.Value));
-            if (Bumped(BumpReason.Unnavigable))
-                _feedbackPulse = FeedbackPulse.Bump;
             return ControllerResult.Handle(_session, $"Move: {direction.Value} ({_focus})");
         }
 
@@ -297,22 +262,34 @@ public class GameController
     /// <summary>The events of the last intent <see cref="Send"/> handed to the session (Slice 1.5).</summary>
     private ImmutableArray<SimEvent> _lastEvents = ImmutableArray<SimEvent>.Empty;
 
+    /// <summary>Every event of the public call in progress, in order (Slice 1.6): <see cref="ControllerResult.Events"/>.</summary>
+    private readonly ImmutableArray<SimEvent>.Builder _callEvents = ImmutableArray.CreateBuilder<SimEvent>();
+
+    /// <summary>
+    /// Runs one public input call and puts every event its intents emitted on the result (Slice 1.6). A call
+    /// can send several intents (a clock sync is SetElapsed plus one Tick per second crossed), so the events
+    /// are collected across all of them; the frontends play their one-shot cues from these.
+    /// </summary>
+    private ControllerResult Collect(Func<ControllerResult> run)
+    {
+        _callEvents.Clear();
+        var result = run();
+        return result with { Events = _callEvents.ToImmutable() };
+    }
+
     /// <summary>
     /// Hands one intent to the session (the only way the controller changes it) and returns how the
-    /// step resolved, for the status message. Its events are kept in <see cref="_lastEvents"/>: focus and
-    /// the bump cue are read from them.
+    /// step resolved, for the status message. Its events are kept in <see cref="_lastEvents"/> (focus is read
+    /// from them) and added to the call's <see cref="ControllerResult.Events"/>.
     /// </summary>
     private StepTrace? Send(Intent intent)
     {
         var (session, trace, events) = _session.ApplyTraced(intent);
         _session = session;
         _lastEvents = events;
+        _callEvents.AddRange(events);
         return trace;
     }
-
-    /// <summary>True when the last intent emitted a <see cref="SimEvent.Bumped"/> for <paramref name="reason"/>.</summary>
-    private bool Bumped(BumpReason reason) =>
-        _lastEvents.OfType<SimEvent.Bumped>().Any(b => b.Reason == reason);
 
     /// <summary>
     /// Moves focus by the last intent's panel events, the way the controller always did: a C or W panel
@@ -342,7 +319,7 @@ public class GameController
     /// and arrange a bag without going anywhere (journey 7:00, the Chest). Closing a panel returns focus to
     /// B; opening the overlay focuses C (FirstPeek → LookInOverlay fires structurally in the step's hooks).
     /// An <see cref="Bag.EnterOnly"/> bag REFUSES the peek: nothing opens, the first-failed-peek beat fires
-    /// once, and a <see cref="FeedbackPulse.FailedPeek"/> shake/flash is queued — the refused peek is the
+    /// once, and a <see cref="SimEvent.Bumped"/> (<see cref="BumpReason.FailedPeek"/>) is emitted for the shake/flash — the refused peek is the
     /// only tell (no glyph — RATIFIED). E still enters the bag normally.
     /// </summary>
     private ControllerResult ExecutePeek()
@@ -350,8 +327,6 @@ public class GameController
         var at = _focus;
         var trace = Send(new Intent.Peek(at));
         FollowFocus();
-        if (Bumped(BumpReason.FailedPeek))
-            _feedbackPulse = FeedbackPulse.FailedPeek;
         switch (trace?.Route)
         {
             case Route.PeekClosePanel:
@@ -396,7 +371,10 @@ public class GameController
     /// it is open), then one <see cref="Intent.Click"/> places that panel's cursor and runs Primary or
     /// Secondary there.
     /// </summary>
-    public ControllerResult HandleGridClick(LocationId panelId, Position pos, ClickType type)
+    public ControllerResult HandleGridClick(LocationId panelId, Position pos, ClickType type) =>
+        Collect(() => HandleGridClickCore(panelId, pos, type));
+
+    private ControllerResult HandleGridClickCore(LocationId panelId, Position pos, ClickType type)
     {
         // Auto-switch focus to the clicked panel
         if (_session.Current.Locations.Has(panelId))
@@ -419,7 +397,10 @@ public class GameController
     /// <summary>
     /// Handles a click on the back/leave-bag button (<see cref="Intent.Leave"/> at the focused panel).
     /// </summary>
-    public ControllerResult HandleBackClick()
+    public ControllerResult HandleBackClick() =>
+        Collect(HandleBackClickCore);
+
+    private ControllerResult HandleBackClickCore()
     {
         Send(new Intent.Leave(_focus));
         if (FollowFocus())
@@ -430,7 +411,10 @@ public class GameController
     /// <summary>
     /// Executes a DSL expression string (<see cref="Intent.Dsl"/>).
     /// </summary>
-    public ControllerResult HandleDsl(string dslExpression)
+    public ControllerResult HandleDsl(string dslExpression) =>
+        Collect(() => HandleDslCore(dslExpression));
+
+    private ControllerResult HandleDslCore(string dslExpression)
     {
         Send(new Intent.Dsl(dslExpression));
         return ControllerResult.Handle(_session, dslExpression);
@@ -455,7 +439,10 @@ public class GameController
     /// <summary>
     /// Advances all facilities by one tick (for realtime mode).
     /// </summary>
-    public ControllerResult Tick()
+    public ControllerResult Tick() =>
+        Collect(TickCore);
+
+    private ControllerResult TickCore()
     {
         var before = _session;
         Send(new Intent.Tick());

@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Terminal.Gui;
 using Pockets.Core.Data;
 using Pockets.Core.Models;
+using Pockets.Core.Sim;
 using Pockets.App.Views;
 
 namespace Pockets.App.Tests.Views;
@@ -10,7 +11,9 @@ namespace Pockets.App.Tests.Views;
 /// Slice 4 (TUI render prong): the <c>c</c> key drives the generic look-in peek, and an enter-only
 /// bag surfaces the failed-peek affordance — the command-strip shake/flash plus the fire-once
 /// "Can't just peek at this one." dialogue beat. Asserted at the "is it drawn" depth only; the game
-/// logic is proven at the Core view-model level (PeekTests, journey Slice-4 checkpoints).
+/// logic is proven at the Core view-model level (PeekTests, journey Slice-4 checkpoints). Since Slice 1.6
+/// the flash is played from the input's <see cref="SimEvent.Bumped"/> event, so each cue test asserts the
+/// event the view consumed alongside what it drew.
 /// </summary>
 public class PeekTuiTests : IDisposable
 {
@@ -82,9 +85,34 @@ public class PeekTuiTests : IDisposable
 
         SendKey(view, (Key)'c'); // peek → refused
 
+        var bump = Assert.Single(view.LastEvents.OfType<SimEvent.Bumped>());
+        Assert.Equal(BumpReason.FailedPeek, bump.Reason);
         var dump = _harness!.DumpBuffer();
         Assert.Contains("Enter-only", dump);                    // command-strip shake/flash
         Assert.Contains("Can't just peek at this one", dump);   // fire-once dialogue beat
+    }
+
+    [Fact]
+    public void MoveIntoTree_FlashesBump_FromTheBumpedEvent()
+    {
+        var tree = new ItemType("Standing Tree", Category.Structure, IsStackable: false);
+        var grid = Grid.Create(4, 2).SetCell(1, new Cell(Stack: new ItemStack(tree, 1), Frame: new TreeFrame()));
+        var rootBag = new Bag(grid);
+        var handBag = GameState.CreateHandBag();
+        var state = new GameState(BagStore.Empty.Add(rootBag).Add(handBag),
+            LocationMap.Create(handBag.Id, rootBag.Id), ImmutableArray.Create(tree));
+        var view = SetupGame(state);
+
+        SendKey(view, (Key)'d'); // right, into the tree at (0,1) → refused
+
+        var bump = Assert.Single(view.LastEvents.OfType<SimEvent.Bumped>());
+        Assert.Equal(BumpReason.Unnavigable, bump.Reason);
+        Assert.Equal(new Position(0, 0), view.Controller.Session.Current.Cursor.Position);
+        Assert.Contains("A tree. Solid", _harness!.DumpBuffer());
+
+        SendKey(view, (Key)'s'); // down, onto open ground: no bump event, so no flash
+        Assert.Empty(view.LastEvents.OfType<SimEvent.Bumped>());
+        Assert.DoesNotContain("A tree. Solid", _harness!.DumpBuffer());
     }
 
     [Fact]

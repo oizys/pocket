@@ -59,7 +59,7 @@ public class CommandStripView : View
 
     /// <summary>
     /// Shows a one-shot cue in place of the hint for this frame — the TUI half of a
-    /// <see cref="FeedbackPulse"/> (e.g. the enter-only failed-peek shake/flash). The next
+    /// <see cref="Pockets.Core.Sim.SimEvent.Bumped"/> cue (e.g. the enter-only failed-peek shake/flash). The next
     /// <see cref="Update"/> restores the default hint, so the cue is transient by construction.
     /// </summary>
     public void Flash(string message)

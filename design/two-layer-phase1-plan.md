@@ -278,7 +278,7 @@ dependencies are given in §Order below.
 - **Risk:** medium. Event payloads must not contain process-fresh GUIDs where they will be
   serialized (see P1-D8).
 
-### Slice 1.6 — Frontends consume events at n = 1
+### Slice 1.6 — Frontends consume events at n = 1 ✓ landed (see §Addendum — Slice 1.6)
 - `ControllerResult` gains `Events`. The TUI's `GameView` and Godot's `GameSceneController`
   read the step's events:
   - **Bump and failed-peek cues** come from `Bumped` events. `FeedbackPulse` and
@@ -690,3 +690,54 @@ re-recorded.
 - `EventText` is the line format; keep one instance for a whole journey run. `EventJourneyTests.Replay` (one `Simulation.Step` per expanded sub-intent from the profile's `SimState`) is the replay loop the gate needs; the runner can do the same from the session's `IntentLog`.
 - Steps are numbered `TickCount + 1`, so non-timed intents (cursor, dialogue, panels in realtime) share a step number with the next timed one, and each restarts `Seq` at 0. `(Step, Seq)` is therefore **not unique across intents** within a step. The golden should either add the intent index or note this; changing the numbering would be a contract change.
 - No `IntentApplied`-only lines need suppressing, but cursor moves dominate (65 of 303 target-demo events are `CursorMoved`, 130 are envelopes).
+
+## Addendum — Slice 1.6 as built (2026-10-28)
+
+**Golden-neutral.** The VM checkpoint golden and the 11 TUI buffer goldens are byte-identical (`make parity-full`
+green; `journeys/goldens/` untouched). Bump and failed-peek rendering are unchanged on both frontends: the same flash
+text, played on the same frame, for the same inputs. No action-log text changed (P1-D6) and no golden was
+re-recorded.
+
+| Piece | Where | Notes |
+|---|---|---|
+| `ControllerResult.Events` | `Models/ControllerResult.cs` | An init property (`ImmutableArray<SimEvent>`, default empty), not a 4th positional field, so no `new ControllerResult(…)` or `Handle`/`Unhandled` call changed. |
+| Per-call collection | `GameController.Collect` | Each public input method (`HandleKey`, `HandleGridClick(loc,…)`, `HandleBackClick`, `HandleDsl`, `Tick`, `SyncClock`; `AdvanceClock` reaches `SyncClock`) is now a one-line `Collect(…Core)` wrapper over its old body. `Send` appends every step's events to a per-call builder, so a clock sync (SetElapsed + k × Tick) or a composite click returns **all** its events, in order. `_lastEvents` stays, but only for focus (`FollowFocus`). |
+| `FeedbackPulse` deleted | `GameController` | The enum, the field, `ConsumeFeedbackPulse()`, the per-key reset and the `Bumped(reason)` helper are gone. The doc comments that named the pulse (`CellFrame`, `CommandStripView`, `SimEvent.Bumped`) now name the event. |
+| TUI | `App/Views/GameView.cs` | `UpdateUI(events)` re-renders from the VM as before, then plays the cue from the input's first `Bumped`: `FailedPeek` → the enter-only flash, `Unnavigable` → the tree flash. Keys and clicks pass their result's events; the timer, clock and harness refreshes pass none, so a cue never replays (the old consume-on-read). `GameView.LastEvents` exposes the last input's events (it is reset on every key, so a key that reaches no controller call reports none). This is the same mapping the controller used: only `Move` emits `Unnavigable` and only `Peek` emits `FailedPeek`. |
+| Godot | `Godot/Scripts/GameSceneController.cs`, `DebugWebSocketServer.cs` | `_UnhandledInput` switches on `result.Events.OfType<Core.Sim.SimEvent.Bumped>().FirstOrDefault()?.Reason` (fully qualified, so there is no new `using` and no Godot name clash). The transport-local screenshot response gains `"events": []`. **Both compile in WSL**: `dotnet build src/Pockets.Godot/Pockets.Godot.csproj` succeeds here (the Godot.NET.Sdk package restores). The real-Godot run is still Aaron's (`parity-godot`). |
+| Debug protocol | `Rendering/DebugCommandHandler.cs` | Every success response has `"events": [ … ]`, the command's `ControllerResult.Events` as `EventText` lines; a `state` query has `[]`. One `EventText` per controller, held in a `ConditionalWeakTable<GameController, EventText>`, so `bag#N` names stay stable across a run's responses, and a new controller starts at `bag#1`. The transports' call (`Handle(controller, json, out mutated)`) is unchanged. |
+| Runner | `tools/journey-runner/*` | `DriverObservation` gains `Events` (the lines received since the previous observation). mock-godot and live Godot collect them from the responses (`null` when a response lacks the field, i.e. a pre-1.6 Godot build); the TUI driver names `GameView.LastEvents` and its direct `Tick`/`Click`/`AdvanceClock` results with its own `EventText`. New check, `VerifyEvents`, on every step and driver: an event stream must be present, and a step whose VM changed must have emitted at least one event. A mutant mock-godot that drops the events fails it 62 times on smoke. |
+
+**Not done, by design:**
+- **Craft-completion and dialogue cues.** Neither frontend has a one-shot cue for either today. The craft list and
+  the dialogue box re-render from the VM, which at n = 1 *is* "apply the event now". Adding a new cue (for example a
+  completion flash) would change the buffer goldens, so it is a behaviour change and stays out of this slice.
+  `CraftCompleted` and `DialogueQueued`/`DialogueAdvanced` are now on every `ControllerResult` and in every debug
+  response, ready for L2.
+- The content of the event stream is not yet diffed across drivers or against a golden. That is 1.7.
+
+**Acceptance:**
+1. Goldens identical, including the buffer goldens; `make parity-full` is green.
+2. The bump and failed-peek tests assert via events:
+   - Core: `WildernessTests.MovingIntoTree_LeavesCursorUnchanged_AndEmitsBump` (and the no-bump move);
+     `PeekTests.Peek_OnEnterOnly_EmitsFailedPeekBump_EveryTime`.
+   - App: `PeekTuiTests.PeekOnEnterOnly_FlashesShake_AndFiresFailedPeekBeat` now also asserts the `Bumped`, and
+     there is a new `MoveIntoTree_FlashesBump_FromTheBumpedEvent` (event → flash, then no event → no flash). Before
+     this slice there was no App bump test.
+3. `make parity` cross-driver is green with `events` present on both drivers (the `VerifyEvents` check).
+4. Godot builds (in WSL, see above).
+- `DebugCommandHandlerTests` +4: the response lines equal `EventText.Lines` of the same input on a direct
+  controller, and contain no GUID; a query has `[]`; names continue across responses (chest `bag#1`, then the root
+  `bag#2`) and restart for a new controller; a refused peek arrives as a `Bumped … reason=FailedPeek` line.
+- `dotnet test`: Core 977 (973 + 4 new), App 54 (53 + 1 new), spikes 109 (unchanged). All green.
+
+**For 1.7 (event golden + replay gate):**
+- The runner already gets each step's event lines on every driver, as `DriverObservation.Events`. `--events-out`
+  only needs to write them, with the step index: per P1-D8 and the 1.5 note, `(Step, Seq)` is not unique, so prefix
+  the journey step. The TUI and mock-godot each name bags with their own `EventText`, and the two streams should be
+  identical by construction. That was not asserted here; it is 1.7's cross-driver diff.
+- mock-godot's `Observe` sends a `state` query, whose `[]` is not appended (`Observe` bypasses `Send`). Keep it that
+  way, so queries never add lines.
+- For replay (`--replay-check`), `EventJourneyTests.Replay` is still the loop. Note that its stream comes from
+  `Simulation.Step` per sub-intent and the frontends' stream comes from `GameSession.ApplyTraced`. They should
+  match, but compare them once before you pin a golden to either.

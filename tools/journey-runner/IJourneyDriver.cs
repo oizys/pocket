@@ -9,9 +9,13 @@ namespace Pockets.JourneyRunner;
 /// available only for in-process drivers (TUI, mock-godot) — the full invariant pack and
 /// conservation census require it. <see cref="RenderProbe"/> is a per-frontend render dump
 /// (TUI: character buffer) for thin assert-render checks; null when the driver has no
-/// observable render surface here.
+/// observable render surface here. <see cref="Events"/> (Slice 1.6) is the canonical
+/// <see cref="Pockets.Core.Sim.EventText"/> lines the driver's frontend received since the previous
+/// observation, named by one stream per run; null when the driver's transport carries no events (a stale
+/// Godot build), which the runner reports.
 /// </summary>
-public record DriverObservation(JsonObject ViewModel, GameState? FullState, string? RenderProbe);
+public record DriverObservation(JsonObject ViewModel, GameState? FullState, string? RenderProbe,
+    IReadOnlyList<string>? Events = null);
 
 /// <summary>
 /// A frontend driver the journey runner can plug in. All frontends converge on

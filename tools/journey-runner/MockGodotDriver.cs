@@ -16,6 +16,9 @@ public sealed class MockGodotDriver : IJourneyDriver
 {
     private readonly GameController _controller;
 
+    /// <summary>The <c>events</c> lines of every response since the last <see cref="Observe"/> (Slice 1.6).</summary>
+    private readonly List<string> _events = new();
+
     public MockGodotDriver(GameController controller) => _controller = controller;
 
     public string Name => "mock-godot";
@@ -26,7 +29,9 @@ public sealed class MockGodotDriver : IJourneyDriver
         // transport yields the identical payload — then expose FullState for the invariant pack.
         var resp = JsonNode.Parse(DebugCommandHandler.Handle(_controller, """{"action":"state"}"""))!;
         var vm = (JsonObject)resp["state"]!;
-        return new DriverObservation(vm, _controller.Session.Current, RenderProbe: null);
+        var events = _events.ToList();
+        _events.Clear();
+        return new DriverObservation(vm, _controller.Session.Current, RenderProbe: null, events);
     }
 
     public void Key(GameKey key) =>
@@ -55,7 +60,12 @@ public sealed class MockGodotDriver : IJourneyDriver
         var resp = JsonNode.Parse(DebugCommandHandler.Handle(_controller, command.ToJsonString()))!;
         if (resp["error"] is { } err)
             throw new InvalidOperationException($"mock-godot transport error: {err.GetValue<string>()}");
+        _events.AddRange(EventLines(resp));
     }
+
+    /// <summary>A response's <c>events</c> lines (the shared handler always sends the array).</summary>
+    internal static IEnumerable<string> EventLines(JsonNode resp) =>
+        resp["events"]?.AsArray().Select(e => e!.GetValue<string>()) ?? Enumerable.Empty<string>();
 
     public void Dispose() { }
 }

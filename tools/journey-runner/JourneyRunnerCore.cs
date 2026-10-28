@@ -52,6 +52,7 @@ public static class JourneyRunnerCore
 
         // Baseline observation before any step drives conservation comparisons.
         var start = driver.Observe();
+        var prevViewModel = start.ViewModel.ToJsonString();
         var prevCensus = start.FullState is { } s0 ? InvariantChecker.Census(s0) : null;
         Emit(checkpoints, -1, "start", start.ViewModel);
         VerifyStructural(driver.Name, -1, "start", start, failures, notes);
@@ -75,6 +76,9 @@ public static class JourneyRunnerCore
 
             // --- Invariant pack ---
             VerifyStructural(driver.Name, i, label, obs, failures, notes);
+            var viewModel = obs.ViewModel.ToJsonString();
+            VerifyEvents(i, label, obs, viewModel != prevViewModel, failures);
+            prevViewModel = viewModel;
 
             // Conservation (requires full state; view-model-only drivers flag it as limited).
             if (obs.FullState is { } state)
@@ -179,6 +183,20 @@ public static class JourneyRunnerCore
         if (step.Tick is { } ticks)
             for (int t = 0; t < ticks; t++) driver.Tick();
         // A step with only a comment/checkpoint/assert performs no action.
+    }
+
+    /// <summary>
+    /// The Slice 1.6 events check: the driver's frontend must have received an event stream (the <c>events</c>
+    /// every debug response carries, or the TUI controller's result events), and a step whose view-model
+    /// changed must have emitted at least one event. The stream's content is diffed across drivers and
+    /// against a golden from Slice 1.7.
+    /// </summary>
+    private static void VerifyEvents(int i, string label, DriverObservation obs, bool changed, List<string> failures)
+    {
+        if (obs.Events is null)
+            failures.Add($"[{i} {label}] events: the driver reported no event stream (a pre-1.6 build?)");
+        else if (changed && obs.Events.Count == 0)
+            failures.Add($"[{i} {label}] events: the view-model changed but no event was emitted");
     }
 
     /// <summary>

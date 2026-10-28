@@ -29,10 +29,18 @@ public sealed class GodotWebSocketDriver : IJourneyDriver, IScreenshotDriver
 
     public string Name => "godot";
 
+    /// <summary>
+    /// The <c>events</c> lines of every response since the last <see cref="Observe"/> (Slice 1.6); null once
+    /// any response lacked the field, i.e. the Godot build predates 1.6.
+    /// </summary>
+    private List<string>? _events = new();
+
     public DriverObservation Observe()
     {
         var resp = Send(new JsonObject { ["action"] = "state" });
-        return new DriverObservation((JsonObject)resp["state"]!, FullState: null, RenderProbe: null);
+        var events = _events;
+        _events = events is null ? null : new List<string>();
+        return new DriverObservation((JsonObject)resp["state"]!, FullState: null, RenderProbe: null, events);
     }
 
     public void Key(GameKey key) =>
@@ -81,6 +89,10 @@ public sealed class GodotWebSocketDriver : IJourneyDriver, IScreenshotDriver
         var resp = (JsonObject)JsonNode.Parse(sb.ToString())!;
         if (resp["error"] is { } err)
             throw new InvalidOperationException($"godot transport error: {err.GetValue<string>()}");
+        if (resp["events"] is null)
+            _events = null;
+        else
+            _events?.AddRange(MockGodotDriver.EventLines(resp));
         return resp;
     }
 
