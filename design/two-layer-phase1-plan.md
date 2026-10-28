@@ -685,7 +685,7 @@ re-recorded.
 - **Godot:** no Godot file changed. `GameSceneController` still reads `ConsumeFeedbackPulse()`, which the shared controller now raises from events, so the TUI, Godot and mock-godot get the event-driven cue and focus in the same slice (principle 4). No Windows build check is needed.
 
 **Found while building, kept as is (behaviour-neutral, flagged for the PM):**
-- **An aborted craft logs "✦ … crafted: …".** Before 1.5 the facility rule reported any "was crafting, now idle" transition as `CraftCompleted`, aborts included, and the shell wrote a completion line for each. The events now tell the two apart (`CraftAborted`), but the shell still writes the line for both so log text is unchanged (P1-D6). Neither journey aborts a craft. Fixing it is a one-line log change and a decision.
+- **An aborted craft logs "✦ … crafted: …".** Before 1.5 the facility rule reported any "was crafting, now idle" transition as `CraftCompleted`, aborts included, and the shell wrote a completion line for each. The events now tell the two apart (`CraftAborted`), but the shell still writes the line for both so log text is unchanged (P1-D6). Neither journey aborts a craft. Fixing it is a one-line log change and a decision. **Fixed post-Phase 1 in `5dfaf22`:** aborts now log `✦ {facility} craft aborted: {recipe}`.
 - `ItemStack` equality compares its property dictionary by reference, so a tool that rebuilds a stack with equal properties shows up as a changed cell. The deriver treats a same-item, same-count change as "not a stack event", so nothing spurious is emitted, and the coverage check still demands a name for it.
 
 **For 1.6 (frontends consume events at n = 1):**
@@ -824,7 +824,7 @@ timeline-mirroring intent view as well, it should be a *derived* view (intents s
 truncation of the replay input.
 
 **Kept exactly:** the 1.3 latent undo bug (a tool at a panel other than B pushes the swapped frame).
-`EventLogSessionTests.KnownBug_ToolAtPanelC_UndoRestoresTheSwappedFrame` now pins it: QuickSplit at C, then undo, leaves B on the facility bag.
+`EventLogSessionTests.KnownBug_ToolAtPanelC_UndoRestoresTheSwappedFrame` now pins it: QuickSplit at C, then undo, leaves B on the facility bag. **Fixed post-Phase 1 in `5dfaf22`:** undo now restores the pre-tool state; the pin became `ToolAtPanelOtherThanB_UndoRestoresThePreToolState`.
 
 **Acceptance:**
 1. Unit tests. `EventLogTests` (20) cover append order, persistence and forking, truncation (including at a chunk boundary and before

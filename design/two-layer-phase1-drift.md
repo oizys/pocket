@@ -66,12 +66,20 @@ baselines of all 15 parity artifacts. The one added golden is `journeys/goldens/
 
 ---
 
+## Fixed after Phase 1 (Aaron, 2026-10-28: "Fix both bugs")
+
+Both landed in `5dfaf22`, golden-neutral (`make parity-full` green; VM, buffer and events goldens byte-identical, as
+no journey undoes or aborts a craft). Shared code only (`GameSession.RunStepCore` / `CraftLogs`); no Godot file changed.
+
+| # | Item | Fix | Tests |
+|---|---|---|---|
+| a | ~~Undo after a tool at a panel other than B restores the swapped frame~~ **Fixed.** | The tool route (and `RecipeSwitched`, which had the same shape) now pushes the unswapped pre-step `Current` as the undo snapshot; the swapped frame is only the tool's view and its log line's. | `EventLogSessionTests.ToolAtPanelOtherThanB_UndoRestoresThePreToolState` (C, W; replaces the `KnownBug_…` pin), `ToolAtPanelB_UndoRestoresThePreToolState` (unchanged path), `RecipeCycleTests.CycleRecipeAtPanelC_UndoRestoresThePreSwitchState` |
+| b | ~~An aborted craft writes a "✦ … crafted: …" line~~ **Fixed.** | `CraftAborted` now writes `✦ {facility} craft aborted: {recipe name}` (same `✦ {facility} …: {recipe}` shape as the completion line). A line rather than nothing: an in-progress craft vanishing from the action queue should be explained, and the abort line keeps the old one-line-per-craft-end count (a tick that only aborts still logs the abort instead of `Tick #N`, as before). | `RecipeCycleTests.Tick_CompletedCraft_WritesTheCraftedLine`, `Tick_AbortedCraft_WritesTheAbortedLine_NotACraftedLine` |
+
 ## Open / follow-ups (not fixed; awaiting Aaron's ruling or a later phase)
 
 | # | Item | Pinned by / where | Why it is open |
 |---|---|---|---|
-| a | **Undo after a tool at a panel other than B restores the swapped frame** (B = that panel's location). It is inherited from the pre-1.3 `RunAt`. | `EventLogSessionTests.KnownBug_ToolAtPanelC_UndoRestoresTheSwappedFrame` | The fix is a one-line behaviour change and a decision. No journey undoes. |
-| b | **An aborted craft writes a "✦ … crafted: …" log line.** The events tell abort from completion (`CraftAborted`), but the shell keeps the old text (P1-D6). | 1.5 addendum | The fix is a one-line log change and a decision. No journey aborts a craft. |
 | c | **The real-Godot `make parity-godot` run with the events diffs** is still pending on Windows. | `tools/journey-runner/README.md` § Running `make parity-godot` on Windows | Godot cannot run in WSL. mock-godot shares `DebugCommandHandler`, and the Godot project compiles in WSL. Start a fresh build first (`bag#N` naming). |
 | d | **P1-D7 debt:** the init-time seeded `System.Random` (demo and wilderness seeds, the Godot fallback) and the `double` fill ratio and loot weights in `WildernessTemplate`/`LootTableTemplate`, which run in step via the seedling. | two-layer.md G1/G2 | Converting them re-records goldens. Phase 3, when generation moves into the rule engine. |
 | e | **Deterministic bag ids (G7).** Bags are still `Guid.NewGuid()`; events are renamed `bag#N` at serialization (P1-D8). | two-layer.md G7 | Phase 3 (needed for multiplayer and save/replay). |
