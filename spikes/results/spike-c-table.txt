@@ -93,4 +93,548 @@
  s1c3 backlog naive-jump      2400  8 | False       1   796/299   808/310 |   300
  s1c3 backlog belt-catchup    2400  - | True        0   796/796   808/808 |   808
  
+ BELT MERGE NETWORKS (side priority: straight > left > right; ChainStep). N1 main+B, N2 main+B+C, N3 cascade main+B then +D. occDiff = cells with different item letter ('-' none; mainonly: A-vs-not-A cells); late = max |consume step full - method| per source ordinal ('-' no timings); deliv = letter full/method.
+ net cfg       mode           N  k | exact occDiff dDiff  late |  cost   t1    C | deliv
+ N1  under     substep      240  2 | True        0     0     0 |   240           | A 76/76 B 58/58
+ N1  under     substep      240  4 | True        0     0     0 |   240           | A 76/76 B 58/58
+ N1  under     substep      240  8 | True        0     0     0 |   240           | A 76/76 B 58/58
+ N1  under     bigstep      240  2 | False      10    21    82 |   120           | A 76/71 B 58/37
+ N1  under     bigstep      240  4 | False      13    54    87 |    60           | A 76/46 B 58/4
+ N1  under     bigstep      240  8 | False      13    60   173 |    30           | A 76/16 B 58/4
+ N1  under     cycleskip    240  - | True        0     0     0 |    24   12   12 | A 76/76 B 58/58
+ N1  under     mainonly     240  - | True        0     0     0 |   240           | A 76/76
+ N1  under     fluid        240  - | False       -     1     - |     1           | A 76/75 B 58/57
+ N1  under     substep      241  2 | True        0     0     0 |   241           | A 76/76 B 58/58
+ N1  under     substep      241  4 | True        0     0     0 |   241           | A 76/76 B 58/58
+ N1  under     substep      241  8 | True        0     0     0 |   241           | A 76/76 B 58/58
+ N1  under     bigstep      241  2 | False       9    21    82 |   121           | A 76/72 B 58/37
+ N1  under     bigstep      241  4 | False      11    54    88 |    61           | A 76/47 B 58/4
+ N1  under     bigstep      241  8 | False      11    59   178 |    31           | A 76/17 B 58/4
+ N1  under     cycleskip    241  - | True        0     0     0 |    25   12   12 | A 76/76 B 58/58
+ N1  under     mainonly     241  - | True        0     0     0 |   241           | A 76/76
+ N1  under     fluid        241  - | False       -     1     - |     1           | A 76/75 B 58/57
+ N1  under     substep     2400  2 | True        0     0     0 |  2400           | A 796/796 B 598/598
+ N1  under     substep     2400  4 | True        0     0     0 |  2400           | A 796/796 B 598/598
+ N1  under     substep     2400  8 | True        0     0     0 |  2400           | A 796/796 B 598/598
+ N1  under     bigstep     2400  2 | False      10   201   802 |  1200           | A 796/791 B 598/397
+ N1  under     bigstep     2400  4 | False      13   594   627 |   600           | A 796/586 B 598/4
+ N1  under     bigstep     2400  8 | False      13   594  1523 |   300           | A 796/286 B 598/4
+ N1  under     cycleskip   2400  - | True        0     0     0 |    24   12   12 | A 796/796 B 598/598
+ N1  under     mainonly    2400  - | True        0     0     0 |  2400           | A 796/796
+ N1  under     fluid       2400  - | False       -     1     - |     1           | A 796/795 B 598/597
+ N1  under     substep    24000  2 | True        0     0     0 | 24000           | A 7996/7996 B 5998/5998
+ N1  under     substep    24000  4 | True        0     0     0 | 24000           | A 7996/7996 B 5998/5998
+ N1  under     substep    24000  8 | True        0     0     0 | 24000           | A 7996/7996 B 5998/5998
+ N1  under     bigstep    24000  2 | False      10  2001  8002 | 12000           | A 7996/7991 B 5998/3997
+ N1  under     bigstep    24000  4 | False      13  5994  6027 |  6000           | A 7996/5986 B 5998/4
+ N1  under     bigstep    24000  8 | False      13  5994 15023 |  3000           | A 7996/2986 B 5998/4
+ N1  under     cycleskip  24000  - | True        0     0     0 |    24   12   12 | A 7996/7996 B 5998/5998
+ N1  under     mainonly   24000  - | True        0     0     0 | 24000           | A 7996/7996
+ N1  under     fluid      24000  - | False       -     1     - |     1           | A 7996/7995 B 5998/5997
+ N1  mainsat   substep      240  2 | True        0     0     0 |   240           | A 226/226 B 2/2
+ N1  mainsat   substep      240  4 | True        0     0     0 |   240           | A 226/226 B 2/2
+ N1  mainsat   substep      240  8 | True        0     0     0 |   240           | A 226/226 B 2/2
+ N1  mainsat   bigstep      240  2 | False       0   120   119 |   120           | A 226/106 B 2/4
+ N1  mainsat   bigstep      240  4 | False       0   180   177 |    60           | A 226/46 B 2/4
+ N1  mainsat   bigstep      240  8 | False       0   210   203 |    30           | A 226/16 B 2/4
+ N1  mainsat   cycleskip    240  - | True        0     0     0 |    16   14    2 | A 226/226 B 2/2
+ N1  mainsat   mainonly     240  - | True        0     0     0 |   240           | A 226/226
+ N1  mainsat   fluid        240  - | False       -     2     - |     1           | A 226/225 B 2/0
+ N1  mainsat   substep      241  2 | True        0     0     0 |   241           | A 227/227 B 2/2
+ N1  mainsat   substep      241  4 | True        0     0     0 |   241           | A 227/227 B 2/2
+ N1  mainsat   substep      241  8 | True        0     0     0 |   241           | A 227/227 B 2/2
+ N1  mainsat   bigstep      241  2 | False       0   120   120 |   121           | A 227/107 B 2/4
+ N1  mainsat   bigstep      241  4 | False       0   180   180 |    61           | A 227/47 B 2/4
+ N1  mainsat   bigstep      241  8 | False       0   210   210 |    31           | A 227/17 B 2/4
+ N1  mainsat   cycleskip    241  - | True        0     0     0 |    17   14    2 | A 227/227 B 2/2
+ N1  mainsat   mainonly     241  - | True        0     0     0 |   241           | A 227/227
+ N1  mainsat   fluid        241  - | False       -     2     - |     1           | A 227/226 B 2/0
+ N1  mainsat   substep     2400  2 | True        0     0     0 |  2400           | A 2386/2386 B 2/2
+ N1  mainsat   substep     2400  4 | True        0     0     0 |  2400           | A 2386/2386 B 2/2
+ N1  mainsat   substep     2400  8 | True        0     0     0 |  2400           | A 2386/2386 B 2/2
+ N1  mainsat   bigstep     2400  2 | False       0  1200  1199 |  1200           | A 2386/1186 B 2/4
+ N1  mainsat   bigstep     2400  4 | False       0  1800  1797 |   600           | A 2386/586 B 2/4
+ N1  mainsat   bigstep     2400  8 | False       0  2100  2093 |   300           | A 2386/286 B 2/4
+ N1  mainsat   cycleskip   2400  - | True        0     0     0 |    16   14    2 | A 2386/2386 B 2/2
+ N1  mainsat   mainonly    2400  - | True        0     0     0 |  2400           | A 2386/2386
+ N1  mainsat   fluid       2400  - | False       -     2     - |     1           | A 2386/2385 B 2/0
+ N1  mainsat   substep    24000  2 | True        0     0     0 | 24000           | A 23986/23986 B 2/2
+ N1  mainsat   substep    24000  4 | True        0     0     0 | 24000           | A 23986/23986 B 2/2
+ N1  mainsat   substep    24000  8 | True        0     0     0 | 24000           | A 23986/23986 B 2/2
+ N1  mainsat   bigstep    24000  2 | False       0 12000 11999 | 12000           | A 23986/11986 B 2/4
+ N1  mainsat   bigstep    24000  4 | False       0 18000 17997 |  6000           | A 23986/5986 B 2/4
+ N1  mainsat   bigstep    24000  8 | False       0 21000 20993 |  3000           | A 23986/2986 B 2/4
+ N1  mainsat   cycleskip  24000  - | True        0     0     0 |    16   14    2 | A 23986/23986 B 2/2
+ N1  mainsat   mainonly   24000  - | True        0     0     0 | 24000           | A 23986/23986
+ N1  mainsat   fluid      24000  - | False       -     2     - |     1           | A 23986/23985 B 2/0
+ N1  backlog   substep      240  2 | True        0     0     0 |   240           | A 71/71 B 5/5
+ N1  backlog   substep      240  4 | True        0     0     0 |   240           | A 71/71 B 5/5
+ N1  backlog   substep      240  8 | True        0     0     0 |   240           | A 71/71 B 5/5
+ N1  backlog   bigstep      240  2 | False       0     2    14 |   120           | A 71/69 B 5/4
+ N1  backlog   bigstep      240  4 | False       0    25    74 |    60           | A 71/46 B 5/4
+ N1  backlog   bigstep      240  8 | False       0    55   160 |    30           | A 71/16 B 5/4
+ N1  backlog   cycleskip    240  - | True        0     0     0 |    42   36    6 | A 71/71 B 5/5
+ N1  backlog   mainonly     240  - | False       0     4    12 |   240           | A 71/75
+ N1  backlog   fluid        240  - | False       -     5     - |     1           | A 71/75 B 5/0
+ N1  backlog   substep      241  2 | True        0     0     0 |   241           | A 72/72 B 5/5
+ N1  backlog   substep      241  4 | True        0     0     0 |   241           | A 72/72 B 5/5
+ N1  backlog   substep      241  8 | True        0     0     0 |   241           | A 72/72 B 5/5
+ N1  backlog   bigstep      241  2 | False       0     2    14 |   121           | A 72/70 B 5/4
+ N1  backlog   bigstep      241  4 | False       0    25    75 |    61           | A 72/47 B 5/4
+ N1  backlog   bigstep      241  8 | False       0    55   165 |    31           | A 72/17 B 5/4
+ N1  backlog   cycleskip    241  - | True        0     0     0 |    43   36    6 | A 72/72 B 5/5
+ N1  backlog   mainonly     241  - | False       0     4    12 |   241           | A 72/76
+ N1  backlog   fluid        241  - | False       -     5     - |     1           | A 72/75 B 5/0
+ N1  backlog   substep     2400  2 | True        0     0     0 |  2400           | A 791/791 B 5/5
+ N1  backlog   substep     2400  4 | True        0     0     0 |  2400           | A 791/791 B 5/5
+ N1  backlog   substep     2400  8 | True        0     0     0 |  2400           | A 791/791 B 5/5
+ N1  backlog   bigstep     2400  2 | False       0     2    14 |  1200           | A 791/789 B 5/4
+ N1  backlog   bigstep     2400  4 | False       0   205   614 |   600           | A 791/586 B 5/4
+ N1  backlog   bigstep     2400  8 | False       0   505  1510 |   300           | A 791/286 B 5/4
+ N1  backlog   cycleskip   2400  - | True        0     0     0 |    42   36    6 | A 791/791 B 5/5
+ N1  backlog   mainonly    2400  - | False       0     4    12 |  2400           | A 791/795
+ N1  backlog   fluid       2400  - | False       -     5     - |     1           | A 791/795 B 5/0
+ N1  backlog   substep    24000  2 | True        0     0     0 | 24000           | A 7991/7991 B 5/5
+ N1  backlog   substep    24000  4 | True        0     0     0 | 24000           | A 7991/7991 B 5/5
+ N1  backlog   substep    24000  8 | True        0     0     0 | 24000           | A 7991/7991 B 5/5
+ N1  backlog   bigstep    24000  2 | False       0     2    14 | 12000           | A 7991/7989 B 5/4
+ N1  backlog   bigstep    24000  4 | False       0  2005  6014 |  6000           | A 7991/5986 B 5/4
+ N1  backlog   bigstep    24000  8 | False       0  5005 15010 |  3000           | A 7991/2986 B 5/4
+ N1  backlog   cycleskip  24000  - | True        0     0     0 |    42   36    6 | A 7991/7991 B 5/5
+ N1  backlog   mainonly   24000  - | False       0     4    12 | 24000           | A 7991/7995
+ N1  backlog   fluid      24000  - | False       -     5     - |     1           | A 7991/7995 B 5/0
+ N1  backlog2  substep      240  2 | True        0     0     0 |   240           | A 73/73 B 42/42
+ N1  backlog2  substep      240  4 | True        0     0     0 |   240           | A 73/73 B 42/42
+ N1  backlog2  substep      240  8 | True        0     0     0 |   240           | A 73/73 B 42/42
+ N1  backlog2  bigstep      240  2 | False       2     3    18 |   120           | A 73/71 B 42/39
+ N1  backlog2  bigstep      240  4 | False       7    38    80 |    60           | A 73/46 B 42/4
+ N1  backlog2  bigstep      240  8 | False       7    57   166 |    30           | A 73/16 B 42/4
+ N1  backlog2  cycleskip    240  - | True        0     0     0 |    36   30    6 | A 73/73 B 42/42
+ N1  backlog2  mainonly     240  - | False       2     2     8 |   240           | A 73/75
+ N1  backlog2  fluid        240  - | False       -     4     - |     1           | A 73/75 B 42/38
+ N1  backlog2  substep      241  2 | True        0     0     0 |   241           | A 74/74 B 42/42
+ N1  backlog2  substep      241  4 | True        0     0     0 |   241           | A 74/74 B 42/42
+ N1  backlog2  substep      241  8 | True        0     0     0 |   241           | A 74/74 B 42/42
+ N1  backlog2  bigstep      241  2 | False       2     3    18 |   121           | A 74/72 B 42/39
+ N1  backlog2  bigstep      241  4 | False       7    38    80 |    61           | A 74/47 B 42/4
+ N1  backlog2  bigstep      241  8 | False       7    57   170 |    31           | A 74/17 B 42/4
+ N1  backlog2  cycleskip    241  - | True        0     0     0 |    37   30    6 | A 74/74 B 42/42
+ N1  backlog2  mainonly     241  - | False       2     2     8 |   241           | A 74/76
+ N1  backlog2  fluid        241  - | False       -     4     - |     1           | A 74/75 B 42/38
+ N1  backlog2  substep     2400  2 | True        0     0     0 |  2400           | A 793/793 B 402/402
+ N1  backlog2  substep     2400  4 | True        0     0     0 |  2400           | A 793/793 B 402/402
+ N1  backlog2  substep     2400  8 | True        0     0     0 |  2400           | A 793/793 B 402/402
+ N1  backlog2  bigstep     2400  2 | False       2     3    18 |  1200           | A 793/791 B 402/399
+ N1  backlog2  bigstep     2400  4 | False       7   398   620 |   600           | A 793/586 B 402/4
+ N1  backlog2  bigstep     2400  8 | False       7   507  1516 |   300           | A 793/286 B 402/4
+ N1  backlog2  cycleskip   2400  - | True        0     0     0 |    36   30    6 | A 793/793 B 402/402
+ N1  backlog2  mainonly    2400  - | False       2     2     8 |  2400           | A 793/795
+ N1  backlog2  fluid       2400  - | False       -     4     - |     1           | A 793/795 B 402/398
+ N1  backlog2  substep    24000  2 | True        0     0     0 | 24000           | A 7993/7993 B 4002/4002
+ N1  backlog2  substep    24000  4 | True        0     0     0 | 24000           | A 7993/7993 B 4002/4002
+ N1  backlog2  substep    24000  8 | True        0     0     0 | 24000           | A 7993/7993 B 4002/4002
+ N1  backlog2  bigstep    24000  2 | False       2     3    18 | 12000           | A 7993/7991 B 4002/3999
+ N1  backlog2  bigstep    24000  4 | False       7  3998  6020 |  6000           | A 7993/5986 B 4002/4
+ N1  backlog2  bigstep    24000  8 | False       7  5007 15016 |  3000           | A 7993/2986 B 4002/4
+ N1  backlog2  cycleskip  24000  - | True        0     0     0 |    36   30    6 | A 7993/7993 B 4002/4002
+ N1  backlog2  mainonly   24000  - | False       2     2     8 | 24000           | A 7993/7995
+ N1  backlog2  fluid      24000  - | False       -     4     - |     1           | A 7993/7995 B 4002/3998
+ N1  coprime   substep      240  2 | True        0     0     0 |   240           | A 76/76 B 115/115
+ N1  coprime   substep      240  4 | True        0     0     0 |   240           | A 76/76 B 115/115
+ N1  coprime   substep      240  8 | True        0     0     0 |   240           | A 76/76 B 115/115
+ N1  coprime   bigstep      240  2 | False       8    76   149 |   120           | A 76/71 B 115/39
+ N1  coprime   bigstep      240  4 | False      12   111    87 |    60           | A 76/46 B 115/4
+ N1  coprime   bigstep      240  8 | False      12   111   173 |    30           | A 76/16 B 115/4
+ N1  coprime   cycleskip    240  - | True        0     0     0 |    18   12    6 | A 76/76 B 115/115
+ N1  coprime   mainonly     240  - | True        0     0     0 |   240           | A 76/76
+ N1  coprime   fluid        240  - | False       -     1     - |     1           | A 76/75 B 115/114
+ N1  coprime   substep      241  2 | True        0     0     0 |   241           | A 76/76 B 116/116
+ N1  coprime   substep      241  4 | True        0     0     0 |   241           | A 76/76 B 116/116
+ N1  coprime   substep      241  8 | True        0     0     0 |   241           | A 76/76 B 116/116
+ N1  coprime   bigstep      241  2 | False       7    77   149 |   121           | A 76/72 B 116/39
+ N1  coprime   bigstep      241  4 | False      10   112    88 |    61           | A 76/47 B 116/4
+ N1  coprime   bigstep      241  8 | False      10   112   178 |    31           | A 76/17 B 116/4
+ N1  coprime   cycleskip    241  - | True        0     0     0 |    19   12    6 | A 76/76 B 116/116
+ N1  coprime   mainonly     241  - | True        0     0     0 |   241           | A 76/76
+ N1  coprime   fluid        241  - | False       -     1     - |     1           | A 76/75 B 116/115
+ N1  coprime   substep     2400  2 | True        0     0     0 |  2400           | A 796/796 B 1195/1195
+ N1  coprime   substep     2400  4 | True        0     0     0 |  2400           | A 796/796 B 1195/1195
+ N1  coprime   substep     2400  8 | True        0     0     0 |  2400           | A 796/796 B 1195/1195
+ N1  coprime   bigstep     2400  2 | False       8   796  1589 |  1200           | A 796/791 B 1195/399
+ N1  coprime   bigstep     2400  4 | False      12  1191   627 |   600           | A 796/586 B 1195/4
+ N1  coprime   bigstep     2400  8 | False      12  1191  1523 |   300           | A 796/286 B 1195/4
+ N1  coprime   cycleskip   2400  - | True        0     0     0 |    18   12    6 | A 796/796 B 1195/1195
+ N1  coprime   mainonly    2400  - | True        0     0     0 |  2400           | A 796/796
+ N1  coprime   fluid       2400  - | False       -     1     - |     1           | A 796/795 B 1195/1194
+ N1  coprime   substep    24000  2 | True        0     0     0 | 24000           | A 7996/7996 B 11995/11995
+ N1  coprime   substep    24000  4 | True        0     0     0 | 24000           | A 7996/7996 B 11995/11995
+ N1  coprime   substep    24000  8 | True        0     0     0 | 24000           | A 7996/7996 B 11995/11995
+ N1  coprime   bigstep    24000  2 | False       8  7996 15989 | 12000           | A 7996/7991 B 11995/3999
+ N1  coprime   bigstep    24000  4 | False      12 11991  6027 |  6000           | A 7996/5986 B 11995/4
+ N1  coprime   bigstep    24000  8 | False      12 11991 15023 |  3000           | A 7996/2986 B 11995/4
+ N1  coprime   cycleskip  24000  - | True        0     0     0 |    18   12    6 | A 7996/7996 B 11995/11995
+ N1  coprime   mainonly   24000  - | True        0     0     0 | 24000           | A 7996/7996
+ N1  coprime   fluid      24000  - | False       -     1     - |     1           | A 7996/7995 B 11995/11994
+ N2  under     substep      240  2 | True        0     0     0 |   240           | A 76/76 B 58/58 C 46/46
+ N2  under     substep      240  4 | True        0     0     0 |   240           | A 76/76 B 58/58 C 46/46
+ N2  under     substep      240  8 | True        0     0     0 |   240           | A 76/76 B 58/58 C 46/46
+ N2  under     bigstep      240  2 | False      12    44    82 |   120           | A 76/71 B 58/37 C 46/2
+ N2  under     bigstep      240  4 | False      15    54    87 |    60           | A 76/46 B 58/4 C 46/0
+ N2  under     bigstep      240  8 | False      15    60   173 |    30           | A 76/16 B 58/4 C 46/0
+ N2  under     cycleskip    240  - | True        0     0     0 |   120   60   60 | A 76/76 B 58/58 C 46/46
+ N2  under     mainonly     240  - | True        0     0     0 |   240           | A 76/76
+ N2  under     fluid        240  - | False       -     1     - |     1           | A 76/75 B 58/57 C 46/45
+ N2  under     substep      241  2 | True        0     0     0 |   241           | A 76/76 B 58/58 C 47/47
+ N2  under     substep      241  4 | True        0     0     0 |   241           | A 76/76 B 58/58 C 47/47
+ N2  under     substep      241  8 | True        0     0     0 |   241           | A 76/76 B 58/58 C 47/47
+ N2  under     bigstep      241  2 | False      11    45    82 |   121           | A 76/72 B 58/37 C 47/2
+ N2  under     bigstep      241  4 | False      13    54    88 |    61           | A 76/47 B 58/4 C 47/0
+ N2  under     bigstep      241  8 | False      13    59   178 |    31           | A 76/17 B 58/4 C 47/0
+ N2  under     cycleskip    241  - | True        0     0     0 |   121   60   60 | A 76/76 B 58/58 C 47/47
+ N2  under     mainonly     241  - | True        0     0     0 |   241           | A 76/76
+ N2  under     fluid        241  - | False       -     1     - |     1           | A 76/75 B 58/57 C 47/46
+ N2  under     substep     2400  2 | True        0     0     0 |  2400           | A 796/796 B 598/598 C 478/478
+ N2  under     substep     2400  4 | True        0     0     0 |  2400           | A 796/796 B 598/598 C 478/478
+ N2  under     substep     2400  8 | True        0     0     0 |  2400           | A 796/796 B 598/598 C 478/478
+ N2  under     bigstep     2400  2 | False      12   476   802 |  1200           | A 796/791 B 598/397 C 478/2
+ N2  under     bigstep     2400  4 | False      15   594   627 |   600           | A 796/586 B 598/4 C 478/0
+ N2  under     bigstep     2400  8 | False      15   594  1523 |   300           | A 796/286 B 598/4 C 478/0
+ N2  under     cycleskip   2400  - | True        0     0     0 |   120   60   60 | A 796/796 B 598/598 C 478/478
+ N2  under     mainonly    2400  - | True        0     0     0 |  2400           | A 796/796
+ N2  under     fluid       2400  - | False       -     1     - |     1           | A 796/795 B 598/597 C 478/477
+ N2  under     substep    24000  2 | True        0     0     0 | 24000           | A 7996/7996 B 5998/5998 C 4798/4798
+ N2  under     substep    24000  4 | True        0     0     0 | 24000           | A 7996/7996 B 5998/5998 C 4798/4798
+ N2  under     substep    24000  8 | True        0     0     0 | 24000           | A 7996/7996 B 5998/5998 C 4798/4798
+ N2  under     bigstep    24000  2 | False      12  4796  8002 | 12000           | A 7996/7991 B 5998/3997 C 4798/2
+ N2  under     bigstep    24000  4 | False      15  5994  6027 |  6000           | A 7996/5986 B 5998/4 C 4798/0
+ N2  under     bigstep    24000  8 | False      15  5994 15023 |  3000           | A 7996/2986 B 5998/4 C 4798/0
+ N2  under     cycleskip  24000  - | True        0     0     0 |   120   60   60 | A 7996/7996 B 5998/5998 C 4798/4798
+ N2  under     mainonly   24000  - | True        0     0     0 | 24000           | A 7996/7996
+ N2  under     fluid      24000  - | False       -     1     - |     1           | A 7996/7995 B 5998/5997 C 4798/4797
+ N2  mainsat   substep      240  2 | True        0     0     0 |   240           | A 226/226 B 2/2 C 2/2
+ N2  mainsat   substep      240  4 | True        0     0     0 |   240           | A 226/226 B 2/2 C 2/2
+ N2  mainsat   substep      240  8 | True        0     0     0 |   240           | A 226/226 B 2/2 C 2/2
+ N2  mainsat   bigstep      240  2 | False       0   120   119 |   120           | A 226/106 B 2/4 C 2/0
+ N2  mainsat   bigstep      240  4 | False       0   180   177 |    60           | A 226/46 B 2/4 C 2/0
+ N2  mainsat   bigstep      240  8 | False       0   210   203 |    30           | A 226/16 B 2/4 C 2/0
+ N2  mainsat   cycleskip    240  - | True        0     0     0 |    24   18    6 | A 226/226 B 2/2 C 2/2
+ N2  mainsat   mainonly     240  - | True        0     0     0 |   240           | A 226/226
+ N2  mainsat   fluid        240  - | False       -     2     - |     1           | A 226/225 B 2/0 C 2/0
+ N2  mainsat   substep      241  2 | True        0     0     0 |   241           | A 227/227 B 2/2 C 2/2
+ N2  mainsat   substep      241  4 | True        0     0     0 |   241           | A 227/227 B 2/2 C 2/2
+ N2  mainsat   substep      241  8 | True        0     0     0 |   241           | A 227/227 B 2/2 C 2/2
+ N2  mainsat   bigstep      241  2 | False       0   120   120 |   121           | A 227/107 B 2/4 C 2/0
+ N2  mainsat   bigstep      241  4 | False       0   180   180 |    61           | A 227/47 B 2/4 C 2/0
+ N2  mainsat   bigstep      241  8 | False       0   210   210 |    31           | A 227/17 B 2/4 C 2/0
+ N2  mainsat   cycleskip    241  - | True        0     0     0 |    25   18    6 | A 227/227 B 2/2 C 2/2
+ N2  mainsat   mainonly     241  - | True        0     0     0 |   241           | A 227/227
+ N2  mainsat   fluid        241  - | False       -     2     - |     1           | A 227/226 B 2/0 C 2/0
+ N2  mainsat   substep     2400  2 | True        0     0     0 |  2400           | A 2386/2386 B 2/2 C 2/2
+ N2  mainsat   substep     2400  4 | True        0     0     0 |  2400           | A 2386/2386 B 2/2 C 2/2
+ N2  mainsat   substep     2400  8 | True        0     0     0 |  2400           | A 2386/2386 B 2/2 C 2/2
+ N2  mainsat   bigstep     2400  2 | False       0  1200  1199 |  1200           | A 2386/1186 B 2/4 C 2/0
+ N2  mainsat   bigstep     2400  4 | False       0  1800  1797 |   600           | A 2386/586 B 2/4 C 2/0
+ N2  mainsat   bigstep     2400  8 | False       0  2100  2093 |   300           | A 2386/286 B 2/4 C 2/0
+ N2  mainsat   cycleskip   2400  - | True        0     0     0 |    24   18    6 | A 2386/2386 B 2/2 C 2/2
+ N2  mainsat   mainonly    2400  - | True        0     0     0 |  2400           | A 2386/2386
+ N2  mainsat   fluid       2400  - | False       -     2     - |     1           | A 2386/2385 B 2/0 C 2/0
+ N2  mainsat   substep    24000  2 | True        0     0     0 | 24000           | A 23986/23986 B 2/2 C 2/2
+ N2  mainsat   substep    24000  4 | True        0     0     0 | 24000           | A 23986/23986 B 2/2 C 2/2
+ N2  mainsat   substep    24000  8 | True        0     0     0 | 24000           | A 23986/23986 B 2/2 C 2/2
+ N2  mainsat   bigstep    24000  2 | False       0 12000 11999 | 12000           | A 23986/11986 B 2/4 C 2/0
+ N2  mainsat   bigstep    24000  4 | False       0 18000 17997 |  6000           | A 23986/5986 B 2/4 C 2/0
+ N2  mainsat   bigstep    24000  8 | False       0 21000 20993 |  3000           | A 23986/2986 B 2/4 C 2/0
+ N2  mainsat   cycleskip  24000  - | True        0     0     0 |    24   18    6 | A 23986/23986 B 2/2 C 2/2
+ N2  mainsat   mainonly   24000  - | True        0     0     0 | 24000           | A 23986/23986
+ N2  mainsat   fluid      24000  - | False       -     2     - |     1           | A 23986/23985 B 2/0 C 2/0
+ N2  backlog   substep      240  2 | True        0     0     0 |   240           | A 71/71 B 3/3 C 2/2
+ N2  backlog   substep      240  4 | True        0     0     0 |   240           | A 71/71 B 3/3 C 2/2
+ N2  backlog   substep      240  8 | True        0     0     0 |   240           | A 71/71 B 3/3 C 2/2
+ N2  backlog   bigstep      240  2 | False       0     2     8 |   120           | A 71/69 B 3/4 C 2/0
+ N2  backlog   bigstep      240  4 | False       0    25    74 |    60           | A 71/46 B 3/4 C 2/0
+ N2  backlog   bigstep      240  8 | False       0    55   160 |    30           | A 71/16 B 3/4 C 2/0
+ N2  backlog   cycleskip    240  - | True        0     0     0 |    36   30    6 | A 71/71 B 3/3 C 2/2
+ N2  backlog   mainonly     240  - | False       0     4    12 |   240           | A 71/75
+ N2  backlog   fluid        240  - | False       -     4     - |     1           | A 71/75 B 3/0 C 2/0
+ N2  backlog   substep      241  2 | True        0     0     0 |   241           | A 72/72 B 3/3 C 2/2
+ N2  backlog   substep      241  4 | True        0     0     0 |   241           | A 72/72 B 3/3 C 2/2
+ N2  backlog   substep      241  8 | True        0     0     0 |   241           | A 72/72 B 3/3 C 2/2
+ N2  backlog   bigstep      241  2 | False       0     2     8 |   121           | A 72/70 B 3/4 C 2/0
+ N2  backlog   bigstep      241  4 | False       0    25    75 |    61           | A 72/47 B 3/4 C 2/0
+ N2  backlog   bigstep      241  8 | False       0    55   165 |    31           | A 72/17 B 3/4 C 2/0
+ N2  backlog   cycleskip    241  - | True        0     0     0 |    37   30    6 | A 72/72 B 3/3 C 2/2
+ N2  backlog   mainonly     241  - | False       0     4    12 |   241           | A 72/76
+ N2  backlog   fluid        241  - | False       -     3     - |     1           | A 72/75 B 3/0 C 2/0
+ N2  backlog   substep     2400  2 | True        0     0     0 |  2400           | A 791/791 B 3/3 C 2/2
+ N2  backlog   substep     2400  4 | True        0     0     0 |  2400           | A 791/791 B 3/3 C 2/2
+ N2  backlog   substep     2400  8 | True        0     0     0 |  2400           | A 791/791 B 3/3 C 2/2
+ N2  backlog   bigstep     2400  2 | False       0     2     8 |  1200           | A 791/789 B 3/4 C 2/0
+ N2  backlog   bigstep     2400  4 | False       0   205   614 |   600           | A 791/586 B 3/4 C 2/0
+ N2  backlog   bigstep     2400  8 | False       0   505  1510 |   300           | A 791/286 B 3/4 C 2/0
+ N2  backlog   cycleskip   2400  - | True        0     0     0 |    36   30    6 | A 791/791 B 3/3 C 2/2
+ N2  backlog   mainonly    2400  - | False       0     4    12 |  2400           | A 791/795
+ N2  backlog   fluid       2400  - | False       -     4     - |     1           | A 791/795 B 3/0 C 2/0
+ N2  backlog   substep    24000  2 | True        0     0     0 | 24000           | A 7991/7991 B 3/3 C 2/2
+ N2  backlog   substep    24000  4 | True        0     0     0 | 24000           | A 7991/7991 B 3/3 C 2/2
+ N2  backlog   substep    24000  8 | True        0     0     0 | 24000           | A 7991/7991 B 3/3 C 2/2
+ N2  backlog   bigstep    24000  2 | False       0     2     8 | 12000           | A 7991/7989 B 3/4 C 2/0
+ N2  backlog   bigstep    24000  4 | False       0  2005  6014 |  6000           | A 7991/5986 B 3/4 C 2/0
+ N2  backlog   bigstep    24000  8 | False       0  5005 15010 |  3000           | A 7991/2986 B 3/4 C 2/0
+ N2  backlog   cycleskip  24000  - | True        0     0     0 |    36   30    6 | A 7991/7991 B 3/3 C 2/2
+ N2  backlog   mainonly   24000  - | False       0     4    12 | 24000           | A 7991/7995
+ N2  backlog   fluid      24000  - | False       -     4     - |     1           | A 7991/7995 B 3/0 C 2/0
+ N2  backlog2  substep      240  2 | True        0     0     0 |   240           | A 73/73 B 40/40 C 2/2
+ N2  backlog2  substep      240  4 | True        0     0     0 |   240           | A 73/73 B 40/40 C 2/2
+ N2  backlog2  substep      240  8 | True        0     0     0 |   240           | A 73/73 B 40/40 C 2/2
+ N2  backlog2  bigstep      240  2 | False       2     2    10 |   120           | A 73/71 B 40/39 C 2/0
+ N2  backlog2  bigstep      240  4 | False       7    36    80 |    60           | A 73/46 B 40/4 C 2/0
+ N2  backlog2  bigstep      240  8 | False       7    57   166 |    30           | A 73/16 B 40/4 C 2/0
+ N2  backlog2  cycleskip    240  - | True        0     0     0 |    30   24    6 | A 73/73 B 40/40 C 2/2
+ N2  backlog2  mainonly     240  - | False       2     2     8 |   240           | A 73/75
+ N2  backlog2  fluid        240  - | False       -     2     - |     1           | A 73/75 B 40/38 C 2/0
+ N2  backlog2  substep      241  2 | True        0     0     0 |   241           | A 74/74 B 40/40 C 2/2
+ N2  backlog2  substep      241  4 | True        0     0     0 |   241           | A 74/74 B 40/40 C 2/2
+ N2  backlog2  substep      241  8 | True        0     0     0 |   241           | A 74/74 B 40/40 C 2/2
+ N2  backlog2  bigstep      241  2 | False       2     2    10 |   121           | A 74/72 B 40/39 C 2/0
+ N2  backlog2  bigstep      241  4 | False       7    36    80 |    61           | A 74/47 B 40/4 C 2/0
+ N2  backlog2  bigstep      241  8 | False       7    57   170 |    31           | A 74/17 B 40/4 C 2/0
+ N2  backlog2  cycleskip    241  - | True        0     0     0 |    31   24    6 | A 74/74 B 40/40 C 2/2
+ N2  backlog2  mainonly     241  - | False       2     2     8 |   241           | A 74/76
+ N2  backlog2  fluid        241  - | False       -     2     - |     1           | A 74/75 B 40/38 C 2/0
+ N2  backlog2  substep     2400  2 | True        0     0     0 |  2400           | A 793/793 B 400/400 C 2/2
+ N2  backlog2  substep     2400  4 | True        0     0     0 |  2400           | A 793/793 B 400/400 C 2/2
+ N2  backlog2  substep     2400  8 | True        0     0     0 |  2400           | A 793/793 B 400/400 C 2/2
+ N2  backlog2  bigstep     2400  2 | False       2     2    10 |  1200           | A 793/791 B 400/399 C 2/0
+ N2  backlog2  bigstep     2400  4 | False       7   396   620 |   600           | A 793/586 B 400/4 C 2/0
+ N2  backlog2  bigstep     2400  8 | False       7   507  1516 |   300           | A 793/286 B 400/4 C 2/0
+ N2  backlog2  cycleskip   2400  - | True        0     0     0 |    30   24    6 | A 793/793 B 400/400 C 2/2
+ N2  backlog2  mainonly    2400  - | False       2     2     8 |  2400           | A 793/795
+ N2  backlog2  fluid       2400  - | False       -     2     - |     1           | A 793/795 B 400/398 C 2/0
+ N2  backlog2  substep    24000  2 | True        0     0     0 | 24000           | A 7993/7993 B 4000/4000 C 2/2
+ N2  backlog2  substep    24000  4 | True        0     0     0 | 24000           | A 7993/7993 B 4000/4000 C 2/2
+ N2  backlog2  substep    24000  8 | True        0     0     0 | 24000           | A 7993/7993 B 4000/4000 C 2/2
+ N2  backlog2  bigstep    24000  2 | False       2     2    10 | 12000           | A 7993/7991 B 4000/3999 C 2/0
+ N2  backlog2  bigstep    24000  4 | False       7  3996  6020 |  6000           | A 7993/5986 B 4000/4 C 2/0
+ N2  backlog2  bigstep    24000  8 | False       7  5007 15016 |  3000           | A 7993/2986 B 4000/4 C 2/0
+ N2  backlog2  cycleskip  24000  - | True        0     0     0 |    30   24    6 | A 7993/7993 B 4000/4000 C 2/2
+ N2  backlog2  mainonly   24000  - | False       2     2     8 | 24000           | A 7993/7995
+ N2  backlog2  fluid      24000  - | False       -     2     - |     1           | A 7993/7995 B 4000/3998 C 2/0
+ N2  coprime   substep      240  2 | True        0     0     0 |   240           | A 76/76 B 115/115 C 38/38
+ N2  coprime   substep      240  4 | True        0     0     0 |   240           | A 76/76 B 115/115 C 38/38
+ N2  coprime   substep      240  8 | True        0     0     0 |   240           | A 76/76 B 115/115 C 38/38
+ N2  coprime   bigstep      240  2 | False       8    76   149 |   120           | A 76/71 B 115/39 C 38/0
+ N2  coprime   bigstep      240  4 | False      12   111    87 |    60           | A 76/46 B 115/4 C 38/0
+ N2  coprime   bigstep      240  8 | False      12   111   173 |    30           | A 76/16 B 115/4 C 38/0
+ N2  coprime   cycleskip    240  - | True        0     0     0 |    90   60   30 | A 76/76 B 115/115 C 38/38
+ N2  coprime   mainonly     240  - | True        0     0     0 |   240           | A 76/76
+ N2  coprime   fluid        240  - | False       -     1     - |     1           | A 76/75 B 115/114 C 38/38
+ N2  coprime   substep      241  2 | True        0     0     0 |   241           | A 76/76 B 116/116 C 38/38
+ N2  coprime   substep      241  4 | True        0     0     0 |   241           | A 76/76 B 116/116 C 38/38
+ N2  coprime   substep      241  8 | True        0     0     0 |   241           | A 76/76 B 116/116 C 38/38
+ N2  coprime   bigstep      241  2 | False       7    77   149 |   121           | A 76/72 B 116/39 C 38/0
+ N2  coprime   bigstep      241  4 | False      10   112    88 |    61           | A 76/47 B 116/4 C 38/0
+ N2  coprime   bigstep      241  8 | False      10   112   178 |    31           | A 76/17 B 116/4 C 38/0
+ N2  coprime   cycleskip    241  - | True        0     0     0 |    91   60   30 | A 76/76 B 116/116 C 38/38
+ N2  coprime   mainonly     241  - | True        0     0     0 |   241           | A 76/76
+ N2  coprime   fluid        241  - | False       -     1     - |     1           | A 76/75 B 116/115 C 38/38
+ N2  coprime   substep     2400  2 | True        0     0     0 |  2400           | A 796/796 B 1195/1195 C 398/398
+ N2  coprime   substep     2400  4 | True        0     0     0 |  2400           | A 796/796 B 1195/1195 C 398/398
+ N2  coprime   substep     2400  8 | True        0     0     0 |  2400           | A 796/796 B 1195/1195 C 398/398
+ N2  coprime   bigstep     2400  2 | False       8   796  1589 |  1200           | A 796/791 B 1195/399 C 398/0
+ N2  coprime   bigstep     2400  4 | False      12  1191   627 |   600           | A 796/586 B 1195/4 C 398/0
+ N2  coprime   bigstep     2400  8 | False      12  1191  1523 |   300           | A 796/286 B 1195/4 C 398/0
+ N2  coprime   cycleskip   2400  - | True        0     0     0 |    90   60   30 | A 796/796 B 1195/1195 C 398/398
+ N2  coprime   mainonly    2400  - | True        0     0     0 |  2400           | A 796/796
+ N2  coprime   fluid       2400  - | False       -     1     - |     1           | A 796/795 B 1195/1194 C 398/398
+ N2  coprime   substep    24000  2 | True        0     0     0 | 24000           | A 7996/7996 B 11995/11995 C 3998/3998
+ N2  coprime   substep    24000  4 | True        0     0     0 | 24000           | A 7996/7996 B 11995/11995 C 3998/3998
+ N2  coprime   substep    24000  8 | True        0     0     0 | 24000           | A 7996/7996 B 11995/11995 C 3998/3998
+ N2  coprime   bigstep    24000  2 | False       8  7996 15989 | 12000           | A 7996/7991 B 11995/3999 C 3998/0
+ N2  coprime   bigstep    24000  4 | False      12 11991  6027 |  6000           | A 7996/5986 B 11995/4 C 3998/0
+ N2  coprime   bigstep    24000  8 | False      12 11991 15023 |  3000           | A 7996/2986 B 11995/4 C 3998/0
+ N2  coprime   cycleskip  24000  - | True        0     0     0 |    90   60   30 | A 7996/7996 B 11995/11995 C 3998/3998
+ N2  coprime   mainonly   24000  - | True        0     0     0 | 24000           | A 7996/7996
+ N2  coprime   fluid      24000  - | False       -     1     - |     1           | A 7996/7995 B 11995/11994 C 3998/3998
+ N3  under     substep      240  2 | True        0     0     0 |   240           | A 73/73 B 56/56 D 46/46
+ N3  under     substep      240  4 | True        0     0     0 |   240           | A 73/73 B 56/56 D 46/46
+ N3  under     substep      240  8 | True        0     0     0 |   240           | A 73/73 B 56/56 D 46/46
+ N3  under     bigstep      240  2 | False      15    41    84 |   120           | A 73/66 B 56/35 D 46/5
+ N3  under     bigstep      240  4 | False      19    52   101 |    60           | A 73/39 B 56/4 D 46/6
+ N3  under     bigstep      240  8 | False      19    64   187 |    30           | A 73/9 B 56/4 D 46/7
+ N3  under     cycleskip    240  - | True        0     0     0 |   120   60   60 | A 73/73 B 56/56 D 46/46
+ N3  under     mainonly     240  - | True        0     0     0 |   240           | A 73/73
+ N3  under     fluid        240  - | False       -     1     - |     1           | A 73/72 B 56/55 D 46/45
+ N3  under     substep      241  2 | True        0     0     0 |   241           | A 74/74 B 56/56 D 46/46
+ N3  under     substep      241  4 | True        0     0     0 |   241           | A 74/74 B 56/56 D 46/46
+ N3  under     substep      241  8 | True        0     0     0 |   241           | A 74/74 B 56/56 D 46/46
+ N3  under     bigstep      241  2 | False      15    41    84 |   121           | A 74/67 B 56/35 D 46/5
+ N3  under     bigstep      241  4 | False      18    52   102 |    61           | A 74/40 B 56/4 D 46/6
+ N3  under     bigstep      241  8 | False      18    64   192 |    31           | A 74/10 B 56/4 D 46/7
+ N3  under     cycleskip    241  - | True        0     0     0 |   121   60   60 | A 74/74 B 56/56 D 46/46
+ N3  under     mainonly     241  - | True        0     0     0 |   241           | A 74/74
+ N3  under     fluid        241  - | False       -     1     - |     1           | A 74/73 B 56/55 D 46/46
+ N3  under     substep     2400  2 | True        0     0     0 |  2400           | A 793/793 B 596/596 D 478/478
+ N3  under     substep     2400  4 | True        0     0     0 |  2400           | A 793/793 B 596/596 D 478/478
+ N3  under     substep     2400  8 | True        0     0     0 |  2400           | A 793/793 B 596/596 D 478/478
+ N3  under     bigstep     2400  2 | False      15   473   804 |  1200           | A 793/786 B 596/395 D 478/5
+ N3  under     bigstep     2400  4 | False      19   592   641 |   600           | A 793/579 B 596/4 D 478/6
+ N3  under     bigstep     2400  8 | False      19   592  1537 |   300           | A 793/279 B 596/4 D 478/7
+ N3  under     cycleskip   2400  - | True        0     0     0 |   120   60   60 | A 793/793 B 596/596 D 478/478
+ N3  under     mainonly    2400  - | True        0     0     0 |  2400           | A 793/793
+ N3  under     fluid       2400  - | False       -     1     - |     1           | A 793/792 B 596/595 D 478/477
+ N3  under     substep    24000  2 | True        0     0     0 | 24000           | A 7993/7993 B 5996/5996 D 4798/4798
+ N3  under     substep    24000  4 | True        0     0     0 | 24000           | A 7993/7993 B 5996/5996 D 4798/4798
+ N3  under     substep    24000  8 | True        0     0     0 | 24000           | A 7993/7993 B 5996/5996 D 4798/4798
+ N3  under     bigstep    24000  2 | False      15  4793  8004 | 12000           | A 7993/7986 B 5996/3995 D 4798/5
+ N3  under     bigstep    24000  4 | False      19  5992  6041 |  6000           | A 7993/5979 B 5996/4 D 4798/6
+ N3  under     bigstep    24000  8 | False      19  5992 15037 |  3000           | A 7993/2979 B 5996/4 D 4798/7
+ N3  under     cycleskip  24000  - | True        0     0     0 |   120   60   60 | A 7993/7993 B 5996/5996 D 4798/4798
+ N3  under     mainonly   24000  - | True        0     0     0 | 24000           | A 7993/7993
+ N3  under     fluid      24000  - | False       -     1     - |     1           | A 7993/7992 B 5996/5995 D 4798/4797
+ N3  mainsat   substep      240  2 | True        0     0     0 |   240           | A 219/219 B 2/2 D 4/4
+ N3  mainsat   substep      240  4 | True        0     0     0 |   240           | A 219/219 B 2/2 D 4/4
+ N3  mainsat   substep      240  8 | True        0     0     0 |   240           | A 219/219 B 2/2 D 4/4
+ N3  mainsat   bigstep      240  2 | False       0   120   119 |   120           | A 219/99 B 2/4 D 4/5
+ N3  mainsat   bigstep      240  4 | False       0   180   177 |    60           | A 219/39 B 2/4 D 4/7
+ N3  mainsat   bigstep      240  8 | False       0   210   203 |    30           | A 219/9 B 2/4 D 4/7
+ N3  mainsat   cycleskip    240  - | True        0     0     0 |    30   24    6 | A 219/219 B 2/2 D 4/4
+ N3  mainsat   mainonly     240  - | True        0     0     0 |   240           | A 219/219
+ N3  mainsat   fluid        240  - | False       -     4     - |     1           | A 219/218 B 2/0 D 4/0
+ N3  mainsat   substep      241  2 | True        0     0     0 |   241           | A 220/220 B 2/2 D 4/4
+ N3  mainsat   substep      241  4 | True        0     0     0 |   241           | A 220/220 B 2/2 D 4/4
+ N3  mainsat   substep      241  8 | True        0     0     0 |   241           | A 220/220 B 2/2 D 4/4
+ N3  mainsat   bigstep      241  2 | False       0   120   120 |   121           | A 220/100 B 2/4 D 4/5
+ N3  mainsat   bigstep      241  4 | False       0   180   180 |    61           | A 220/40 B 2/4 D 4/7
+ N3  mainsat   bigstep      241  8 | False       0   210   210 |    31           | A 220/10 B 2/4 D 4/7
+ N3  mainsat   cycleskip    241  - | True        0     0     0 |    31   24    6 | A 220/220 B 2/2 D 4/4
+ N3  mainsat   mainonly     241  - | True        0     0     0 |   241           | A 220/220
+ N3  mainsat   fluid        241  - | False       -     4     - |     1           | A 220/219 B 2/0 D 4/0
+ N3  mainsat   substep     2400  2 | True        0     0     0 |  2400           | A 2379/2379 B 2/2 D 4/4
+ N3  mainsat   substep     2400  4 | True        0     0     0 |  2400           | A 2379/2379 B 2/2 D 4/4
+ N3  mainsat   substep     2400  8 | True        0     0     0 |  2400           | A 2379/2379 B 2/2 D 4/4
+ N3  mainsat   bigstep     2400  2 | False       0  1200  1199 |  1200           | A 2379/1179 B 2/4 D 4/5
+ N3  mainsat   bigstep     2400  4 | False       0  1800  1797 |   600           | A 2379/579 B 2/4 D 4/7
+ N3  mainsat   bigstep     2400  8 | False       0  2100  2093 |   300           | A 2379/279 B 2/4 D 4/7
+ N3  mainsat   cycleskip   2400  - | True        0     0     0 |    30   24    6 | A 2379/2379 B 2/2 D 4/4
+ N3  mainsat   mainonly    2400  - | True        0     0     0 |  2400           | A 2379/2379
+ N3  mainsat   fluid       2400  - | False       -     4     - |     1           | A 2379/2378 B 2/0 D 4/0
+ N3  mainsat   substep    24000  2 | True        0     0     0 | 24000           | A 23979/23979 B 2/2 D 4/4
+ N3  mainsat   substep    24000  4 | True        0     0     0 | 24000           | A 23979/23979 B 2/2 D 4/4
+ N3  mainsat   substep    24000  8 | True        0     0     0 | 24000           | A 23979/23979 B 2/2 D 4/4
+ N3  mainsat   bigstep    24000  2 | False       0 12000 11999 | 12000           | A 23979/11979 B 2/4 D 4/5
+ N3  mainsat   bigstep    24000  4 | False       0 18000 17997 |  6000           | A 23979/5979 B 2/4 D 4/7
+ N3  mainsat   bigstep    24000  8 | False       0 21000 20993 |  3000           | A 23979/2979 B 2/4 D 4/7
+ N3  mainsat   cycleskip  24000  - | True        0     0     0 |    30   24    6 | A 23979/23979 B 2/2 D 4/4
+ N3  mainsat   mainonly   24000  - | True        0     0     0 | 24000           | A 23979/23979
+ N3  mainsat   fluid      24000  - | False       -     4     - |     1           | A 23979/23978 B 2/0 D 4/0
+ N3  backlog   substep      240  2 | True        0     0     0 |   240           | A 65/65 B 5/5 D 6/6
+ N3  backlog   substep      240  4 | True        0     0     0 |   240           | A 65/65 B 5/5 D 6/6
+ N3  backlog   substep      240  8 | True        0     0     0 |   240           | A 65/65 B 5/5 D 6/6
+ N3  backlog   bigstep      240  2 | False       0     3    18 |   120           | A 65/62 B 5/4 D 6/7
+ N3  backlog   bigstep      240  4 | False       0    26    77 |    60           | A 65/39 B 5/4 D 6/7
+ N3  backlog   bigstep      240  8 | False       0    56   163 |    30           | A 65/9 B 5/4 D 6/7
+ N3  backlog   cycleskip    240  - | True        0     0     0 |    60   54    6 | A 65/65 B 5/5 D 6/6
+ N3  backlog   mainonly     240  - | False       0     8    24 |   240           | A 65/73
+ N3  backlog   fluid        240  - | False       -     7     - |     1           | A 65/72 B 5/0 D 6/0
+ N3  backlog   substep      241  2 | True        0     0     0 |   241           | A 66/66 B 5/5 D 6/6
+ N3  backlog   substep      241  4 | True        0     0     0 |   241           | A 66/66 B 5/5 D 6/6
+ N3  backlog   substep      241  8 | True        0     0     0 |   241           | A 66/66 B 5/5 D 6/6
+ N3  backlog   bigstep      241  2 | False       0     3    18 |   121           | A 66/63 B 5/4 D 6/7
+ N3  backlog   bigstep      241  4 | False       0    26    78 |    61           | A 66/40 B 5/4 D 6/7
+ N3  backlog   bigstep      241  8 | False       0    56   168 |    31           | A 66/10 B 5/4 D 6/7
+ N3  backlog   cycleskip    241  - | True        0     0     0 |    61   54    6 | A 66/66 B 5/5 D 6/6
+ N3  backlog   mainonly     241  - | False       0     8    24 |   241           | A 66/74
+ N3  backlog   fluid        241  - | False       -     7     - |     1           | A 66/73 B 5/0 D 6/0
+ N3  backlog   substep     2400  2 | True        0     0     0 |  2400           | A 785/785 B 5/5 D 6/6
+ N3  backlog   substep     2400  4 | True        0     0     0 |  2400           | A 785/785 B 5/5 D 6/6
+ N3  backlog   substep     2400  8 | True        0     0     0 |  2400           | A 785/785 B 5/5 D 6/6
+ N3  backlog   bigstep     2400  2 | False       0     3    18 |  1200           | A 785/782 B 5/4 D 6/7
+ N3  backlog   bigstep     2400  4 | False       0   206   617 |   600           | A 785/579 B 5/4 D 6/7
+ N3  backlog   bigstep     2400  8 | False       0   506  1513 |   300           | A 785/279 B 5/4 D 6/7
+ N3  backlog   cycleskip   2400  - | True        0     0     0 |    60   54    6 | A 785/785 B 5/5 D 6/6
+ N3  backlog   mainonly    2400  - | False       0     8    24 |  2400           | A 785/793
+ N3  backlog   fluid       2400  - | False       -     7     - |     1           | A 785/792 B 5/0 D 6/0
+ N3  backlog   substep    24000  2 | True        0     0     0 | 24000           | A 7985/7985 B 5/5 D 6/6
+ N3  backlog   substep    24000  4 | True        0     0     0 | 24000           | A 7985/7985 B 5/5 D 6/6
+ N3  backlog   substep    24000  8 | True        0     0     0 | 24000           | A 7985/7985 B 5/5 D 6/6
+ N3  backlog   bigstep    24000  2 | False       0     3    18 | 12000           | A 7985/7982 B 5/4 D 6/7
+ N3  backlog   bigstep    24000  4 | False       0  2006  6017 |  6000           | A 7985/5979 B 5/4 D 6/7
+ N3  backlog   bigstep    24000  8 | False       0  5006 15013 |  3000           | A 7985/2979 B 5/4 D 6/7
+ N3  backlog   cycleskip  24000  - | True        0     0     0 |    60   54    6 | A 7985/7985 B 5/5 D 6/6
+ N3  backlog   mainonly   24000  - | False       0     8    24 | 24000           | A 7985/7993
+ N3  backlog   fluid      24000  - | False       -     7     - |     1           | A 7985/7992 B 5/0 D 6/0
+ N3  backlog2  substep      240  2 | True        0     0     0 |   240           | A 68/68 B 41/41 D 6/6
+ N3  backlog2  substep      240  4 | True        0     0     0 |   240           | A 68/68 B 41/41 D 6/6
+ N3  backlog2  substep      240  8 | True        0     0     0 |   240           | A 68/68 B 41/41 D 6/6
+ N3  backlog2  bigstep      240  2 | False       2     4    24 |   120           | A 68/66 B 41/37 D 6/7
+ N3  backlog2  bigstep      240  4 | False       9    37    86 |    60           | A 68/39 B 41/4 D 6/7
+ N3  backlog2  bigstep      240  8 | False       9    59   172 |    30           | A 68/9 B 41/4 D 6/7
+ N3  backlog2  cycleskip    240  - | True        0     0     0 |    60   54    6 | A 68/68 B 41/41 D 6/6
+ N3  backlog2  mainonly     240  - | False       5     5    14 |   240           | A 68/73
+ N3  backlog2  fluid        240  - | False       -     6     - |     1           | A 68/72 B 41/37 D 6/0
+ N3  backlog2  substep      241  2 | True        0     0     0 |   241           | A 69/69 B 41/41 D 6/6
+ N3  backlog2  substep      241  4 | True        0     0     0 |   241           | A 69/69 B 41/41 D 6/6
+ N3  backlog2  substep      241  8 | True        0     0     0 |   241           | A 69/69 B 41/41 D 6/6
+ N3  backlog2  bigstep      241  2 | False       2     4    24 |   121           | A 69/67 B 41/37 D 6/7
+ N3  backlog2  bigstep      241  4 | False       9    37    88 |    61           | A 69/40 B 41/4 D 6/7
+ N3  backlog2  bigstep      241  8 | False       9    59   178 |    31           | A 69/10 B 41/4 D 6/7
+ N3  backlog2  cycleskip    241  - | True        0     0     0 |    61   54    6 | A 69/69 B 41/41 D 6/6
+ N3  backlog2  mainonly     241  - | False       5     5    14 |   241           | A 69/74
+ N3  backlog2  fluid        241  - | False       -     6     - |     1           | A 69/73 B 41/37 D 6/0
+ N3  backlog2  substep     2400  2 | True        0     0     0 |  2400           | A 788/788 B 401/401 D 6/6
+ N3  backlog2  substep     2400  4 | True        0     0     0 |  2400           | A 788/788 B 401/401 D 6/6
+ N3  backlog2  substep     2400  8 | True        0     0     0 |  2400           | A 788/788 B 401/401 D 6/6
+ N3  backlog2  bigstep     2400  2 | False       2     4    24 |  1200           | A 788/786 B 401/397 D 6/7
+ N3  backlog2  bigstep     2400  4 | False       9   397   626 |   600           | A 788/579 B 401/4 D 6/7
+ N3  backlog2  bigstep     2400  8 | False       9   509  1522 |   300           | A 788/279 B 401/4 D 6/7
+ N3  backlog2  cycleskip   2400  - | True        0     0     0 |    60   54    6 | A 788/788 B 401/401 D 6/6
+ N3  backlog2  mainonly    2400  - | False       5     5    14 |  2400           | A 788/793
+ N3  backlog2  fluid       2400  - | False       -     6     - |     1           | A 788/792 B 401/397 D 6/0
+ N3  backlog2  substep    24000  2 | True        0     0     0 | 24000           | A 7988/7988 B 4001/4001 D 6/6
+ N3  backlog2  substep    24000  4 | True        0     0     0 | 24000           | A 7988/7988 B 4001/4001 D 6/6
+ N3  backlog2  substep    24000  8 | True        0     0     0 | 24000           | A 7988/7988 B 4001/4001 D 6/6
+ N3  backlog2  bigstep    24000  2 | False       2     4    24 | 12000           | A 7988/7986 B 4001/3997 D 6/7
+ N3  backlog2  bigstep    24000  4 | False       9  3997  6026 |  6000           | A 7988/5979 B 4001/4 D 6/7
+ N3  backlog2  bigstep    24000  8 | False       9  5009 15022 |  3000           | A 7988/2979 B 4001/4 D 6/7
+ N3  backlog2  cycleskip  24000  - | True        0     0     0 |    60   54    6 | A 7988/7988 B 4001/4001 D 6/6
+ N3  backlog2  mainonly   24000  - | False       5     5    14 | 24000           | A 7988/7993
+ N3  backlog2  fluid      24000  - | False       -     6     - |     1           | A 7988/7992 B 4001/3997 D 6/0
+ N3  coprime   substep      240  2 | True        0     0     0 |   240           | A 73/73 B 112/112 D 39/39
+ N3  coprime   substep      240  4 | True        0     0     0 |   240           | A 73/73 B 112/112 D 39/39
+ N3  coprime   substep      240  8 | True        0     0     0 |   240           | A 73/73 B 112/112 D 39/39
+ N3  coprime   bigstep      240  2 | False      11    75   149 |   120           | A 73/66 B 112/37 D 39/3
+ N3  coprime   bigstep      240  4 | False      16   108   101 |    60           | A 73/39 B 112/4 D 39/6
+ N3  coprime   bigstep      240  8 | False      16   108   187 |    30           | A 73/9 B 112/4 D 39/7
+ N3  coprime   cycleskip    240  - | True        0     0     0 |   120   90   30 | A 73/73 B 112/112 D 39/39
+ N3  coprime   mainonly     240  - | True        0     0     0 |   240           | A 73/73
+ N3  coprime   fluid        240  - | False       -     1     - |     1           | A 73/72 B 112/111 D 39/38
+ N3  coprime   substep      241  2 | True        0     0     0 |   241           | A 74/74 B 112/112 D 39/39
+ N3  coprime   substep      241  4 | True        0     0     0 |   241           | A 74/74 B 112/112 D 39/39
+ N3  coprime   substep      241  8 | True        0     0     0 |   241           | A 74/74 B 112/112 D 39/39
+ N3  coprime   bigstep      241  2 | False      11    75   149 |   121           | A 74/67 B 112/37 D 39/3
+ N3  coprime   bigstep      241  4 | False      15   108   102 |    61           | A 74/40 B 112/4 D 39/6
+ N3  coprime   bigstep      241  8 | False      15   108   192 |    31           | A 74/10 B 112/4 D 39/7
+ N3  coprime   cycleskip    241  - | True        0     0     0 |   121   90   30 | A 74/74 B 112/112 D 39/39
+ N3  coprime   mainonly     241  - | True        0     0     0 |   241           | A 74/74
+ N3  coprime   fluid        241  - | False       -     1     - |     1           | A 74/73 B 112/111 D 39/38
+ N3  coprime   substep     2400  2 | True        0     0     0 |  2400           | A 793/793 B 1192/1192 D 399/399
+ N3  coprime   substep     2400  4 | True        0     0     0 |  2400           | A 793/793 B 1192/1192 D 399/399
+ N3  coprime   substep     2400  8 | True        0     0     0 |  2400           | A 793/793 B 1192/1192 D 399/399
+ N3  coprime   bigstep     2400  2 | False      11   795  1589 |  1200           | A 793/786 B 1192/397 D 399/3
+ N3  coprime   bigstep     2400  4 | False      16  1188   641 |   600           | A 793/579 B 1192/4 D 399/6
+ N3  coprime   bigstep     2400  8 | False      16  1188  1537 |   300           | A 793/279 B 1192/4 D 399/7
+ N3  coprime   cycleskip   2400  - | True        0     0     0 |   120   90   30 | A 793/793 B 1192/1192 D 399/399
+ N3  coprime   mainonly    2400  - | True        0     0     0 |  2400           | A 793/793
+ N3  coprime   fluid       2400  - | False       -     1     - |     1           | A 793/792 B 1192/1191 D 399/398
+ N3  coprime   substep    24000  2 | True        0     0     0 | 24000           | A 7993/7993 B 11992/11992 D 3999/3999
+ N3  coprime   substep    24000  4 | True        0     0     0 | 24000           | A 7993/7993 B 11992/11992 D 3999/3999
+ N3  coprime   substep    24000  8 | True        0     0     0 | 24000           | A 7993/7993 B 11992/11992 D 3999/3999
+ N3  coprime   bigstep    24000  2 | False      11  7995 15989 | 12000           | A 7993/7986 B 11992/3997 D 3999/3
+ N3  coprime   bigstep    24000  4 | False      16 11988  6041 |  6000           | A 7993/5979 B 11992/4 D 3999/6
+ N3  coprime   bigstep    24000  8 | False      16 11988 15037 |  3000           | A 7993/2979 B 11992/4 D 3999/7
+ N3  coprime   cycleskip  24000  - | True        0     0     0 |   120   90   30 | A 7993/7993 B 11992/11992 D 3999/3999
+ N3  coprime   mainonly   24000  - | True        0     0     0 | 24000           | A 7993/7993
+ N3  coprime   fluid      24000  - | False       -     1     - |     1           | A 7993/7992 B 11992/11991 D 3999/3998
+ CYCLESKIP SWEEP (seed 20261027, 200 period combos 1..6 x 3 networks, N random 1..5000): runs=600 mismatches=0 maxTransient(with N)=210 maxCycle(with N)=60 maxCost=299; unbounded-N bound: transient<=210 cycle<=60
+ 
 

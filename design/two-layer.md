@@ -182,10 +182,14 @@ runs in three phases:
     similar), not a change to the rule.
   - **Rationale:** it is deterministic **and stateless**. No per-merge cursor (`LastWinner`)
     lives in L1 state, so there is nothing to save, snapshot, diff or replay. Each step's
-    outcome depends only on occupancy. It also gives a **simpler catch-up bound**: the main
-    line never yields, so it remains a linear chain whose exact item recurrence (spike C)
-    is unaffected by side inputs. Only the side inputs need the bounded treatment, and they
-    see a known gap schedule.
+    outcome depends only on occupancy. That is also what makes merge networks **cheap to
+    catch up exactly**. A network's whole state is occupancy plus the phase of its feed
+    periods, so with periodic feeds it falls into a repeating cycle that catch-up can skip
+    (*cycle skip*, §Time; measured in spike C finding 7).
+  - **Correction, measured:** the main line is **not** independent of its side inputs.
+    Once the sink backlogs, side items already queued downstream of the merge delay main
+    items by up to 24 steps (8 fewer main deliveries). So "the main line keeps its linear
+    recurrence" holds only while the sink keeps up.
 
 Spike A showed why the resolve phase is required: the naive "move if the target was empty
 last frame" rule *is* Rule 184. A full belt starts with a ripple and settles at half
@@ -312,9 +316,30 @@ cannot run in unobserved bags.
 | Class | Contract | Catch-up cost | Examples (from spike C) |
 |---|---|---|---|
 | `ClosedForm` | `CatchUp(s, Δ) ≡ Step^Δ(s)` **exactly**, in O(cells) | O(1) per cell | plaque **accumulator** (P1), facility progress, decay |
-| `EventSkippable` | `CatchUp(s, Δ) ≡ Step^Δ(s)` **exactly**, by jumping between internal events (threshold crossings, arrivals) | O(#events), not O(Δ) | plaque **spread** (P2) via threshold fast-forward; a **linear belt** (queue recurrence) |
-| `BoundedCatchUp(maxΔ)` | exact by sub-stepping up to `maxΔ`; beyond that, an **approximation with a declared tolerance** (or capped at a saturation state) | O(min(Δ, maxΔ) · active) | belt networks with merges, arms with filters |
+| `EventSkippable` | `CatchUp(s, Δ) ≡ Step^Δ(s)` **exactly**, by jumping between internal events (threshold crossings, arrivals) or over repeating cycles | O(#events) or O(transient + cycle), not O(Δ) | plaque **spread** (P2) via threshold fast-forward; a **linear belt** (queue recurrence); **belt networks with side-priority merges and periodic feeds** (cycle skip) |
+| `BoundedCatchUp(maxΔ)` | exact by sub-stepping up to `maxΔ`; beyond that, an **approximation with a declared tolerance** (or capped at a saturation state) | O(min(Δ, maxΔ) · active) | belt networks fed by **aperiodic** inputs (player, arm or RNG driven), arms with filters |
 | `MustSimulate` (observed-only) | does not exist while unobserved; spawned fresh or from a deterministic seed on observe | – | lints (entropy §4 Schrödinger model), free-moving bodies |
+
+**Cycle skip** is the catch-up algorithm for transfer networks (belts, merges, and periodic
+sources and sinks). It is exact, and it is general for any bag whose rules are deterministic,
+whose state is finite, and whose inputs are periodic.
+
+```
+ P = lcm(all source/sink periods)            key = (occupancy layer, step mod P)
+ step at full rate; at every step ≡ 0 mod P:  seen[key]? ── no ──▶ record (step, counters, event index)
+                                                  │ yes (first repeat t1 → t2)
+                                                  ▼
+ C = t2 − t1;  m = ⌊(Δ − t2) / C⌋ whole cycles:  counters += m · (per-cycle deltas)
+                                                  events  += recorded cycle, re-timed by j·C (j = 1..m)
+                                                  item ids += m · (emitted per cycle)   (identity is a counter)
+ then step the remaining Δ − t2 − m·C (< C) steps at full rate.
+ Cost = t2 + remainder ≤ transient + 2C steps, independent of Δ.
+```
+
+It is only correct because R2 merges are stateless. A round-robin cursor would have to be
+part of the key, which still works but makes cycles longer. If the inputs are not periodic
+(player-fed, arm-fed or RNG-driven), there is no cycle to find, and the bag falls back to
+`BoundedCatchUp` (sub-step up to maxΔ).
 
 **What "catch-up ≡ stepped" means** (the contract, by class):
 
@@ -356,7 +381,8 @@ k ∈ {2, 4, 8}; details in §Spike C):
 | P1 plaque accumulator | end state exact, crossing times ±(k−1) | exact | closed form, exact, 1 op | `ClosedForm` |
 | P2 plaque spread (Moore) | **diverges** (maxAbs 16→352 as k 2→8) | exact | threshold jumps, exact, 56–60 jumps for 240–2400 steps | `EventSkippable` |
 | Linear belt (source→sink) | **diverges** (items lost/late) | exact | item recurrence, exact, cost = #items | `EventSkippable` |
-| Belt network with merges | (not spiked) | exact (it is just Step) | no closed form shown. Under R2 the main line keeps its exact linear recurrence; only side inputs need bounding | `BoundedCatchUp` (main line `EventSkippable`) |
+| Belt network with R2 merges, periodic feeds | **diverges** (up to 2100 items, 2093 steps late at k=8) | exact | **cycle skip**, exact in 60/60 rows + a 600-run sweep; ≤ 299 steps for any Δ | `EventSkippable` |
+| … same, aperiodic feeds | – | exact | no cycle to find | `BoundedCatchUp` |
 | Lint random walk | stateful RNG diverges; counter RNG exact | exact only with counter RNG | none | `MustSimulate` |
 
 ### L2 Realization (D11, A2)
@@ -628,6 +654,53 @@ Findings:
    A counter RNG `Hash(seed, step, id)` is exact under sub-stepping. Neither can skip, so lints are
    `MustSimulate`, and **G2 (counter RNG in state) is confirmed as required, not
    optional.**
+7. **Merge networks (added after R2): cycle skip is exact, and a fluid estimate is not.**
+   Three networks, all under R2 side priority:
+   - N1 is a main line plus one side input.
+   - N2 is a main line plus left and right inputs.
+   - N3 is a cascade of two merges.
+
+   Each runs under five feed configurations (source periods, then sink period):
+   - `under` 3/4/5, sink 1
+   - `mainsat` 1/2/3, sink 1
+   - `backlog` 2/2/2, sink 3
+   - `backlog2` 3/2/2, sink 2
+   - `coprime` 3/2/5, sink 1
+
+   N ∈ {240, 241, 2400, 24000}, and k ∈ {2, 4, 8} for the rate modes. All 540 rows are in
+   `spike-c-table.txt`, and the excerpt below is copied from it.
+
+   | Method | Exact rows | Worst divergence | Cost |
+   |---|---|---|---|
+   | sub-step 1/k | 180/180 | 0 | Δ steps |
+   | big step 1/k | 0/180 | k=2: 1200 items, 1589 steps late. k=8: 2100 items, 2093 steps late | Δ/k |
+   | **cycle skip** | **60/60** (including consume timings) | 0 | 16–120 steps, **flat in Δ** (the same at 2400 and 24000) |
+   | main line only ("main ignores sides") | 36/60: holds in under, mainsat, coprime | backlog: 8 fewer main items, 24 steps late (N3) | Δ |
+   | fluid O(1) estimate | 0/60 | 1 item (under, coprime), 2–4 (mainsat), 2–7 when backlogged (it credits starved sides with 0 although they deliver a few start-up items, and over-credits main) | 1 |
+
+   - **Sweep:** 200 random period combinations (1..6) × 3 networks, with Δ random in
+     1..5000. That is 600 runs with **0 mismatches**.
+   - **Measured bound:** transient ≤ 210 steps, cycle ≤ 60 (always P or a divisor of P),
+     cost ≤ 299 steps. A re-run at Δ = 1,000,000 gives the same bound. This is measured on
+     these network sizes, not proven: the transient grows with belt length (it is roughly
+     the fill time), and the cycle grows with lcm(periods).
+
+```
+ net cfg       mode           N  k | exact occDiff dDiff  late |  cost   t1    C | deliv
+ N1  under     bigstep     2400  8 | False      13   594  1523 |   300           | A 796/286 B 598/4
+ N1  under     cycleskip  24000  - | True        0     0     0 |    24   12   12 | A 7996/7996 B 5998/5998
+ N1  backlog   cycleskip  24000  - | True        0     0     0 |    42   36    6 | A 7991/7991 B 5/5
+ N1  backlog   mainonly   24000  - | False       0     4    12 | 24000           | A 7991/7995
+ N1  backlog   fluid      24000  - | False       -     5     - |     1           | A 7991/7995 B 5/0
+ N2  coprime   cycleskip  24000  - | True        0     0     0 |    90   60   30 | A 7996/7996 B 11995/11995 C 3998/3998
+ N3  backlog   cycleskip  24000  - | True        0     0     0 |    60   54    6 | A 7985/7985 B 5/5 D 6/6
+ N3  backlog   mainonly   24000  - | False       0     8    24 | 24000           | A 7985/7993
+ N3  coprime   cycleskip  24000  - | True        0     0     0 |   120   90   30 | A 7993/7993 B 11992/11992 D 3999/3999
+```
+   **Verdict:** merges do **not** need `MustSimulate`. With periodic feeds they are
+   `EventSkippable` via cycle skip. With aperiodic feeds they are `BoundedCatchUp`, sub-stepped
+   up to maxΔ. If a tolerance is ever wanted instead, the fluid estimate's measured error
+   (≤ 7 items per source at these sizes) is the starting figure.
 
 ### Decisions the spikes suggest revisiting
 
@@ -636,7 +709,7 @@ Findings:
 | Is the hot cache mandatory? | **No**, not for Phase 1. The immutable builder style runs ~475 fully churning bags per period at a 10% share. It is mandatory to **ban per-change `SetItem`** in Step (~14× slower, ~140× alloc). | Phase 1 rule: builders only. Phase 3 rules go through `BagView`/`BagWriter` so SoA can be swapped in per bag (model C). |
 | Is 8 Hz too slow or too fast? | Cost is not a constraint. Even a1 uses ~1/4800 of the period per bag. | Choose the rate on **feel**. 8 Hz stands; 16 Hz is affordable if belts read too steppy. |
 | GC tail | a1: 34/480 paced ticks with GC > 1 ms, worst 17.7 ms. The b log also triggered one 17.9 ms gen2. | Step runs **off the render thread** in Godot (Phase 1/3), plus a log-retention/compaction policy (Phase 7). |
-| Must belts be MustSimulate? | **No.** Linear chains are `EventSkippable` (exact). Merge networks are `BoundedCatchUp` until someone proves a closed form. | Phase 4: belts dormant-skip; merged networks sub-step to maxΔ. |
+| Must belts be MustSimulate? | **No.** Linear chains are `EventSkippable` (exact recurrence). Merge networks with periodic feeds are `EventSkippable` through **cycle skip**: exact in every row and in a 600-run sweep, ≤ 299 steps for any Δ. Only aperiodic feeds fall back to `BoundedCatchUp`. | Phase 4: implement cycle skip as the generic dormant catch-up for transfer networks; fall back to sub-step up to maxΔ when no cycle appears within transient + 2P. |
 | "Lower-rate background" (A5) | Only `ClosedForm` rules survive a k× big step, and even then crossing times shift. Everything else must sub-step, so a background bag saves no work. | Work savings come from **Dormant + catch-up**. Background = sub-stepped, mainly for scheduling/latency spreading. A5 is still honoured, but via a different mechanism than "run it coarser". |
 | Event granularity | Per-item belt `Moved` dominates the ≈203 events/step and the retained log (23–45 MB / 10 min per churning bag). | Add a chain-level `BeltAdvanced(chain, dir, n)` event (one per chain per step). L2 derives per-item motion. Decide in Phase 1. |
 | RNG | Stateful `Random` breaks under batching. | G2 is a hard requirement in Phase 1. |

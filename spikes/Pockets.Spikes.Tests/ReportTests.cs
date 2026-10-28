@@ -1,3 +1,4 @@
+using Pockets.Spikes.Belts;
 using Pockets.Spikes.Plaque;
 using Xunit.Abstractions;
 
@@ -16,5 +17,8 @@ public class ReportTests
         _out.WriteLine(text);
         Assert.Contains("p2-catchup", text);
         Assert.Contains("belt-catchup", text);
+        var merge = MergeTable.Build(new[] { 240, 241, 2400, 24000 });
+        _out.WriteLine(merge);
+        Assert.Contains("BELT MERGE NETWORKS", merge);
     }
 }

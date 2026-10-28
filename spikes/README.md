@@ -8,6 +8,7 @@ here may be imported by game code. Promote ideas by re-implementing them under T
 | Project | What | Spike |
 |---|---|---|
 | `Pockets.Spikes/Belts` | belt grid, two-layer ASCII parse/render, `NaiveStep` (Rule 184) vs `ChainStep` (head→tail resolve, fixed side-priority merges (stateless; full loops stall)) | A |
+| `Pockets.Spikes/Belts/MergeCatchUp.cs` | merge networks N1–N3 × feed configs: sub-step, big step, **cycle skip**, main-only, fluid; seeded sweep | C |
 | `Pockets.Spikes/Plaque` | plaque P1 accumulator / P2 spread, big-step vs sub-step vs catch-up, linear-belt catch-up recurrence, lint RNG | C |
 | `Pockets.Spikes.Tests` | xunit: ASCII traces (A), catch-up ≡ stepped property tests (C), report table | A, C |
 | `Pockets.Spikes.Bench` | Stopwatch harness: immutable-builder vs `SetItem` vs SoA hot set + event log + snapshots | B |
