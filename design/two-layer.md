@@ -804,6 +804,8 @@ Findings:
    and `EventDeriver.CanonicalOrder` already fixes the order, so it moves to Phase 4. All three frontends (TUI, Godot, mock-godot)
    consume events at n = 1.
 2. **Realization v0 + free-movement experiment (A1, moved up from late).**
+   Slice plan: [two-layer-phase2-plan.md](two-layer-phase2-plan.md) (slices 2.0–2.9, decisions
+   P2-D1…D14, awaiting ratification).
    `Pockets.Realization` with engine-neutral `Pose` (A2), timelines (n=16), rogue
    choreography and the snap policy. A W-bag body with D2-A (default) and **D2-B behind a
    per-bag flag** (L2a fixed-point integrator → `Move` intents), plus the "fuzz L2a ⇒
