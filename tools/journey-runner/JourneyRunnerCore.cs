@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json.Nodes;
 using Pockets.Core.Models;
 using Pockets.Core.Rendering;
+using Pockets.Core.Sim;
 
 namespace Pockets.JourneyRunner;
 
@@ -14,8 +15,12 @@ public record RunResult(
     IReadOnlyList<string> Checkpoints,
     IReadOnlyList<string> Failures,
     IReadOnlyList<string> Notes,
-    IReadOnlyList<GoldenCapture> Goldens)
+    IReadOnlyList<GoldenCapture> Goldens,
+    IReadOnlyList<string>? EventLines = null)
 {
+    /// <summary>The event golden lines (<see cref="EventGolden.Lines"/> per journey step; start = -1), in order.</summary>
+    public IReadOnlyList<string> EventLines { get; init; } = EventLines ?? Array.Empty<string>();
+
     public bool Passed => Failures.Count == 0;
 }
 
@@ -33,12 +38,22 @@ public static class JourneyRunnerCore
     /// When non-null and the driver implements <see cref="IScreenshotDriver"/> (real Godot only),
     /// each golden-flagged checkpoint saves a <c>&lt;label&gt;.png</c> here. Ignored otherwise.
     /// </param>
-    public static RunResult Run(IJourneyDriver driver, JourneyScript script, string? screenshotDir = null)
+    /// <param name="replayFrom">
+    /// When non-null (<c>--replay-check</c>), a factory for a fresh session of the same profile; for an
+    /// in-process (<see cref="ISessionDriver"/>) driver the run's intent log is replayed on it after the loop
+    /// and must reproduce every step's view-model and event stream (<see cref="ReplayCheck"/>).
+    /// </param>
+    public static RunResult Run(IJourneyDriver driver, JourneyScript script, string? screenshotDir = null,
+        Func<GameSession>? replayFrom = null)
     {
         var checkpoints = new List<string>();
         var failures = new List<string>();
         var notes = new List<string>();
         var goldens = new List<GoldenCapture>();
+        var eventLines = new List<string>();
+        var boundaries = new List<ReplayBoundary>();
+        var sessionDriver = driver as ISessionDriver;
+        var completed = true;
 
         var screenshotter = driver as IScreenshotDriver;
         if (screenshotDir is not null)
@@ -55,6 +70,9 @@ public static class JourneyRunnerCore
         var prevViewModel = start.ViewModel.ToJsonString();
         var prevCensus = start.FullState is { } s0 ? InvariantChecker.Census(s0) : null;
         Emit(checkpoints, -1, "start", start.ViewModel);
+        eventLines.AddRange(EventGolden.Lines(-1, start.Events ?? Array.Empty<string>()));
+        if (replayFrom is not null && sessionDriver is not null)
+            boundaries.Add(Boundary(-1, sessionDriver, start));
         VerifyStructural(driver.Name, -1, "start", start, failures, notes);
 
         for (int i = 0; i < script.Steps.Count; i++)
@@ -69,6 +87,7 @@ public static class JourneyRunnerCore
             catch (Exception ex)
             {
                 failures.Add($"[{i} {label}] action threw: {ex.Message}");
+                completed = false;
                 break; // a thrown action means the journey can't continue meaningfully
             }
 
@@ -127,6 +146,9 @@ public static class JourneyRunnerCore
             }
 
             Emit(checkpoints, i, label, obs.ViewModel);
+            eventLines.AddRange(EventGolden.Lines(i, obs.Events ?? Array.Empty<string>()));
+            if (replayFrom is not null && sessionDriver is not null)
+                boundaries.Add(Boundary(i, sessionDriver, obs));
 
             // --- Golden capture (Slice 8) — one artifact per flagged ledger-row materialization. ---
             if (step.Golden)
@@ -144,8 +166,29 @@ public static class JourneyRunnerCore
             }
         }
 
-        return new RunResult(driver.Name, checkpoints, failures, notes, goldens);
+        if (replayFrom is not null)
+        {
+            if (sessionDriver is null)
+                notes.Add($"replay check skipped — {driver.Name} has no in-process session (replay needs the intent log).");
+            else if (!completed)
+                notes.Add("replay check skipped — the journey stopped on a thrown action.");
+            else
+            {
+                var log = sessionDriver.Session.IntentLog;
+                var replayFailures = ReplayCheck.Run(replayFrom(), log, boundaries);
+                failures.AddRange(replayFailures.Select(f => "replay: " + f));
+                if (replayFailures.Count == 0)
+                    notes.Add($"replay check: {log.Count} intents replayed, {boundaries.Count} checkpoints and " +
+                              $"{boundaries.Sum(b => b.Events.Count)} event lines identical");
+            }
+        }
+
+        return new RunResult(driver.Name, checkpoints, failures, notes, goldens, eventLines);
     }
+
+    /// <summary>One replay boundary: the session's intent count now, the observed view-model text and events.</summary>
+    private static ReplayBoundary Boundary(int journeyStep, ISessionDriver driver, DriverObservation obs) =>
+        new(journeyStep, driver.Session.IntentLog.Count, obs.ViewModel.ToJsonString(), obs.Events ?? Array.Empty<string>());
 
     /// <summary>
     /// Returns null when the census changed by EXACTLY <paramref name="expected"/> (name → signed delta),

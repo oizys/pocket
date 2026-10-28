@@ -1,0 +1,305 @@
+1:0 1 0 IntentApplied intent=AdvanceDialogue
+1:0 1 1 DialogueAdvanced beatId="opening" dismissed=true
+2:0 1 0 IntentApplied intent=Move(B, Right)
+2:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,0) to=(0,1)
+2:0 1 2 UiTriggerFired trigger=FirstCursorRest
+3:0 1 0 IntentApplied intent=Move(B, Right)
+3:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,1) to=(0,2)
+4:0 1 0 IntentApplied intent=Move(B, Right)
+4:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,2) to=(0,3)
+4:0 1 2 DialogueQueued beatId="amnesia"
+6:0 1 0 IntentApplied intent=AdvanceDialogue
+6:0 1 1 DialogueAdvanced beatId="amnesia" dismissed=true
+7:0 1 0 IntentApplied intent=Move(B, Right)
+7:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,3) to=(0,4)
+8:0 1 0 IntentApplied intent=Move(B, Left)
+8:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,4) to=(0,3)
+9:0 1 0 IntentApplied intent=Move(B, Left)
+9:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,3) to=(0,2)
+10:0 1 0 IntentApplied intent=Move(B, Left)
+10:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,2) to=(0,1)
+11:0 1 0 IntentApplied intent=Move(B, Left)
+11:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,1) to=(0,0)
+12:0 1 0 IntentApplied intent=Move(B, Left)
+12:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,0) to=(0,7)
+13:0 1 0 IntentApplied intent=Move(B, Right)
+13:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,7) to=(0,0)
+14:0 1 0 IntentApplied intent=Move(B, Down)
+14:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,0) to=(1,0)
+15:0 1 0 IntentApplied intent=Move(B, Up)
+15:0 1 1 CursorMoved loc=B bag=bag#1 from=(1,0) to=(0,0)
+16:0 1 0 IntentApplied intent=Move(B, Right)
+16:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,0) to=(0,1)
+17:0 1 0 IntentApplied intent=Move(B, Right)
+17:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,1) to=(0,2)
+18:0 1 0 IntentApplied intent=Primary(B)
+18:0 1 1 StackMoved item="Plain Rock" count=10 from=bag#1[2] to=bag#2[0] cause=Pickup
+18:0 1 2 UiTriggerFired trigger=FirstPickup
+19:0 2 0 IntentApplied intent=Move(B, Right)
+19:0 2 1 CursorMoved loc=B bag=bag#1 from=(0,2) to=(0,3)
+20:0 2 0 IntentApplied intent=Primary(B)
+20:0 2 1 StackMoved item="Rough Wood" count=6 from=bag#1[3] to=bag#2[1] cause=Pickup
+21:0 3 0 IntentApplied intent=Move(B, Right)
+21:0 3 1 CursorMoved loc=B bag=bag#1 from=(0,3) to=(0,4)
+22:0 3 0 IntentApplied intent=Primary(B)
+22:0 3 1 StackMoved item="Tanned Leather" count=6 from=bag#1[4] to=bag#2[2] cause=Pickup
+25:0 4 0 IntentApplied intent=SetCursor(B, (1,0))
+25:0 4 1 CursorMoved loc=B bag=bag#1 from=(0,4) to=(1,0)
+25:1 4 0 IntentApplied intent=Primary(B)
+25:1 4 1 BagEntered loc=B bag=bag#3 depth=1
+25:1 4 2 UiTriggerFired trigger=FirstEnter
+26:0 5 0 IntentApplied intent=Leave(B)
+26:0 5 1 BagLeft loc=B bag=bag#1 depth=0
+27:0 6 0 IntentApplied intent=Move(B, Up)
+27:0 6 1 CursorMoved loc=B bag=bag#1 from=(1,0) to=(0,0)
+28:0 6 0 IntentApplied intent=Move(B, Right)
+28:0 6 1 CursorMoved loc=B bag=bag#1 from=(0,0) to=(0,1)
+29:0 6 0 IntentApplied intent=Move(B, Right)
+29:0 6 1 CursorMoved loc=B bag=bag#1 from=(0,1) to=(0,2)
+30:0 6 0 IntentApplied intent=Move(B, Right)
+30:0 6 1 CursorMoved loc=B bag=bag#1 from=(0,2) to=(0,3)
+31:0 6 0 IntentApplied intent=Move(B, Right)
+31:0 6 1 CursorMoved loc=B bag=bag#1 from=(0,3) to=(0,4)
+32:0 6 0 IntentApplied intent=Move(B, Right)
+32:0 6 1 CursorMoved loc=B bag=bag#1 from=(0,4) to=(0,5)
+33:0 6 0 IntentApplied intent=Primary(B)
+33:0 6 1 StackMoved item="Woven Fiber" count=3 from=bag#1[5] to=bag#4[0] cause=Pickup
+35:0 7 0 IntentApplied intent=Move(B, Left)
+35:0 7 1 CursorMoved loc=B bag=bag#1 from=(0,5) to=(0,4)
+36:0 7 0 IntentApplied intent=Move(B, Left)
+36:0 7 1 CursorMoved loc=B bag=bag#1 from=(0,4) to=(0,3)
+37:0 7 0 IntentApplied intent=Move(B, Left)
+37:0 7 1 CursorMoved loc=B bag=bag#1 from=(0,3) to=(0,2)
+38:0 7 0 IntentApplied intent=Move(B, Left)
+38:0 7 1 CursorMoved loc=B bag=bag#1 from=(0,2) to=(0,1)
+39:0 7 0 IntentApplied intent=Move(B, Left)
+39:0 7 1 CursorMoved loc=B bag=bag#1 from=(0,1) to=(0,0)
+40:0 7 0 IntentApplied intent=Primary(B)
+40:0 7 1 PanelOpened loc=C bag=bag#5
+40:0 7 2 UiTriggerFired trigger=FirstPeek
+41:0 8 0 IntentApplied intent=Leave(C)
+41:0 8 1 PanelClosed loc=C bag=bag#5
+43:0 9 0 IntentApplied intent=Primary(B)
+43:0 9 1 PanelOpened loc=C bag=bag#5
+45:0 10 0 IntentApplied intent=Primary(T)
+45:0 10 1 StackMoved item="Plain Rock" count=10 from=bag#2[0] to=bag#6[0] cause=Grab
+47:0 11 0 IntentApplied intent=Primary(C)
+47:0 11 1 StackMoved item="Plain Rock" count=10 from=bag#6[0] to=bag#5[0] cause=Drop
+49:0 12 0 IntentApplied intent=Move(T, Right)
+49:0 12 1 CursorMoved loc=T bag=bag#2 from=(0,0) to=(0,1)
+50:0 12 0 IntentApplied intent=Primary(T)
+50:0 12 1 StackMoved item="Rough Wood" count=6 from=bag#2[1] to=bag#6[0] cause=Grab
+52:0 13 0 IntentApplied intent=Move(C, Right)
+52:0 13 1 CursorMoved loc=C bag=bag#5 from=(0,0) to=(0,1)
+53:0 13 0 IntentApplied intent=Primary(C)
+53:0 13 1 StackMoved item="Rough Wood" count=6 from=bag#6[0] to=bag#5[1] cause=Drop
+54:0 14 0 TimeAdvanced
+54:0 14 1 CraftStarted facility=bag#5 recipeId="workshop-workbench" owner=bag#1[0]
+54:0 14 2 PlantGrew cell=bag#1[28] stage=1 of=6
+54:0 14 3 PlantGrew cell=bag#1[29] stage=1 of=6
+55:0 15 0 TimeAdvanced
+55:0 15 1 CraftProgressed facility=bag#5 recipeId="workshop-workbench" remaining=3 owner=bag#1[0]
+55:0 15 2 PlantGrew cell=bag#1[28] stage=2 of=6
+55:0 15 3 PlantGrew cell=bag#1[29] stage=2 of=6
+56:0 16 0 TimeAdvanced
+56:0 16 1 CraftProgressed facility=bag#5 recipeId="workshop-workbench" remaining=2 owner=bag#1[0]
+56:0 16 2 PlantGrew cell=bag#1[28] stage=3 of=6
+56:0 16 3 PlantGrew cell=bag#1[29] stage=3 of=6
+57:0 17 0 TimeAdvanced
+57:0 17 1 CraftProgressed facility=bag#5 recipeId="workshop-workbench" remaining=1 owner=bag#1[0]
+57:0 17 2 PlantGrew cell=bag#1[28] stage=4 of=6
+57:0 17 3 PlantGrew cell=bag#1[29] stage=4 of=6
+58:0 18 0 TimeAdvanced
+58:0 18 1 CraftCompleted facilityBagId=bag#5 recipeId="workshop-workbench" outputs=[1×"Workbench"@bag#5[2]] consumed=[bag#5[0], bag#5[1]] owner=bag#1[0]
+58:0 18 2 PlantGrew cell=bag#1[28] stage=5 of=6
+58:0 18 3 PlantGrew cell=bag#1[29] stage=5 of=6
+59:0 19 0 TimeAdvanced
+59:0 19 1 PlantGrew cell=bag#1[28] stage=6 of=6
+59:0 19 2 PlantGrew cell=bag#1[29] stage=6 of=6
+60:0 20 0 IntentApplied intent=Peek(C)
+60:0 20 1 PanelClosed loc=C bag=bag#5
+61:0 21 0 IntentApplied intent=Move(B, Down)
+61:0 21 1 CursorMoved loc=B bag=bag#1 from=(0,0) to=(1,0)
+62:0 21 0 IntentApplied intent=Move(B, Right)
+62:0 21 1 CursorMoved loc=B bag=bag#1 from=(1,0) to=(1,1)
+63:0 21 0 IntentApplied intent=Peek(B)
+63:0 21 1 PanelOpened loc=C bag=bag#7
+64:0 22 0 IntentApplied intent=Primary(C)
+64:0 22 1 StackMoved item="Smooth Pebble" count=3 from=bag#7[0] to=bag#6[0] cause=Grab
+65:0 23 0 IntentApplied intent=Peek(C)
+65:0 23 1 PanelClosed loc=C bag=bag#7
+66:0 24 0 IntentApplied intent=Move(B, Right)
+66:0 24 1 CursorMoved loc=B bag=bag#1 from=(1,1) to=(1,2)
+67:0 24 0 IntentApplied intent=Move(B, Right)
+67:0 24 1 CursorMoved loc=B bag=bag#1 from=(1,2) to=(1,3)
+68:0 24 0 IntentApplied intent=Primary(B)
+68:0 24 1 StackMoved item="Smooth Pebble" count=3 from=bag#6[0] to=bag#1[11] cause=Drop
+69:0 25 0 IntentApplied intent=Move(B, Left)
+69:0 25 1 CursorMoved loc=B bag=bag#1 from=(1,3) to=(1,2)
+70:0 25 0 IntentApplied intent=Peek(B)
+70:0 25 1 Bumped loc=B bag=bag#1 at=(1,2) dir=- reason=FailedPeek
+70:0 25 2 DialogueQueued beatId="failed-peek"
+71:0 25 0 IntentApplied intent=AdvanceDialogue
+71:0 25 1 DialogueAdvanced beatId="failed-peek" dismissed=true
+72:0 25 0 Bumped loc=B bag=bag#1 at=(1,2) dir=- reason=FailedPeek
+73:0 25 0 IntentApplied intent=Primary(B)
+73:0 25 1 BagEntered loc=B bag=bag#8 depth=1
+73:0 25 2 ZoneReached bag=bag#8
+74:0 26 0 IntentApplied intent=Leave(B)
+74:0 26 1 BagLeft loc=B bag=bag#1 depth=0
+76:0 27 0 IntentApplied intent=Move(B, Right)
+76:0 27 1 CursorMoved loc=B bag=bag#1 from=(1,2) to=(1,3)
+77:0 27 0 IntentApplied intent=Move(B, Right)
+77:0 27 1 CursorMoved loc=B bag=bag#1 from=(1,3) to=(1,4)
+78:0 27 0 IntentApplied intent=Primary(B)
+78:0 27 1 BagEntered loc=B bag=bag#9 depth=1
+78:0 27 2 UiTriggerFired trigger=EnterShrine
+79:0 28 0 IntentApplied intent=Peek(B)
+79:0 28 1 PanelOpened loc=C bag=bag#10
+80:0 29 0 IntentApplied intent=Peek(C)
+80:0 29 1 PanelClosed loc=C bag=bag#10
+81:0 30 0 IntentApplied intent=SetElapsed(00:00:05)
+82:0 30 0 IntentApplied intent=Move(B, Down)
+82:0 30 1 CursorMoved loc=B bag=bag#9 from=(0,0) to=(1,0)
+82:0 30 2 UiTriggerFired trigger=NoticeClock
+83:0 30 0 IntentApplied intent=SetElapsed(00:00:15)
+85:0 30 0 IntentApplied intent=Leave(B)
+85:0 30 1 BagLeft loc=B bag=bag#1 depth=0
+86:0 31 0 IntentApplied intent=Move(B, Left)
+86:0 31 1 CursorMoved loc=B bag=bag#1 from=(1,4) to=(1,3)
+87:0 31 0 IntentApplied intent=Move(B, Left)
+87:0 31 1 CursorMoved loc=B bag=bag#1 from=(1,3) to=(1,2)
+88:0 31 0 Bumped loc=B bag=bag#1 at=(1,2) dir=- reason=FailedPeek
+89:0 31 0 IntentApplied intent=Primary(B)
+89:0 31 1 BagEntered loc=B bag=bag#8 depth=1
+90:0 32 0 IntentApplied intent=Move(B, Right)
+90:0 32 1 Bumped loc=B bag=bag#8 at=(0,0) dir=Right reason=Unnavigable
+91:0 32 0 IntentApplied intent=Move(B, Right)
+91:0 32 1 Bumped loc=B bag=bag#8 at=(0,0) dir=Right reason=Unnavigable
+92:0 32 0 IntentApplied intent=Move(B, Right)
+92:0 32 1 Bumped loc=B bag=bag#8 at=(0,0) dir=Right reason=Unnavigable
+92:0 32 2 DialogueQueued beatId="axe-absence"
+93:0 32 0 IntentApplied intent=AdvanceDialogue
+93:0 32 1 DialogueAdvanced beatId="axe-absence" dismissed=true
+94:0 32 0 IntentApplied intent=Move(B, Right)
+94:0 32 1 Bumped loc=B bag=bag#8 at=(0,0) dir=Right reason=Unnavigable
+95:0 32 0 IntentApplied intent=Primary(B)
+95:0 32 1 Harvested cell=bag#8[0] yields=[2×"Dry Grass"@bag#1[2]]
+96:0 33 0 IntentApplied intent=Move(B, Down)
+96:0 33 1 CursorMoved loc=B bag=bag#8 from=(0,0) to=(1,0)
+97:0 33 0 IntentApplied intent=Move(B, Down)
+97:0 33 1 CursorMoved loc=B bag=bag#8 from=(1,0) to=(2,0)
+98:0 33 0 IntentApplied intent=Peek(B)
+98:0 33 1 PanelOpened loc=C bag=bag#11
+99:0 34 0 IntentApplied intent=Move(C, Right)
+99:0 34 1 CursorMoved loc=C bag=bag#11 from=(0,0) to=(0,1)
+100:0 34 0 IntentApplied intent=Primary(C)
+100:0 34 1 StackMoved item="Quiet Recipe" count=1 from=bag#11[1] to=bag#6[0] cause=Grab
+100:0 34 2 RecipeLearned recipeId="another-quiet-1" card=bag#6[0]
+101:0 35 0 IntentApplied intent=Move(C, Right)
+101:0 35 1 CursorMoved loc=C bag=bag#11 from=(0,1) to=(0,2)
+102:0 35 0 IntentApplied intent=Primary(C)
+102:0 35 1 StackMoved item="Eye Core" count=1 from=bag#11[2] to=bag#6[0] cause=Grab
+103:0 36 0 IntentApplied intent=Peek(C)
+103:0 36 1 PanelClosed loc=C bag=bag#11
+104:0 37 0 IntentApplied intent=Leave(B)
+104:0 37 1 BagLeft loc=B bag=bag#1 depth=0
+105:0 38 0 IntentApplied intent=Move(B, Left)
+105:0 38 1 CursorMoved loc=B bag=bag#1 from=(1,2) to=(1,1)
+106:0 38 0 IntentApplied intent=Move(B, Left)
+106:0 38 1 CursorMoved loc=B bag=bag#1 from=(1,1) to=(1,0)
+107:0 38 0 IntentApplied intent=Peek(B)
+107:0 38 1 PanelOpened loc=C bag=bag#3
+107:0 38 2 DialogueQueued beatId="capacity"
+108:0 39 0 IntentApplied intent=AdvanceDialogue
+108:0 39 1 DialogueAdvanced beatId="capacity" dismissed=true
+109:0 39 0 IntentApplied intent=Peek(C)
+109:0 39 1 PanelClosed loc=C bag=bag#3
+110:0 40 0 IntentApplied intent=Move(B, Right)
+110:0 40 1 CursorMoved loc=B bag=bag#1 from=(1,0) to=(1,1)
+111:0 40 0 IntentApplied intent=Move(B, Right)
+111:0 40 1 CursorMoved loc=B bag=bag#1 from=(1,1) to=(1,2)
+112:0 40 0 IntentApplied intent=Move(B, Right)
+112:0 40 1 CursorMoved loc=B bag=bag#1 from=(1,2) to=(1,3)
+113:0 40 0 IntentApplied intent=Move(B, Right)
+113:0 40 1 CursorMoved loc=B bag=bag#1 from=(1,3) to=(1,4)
+114:0 40 0 IntentApplied intent=Primary(B)
+114:0 40 1 BagEntered loc=B bag=bag#9 depth=1
+115:0 41 0 IntentApplied intent=Move(B, Down)
+115:0 41 1 CursorMoved loc=B bag=bag#9 from=(0,0) to=(1,0)
+116:0 41 0 IntentApplied intent=Move(B, Right)
+116:0 41 1 CursorMoved loc=B bag=bag#9 from=(1,0) to=(1,1)
+117:0 41 0 IntentApplied intent=Primary(B)
+117:0 41 1 StackMoved item="Eye Core" count=1 from=bag#6[0] to=bag#9[3] cause=Slot
+117:0 41 2 UiTriggerFired trigger=CoreSlotted
+117:0 41 3 DialogueQueued beatId="slotted"
+118:0 42 0 IntentApplied intent=AdvanceDialogue
+118:0 42 1 DialogueAdvanced beatId="slotted" dismissed=true
+119:0 42 0 IntentRejected intent=Primary(B) reason="A slotted core cannot be removed"
+120:0 42 0 IntentApplied intent=Leave(B)
+120:0 42 1 BagLeft loc=B bag=bag#1 depth=0
+121:0 43 0 IntentApplied intent=Move(B, Down)
+121:0 43 1 CursorMoved loc=B bag=bag#1 from=(1,4) to=(2,4)
+122:0 43 0 IntentApplied intent=Move(B, Right)
+122:0 43 1 CursorMoved loc=B bag=bag#1 from=(2,4) to=(2,5)
+123:0 43 0 IntentApplied intent=Primary(B)
+123:0 43 1 StackMoved item="Compass Recipe" count=1 from=bag#1[21] to=bag#2[0] cause=Pickup
+123:0 43 2 RecipeLearned recipeId="compass" card=bag#2[0]
+124:0 44 0 IntentApplied intent=Move(B, Right)
+124:0 44 1 CursorMoved loc=B bag=bag#1 from=(2,5) to=(2,6)
+125:0 44 0 IntentApplied intent=Primary(B)
+125:0 44 1 StackMoved item="Pouch Recipe" count=1 from=bag#1[22] to=bag#2[0] cause=Pickup
+125:0 44 2 RecipeLearned recipeId="belt-pouch" card=bag#2[0]
+126:0 45 0 IntentApplied intent=Move(B, Right)
+126:0 45 1 CursorMoved loc=B bag=bag#1 from=(2,6) to=(2,7)
+127:0 45 0 IntentApplied intent=Primary(B)
+127:0 45 1 StackMoved item="Axe Recipe" count=1 from=bag#1[23] to=bag#2[0] cause=Pickup
+127:0 45 2 RecipeLearned recipeId="demo-axe" card=bag#2[0]
+128:0 46 0 IntentApplied intent=Move(B, Up)
+128:0 46 1 CursorMoved loc=B bag=bag#1 from=(2,7) to=(1,7)
+129:0 46 0 IntentApplied intent=Move(B, Left)
+129:0 46 1 CursorMoved loc=B bag=bag#1 from=(1,7) to=(1,6)
+130:0 46 0 IntentApplied intent=Primary(B)
+130:0 46 1 StackMoved item="Dry Grass" count=3 from=bag#1[14] to=bag#2[0] cause=Pickup
+131:0 47 0 IntentApplied intent=Move(B, Right)
+131:0 47 1 CursorMoved loc=B bag=bag#1 from=(1,6) to=(1,7)
+132:0 47 0 IntentApplied intent=Primary(B)
+132:0 47 1 StackMoved item="Bone Chips" count=2 from=bag#1[15] to=bag#2[1] cause=Pickup
+133:0 48 0 IntentApplied intent=Move(B, Left)
+133:0 48 1 CursorMoved loc=B bag=bag#1 from=(1,7) to=(1,6)
+134:0 48 0 IntentApplied intent=Move(B, Left)
+134:0 48 1 CursorMoved loc=B bag=bag#1 from=(1,6) to=(1,5)
+135:0 48 0 IntentApplied intent=Primary(B)
+135:0 48 1 PanelOpened loc=C bag=bag#12
+136:0 49 0 IntentApplied intent=OpenRecipeMenu(C)
+137:0 49 0 IntentApplied intent=ConfirmRecipeMenu
+137:0 49 1 RecipeSelected facility=bag#12 recipeId="compass" owner=bag#1[13] slotsRebuilt=false
+139:0 49 0 IntentApplied intent=Move(T, Left)
+139:0 49 1 CursorMoved loc=T bag=bag#2 from=(0,1) to=(0,0)
+140:0 49 0 IntentApplied intent=Primary(T)
+140:0 49 1 StackMoved item="Dry Grass" count=3 from=bag#2[0] to=bag#6[0] cause=Grab
+142:0 50 0 IntentApplied intent=Primary(C)
+142:0 50 1 StackMoved item="Dry Grass" count=3 from=bag#6[0] to=bag#12[0] cause=Drop
+144:0 51 0 IntentApplied intent=Move(T, Right)
+144:0 51 1 CursorMoved loc=T bag=bag#2 from=(0,0) to=(0,1)
+145:0 51 0 IntentApplied intent=Primary(T)
+145:0 51 1 StackMoved item="Bone Chips" count=2 from=bag#2[1] to=bag#6[0] cause=Grab
+147:0 52 0 IntentApplied intent=Move(C, Right)
+147:0 52 1 CursorMoved loc=C bag=bag#12 from=(0,0) to=(0,1)
+148:0 52 0 IntentApplied intent=Primary(C)
+148:0 52 1 StackMoved item="Bone Chips" count=2 from=bag#6[0] to=bag#12[1] cause=Drop
+149:0 53 0 IntentApplied intent=SetElapsed(00:00:16)
+149:1 53 0 TimeAdvanced
+149:1 53 1 CraftStarted facility=bag#12 recipeId="compass" owner=bag#1[13]
+149:1 53 2 UiTriggerFired trigger=FirstTimedAction
+150:0 54 0 IntentApplied intent=Move(C, Left)
+150:0 54 1 CursorMoved loc=C bag=bag#12 from=(0,1) to=(0,0)
+151:0 54 0 IntentApplied intent=SetElapsed(00:00:17)
+151:1 54 0 TimeAdvanced
+151:1 54 1 CraftProgressed facility=bag#12 recipeId="compass" remaining=1 owner=bag#1[13]
+152:0 55 0 IntentApplied intent=SetElapsed(00:00:18)
+152:1 55 0 TimeAdvanced
+152:1 55 1 CraftCompleted facilityBagId=bag#12 recipeId="compass" outputs=[1×"Quiet Compass"@bag#12[2]] consumed=[bag#12[0], bag#12[1]] owner=bag#1[13]
+152:1 55 2 UiTriggerFired trigger=CompassCrafted
+153:0 56 0 IntentApplied intent=Peek(C)
+153:0 56 1 PanelClosed loc=C bag=bag#12

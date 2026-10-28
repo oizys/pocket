@@ -64,3 +64,14 @@ public interface IScreenshotDriver
     /// <summary>Saves a screenshot of the current frontend frame to <paramref name="path"/>.</summary>
     void Screenshot(string path);
 }
+
+/// <summary>
+/// A driver that holds its <see cref="GameSession"/> in process (tui, mock-godot), so the runner can read the
+/// recorded <see cref="GameSession.IntentLog"/> after a run and replay it (<c>--replay-check</c>, Slice 1.7).
+/// The live Godot driver cannot: its session lives in another process.
+/// </summary>
+public interface ISessionDriver
+{
+    /// <summary>The driver's current session, including its intent log.</summary>
+    GameSession Session { get; }
+}

@@ -10,7 +10,10 @@ using Pockets.JourneyRunner;
 // Usage:
 //   journey-runner --driver tui|godot|mock-godot --script <file> [--out <file>]
 //                  [--data <dir>] [--seed <int>] [--url ws://host:port] [--dump]
-//                  [--goldens <dir>] [--screenshots <dir>]
+//                  [--goldens <dir>] [--screenshots <dir>] [--events-out <file>] [--replay-check]
+// --events-out writes the event golden (one `<journeyStep>:<k> <step> <seq> <Kind> field=value…` line per
+// event); --replay-check replays the run's intent log on a fresh session and requires identical VMs and
+// events (in-process drivers only; Slice 1.7).
 // --goldens captures the TUI character buffer at every golden-flagged checkpoint (Slice 8 ledger-row
 // render goldens); --screenshots captures a Godot viewport PNG at the same checkpoints (real Godot only).
 //
@@ -45,7 +48,7 @@ if (args.Length > 0 && args[0] is "--compare" or "--compare-dirs")
 var opts = ParseArgs(args);
 if (opts is null) { PrintUsage(); return 2; }
 
-var (driverName, scriptPath, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir) = opts.Value;
+var (driverName, scriptPath, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck) = opts.Value;
 
 var script = JourneyScript.Load(scriptPath);
 
@@ -70,7 +73,8 @@ using IJourneyDriver driver = driverName switch
 
 Console.Error.WriteLine($"[journey-runner] driver={driver.Name} script={script.Name} steps={script.Steps.Count}");
 
-var result = JourneyRunnerCore.Run(driver, script, screenshotsDir);
+var result = JourneyRunnerCore.Run(driver, script, screenshotsDir,
+    replayFrom: replayCheck && profile is not null ? () => profile.NewSession() : null);
 
 if (outPath is not null)
 {
@@ -80,6 +84,14 @@ if (outPath is not null)
     EnsureParentDir(outPath);
     File.WriteAllText(outPath, string.Join('\n', result.Checkpoints) + (result.Checkpoints.Count > 0 ? "\n" : ""));
     Console.Error.WriteLine($"[journey-runner] wrote {result.Checkpoints.Count} checkpoints → {outPath}");
+}
+
+// Event golden (Slice 1.7): the canonical event lines, prefixed with journey step and sub-step ordinal.
+if (eventsOut is not null)
+{
+    EnsureParentDir(eventsOut);
+    File.WriteAllText(eventsOut, string.Join('\n', result.EventLines) + (result.EventLines.Count > 0 ? "\n" : ""));
+    Console.Error.WriteLine($"[journey-runner] wrote {result.EventLines.Count} event line(s) → {eventsOut}");
 }
 
 // Golden render buffers (Slice 8): one file per flagged ledger-row checkpoint. Only drivers with a
@@ -113,11 +125,12 @@ return 1;
 // --- arg parsing ---
 
 static (string driver, string script, string? outPath, string dataDir, int? seed, string url, bool dump,
-        string? goldensDir, string? screenshotsDir)?
+        string? goldensDir, string? screenshotsDir, string? eventsOut, bool replayCheck)?
     ParseArgs(string[] args)
 {
     string? driver = null, script = null, outPath = null, dataDir = null, url = "ws://localhost:9080";
-    string? goldensDir = null, screenshotsDir = null;
+    string? goldensDir = null, screenshotsDir = null, eventsOut = null;
+    bool replayCheck = false;
     int? seed = null;
     bool dump = false;
 
@@ -134,6 +147,8 @@ static (string driver, string script, string? outPath, string dataDir, int? seed
             case "--dump": dump = true; break;
             case "--goldens": goldensDir = Next(args, ref i); break;
             case "--screenshots": screenshotsDir = Next(args, ref i); break;
+            case "--events-out": eventsOut = Next(args, ref i); break;
+            case "--replay-check": replayCheck = true; break;
             default:
                 Console.Error.WriteLine($"Unknown argument: {args[i]}");
                 return null;
@@ -142,7 +157,7 @@ static (string driver, string script, string? outPath, string dataDir, int? seed
 
     if (driver is null || script is null) return null;
     dataDir ??= DefaultDataDir();
-    return (driver, script, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir);
+    return (driver, script, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck);
 }
 
 // Optional --label <text> for the compare modes (names the gate in PASS/FAIL output). Empty if absent.
@@ -179,5 +194,8 @@ static void PrintUsage() => Console.Error.WriteLine(
     "Usage: journey-runner --driver tui|godot|mock-godot --script <file> [--out <file>]\n" +
     "                      [--data <dir>] [--seed <int>] [--url ws://host:port] [--dump]\n" +
     "                      [--goldens <dir>] [--screenshots <dir>]\n" +
+    "                      [--events-out <file>] [--replay-check]\n" +
     "  --goldens <dir>      write a TUI character-buffer golden per golden-flagged checkpoint (tui driver)\n" +
-    "  --screenshots <dir>  save a Godot viewport PNG per golden-flagged checkpoint (godot driver)");
+    "  --screenshots <dir>  save a Godot viewport PNG per golden-flagged checkpoint (godot driver)\n" +
+    "  --events-out <file>  write the event golden: `<journeyStep>:<k> <step> <seq> <Kind> field=value…` per line\n" +
+    "  --replay-check       replay the intent log on a fresh session; VMs and events must be identical (tui, mock-godot)");

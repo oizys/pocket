@@ -16,6 +16,13 @@
 #                      target demo's committed goldens (VM checkpoint stream + TUI ledger-row
 #                      buffers). The pre-push demo gate. (Depends on `parity`, so it covers smoke too.)
 #
+# Event stream (two-layer Phase 1, Slice 1.7): every run also writes its SimEvent stream (`--events-out`,
+# one `<journeyStep>:<k> <step> <seq> <Kind> field=value…` line per event, see tools/journey-runner/README.md)
+# and runs the replay gate (`--replay-check`: replay the session's intent log from the initial profile and
+# assert the identical VM and event stream at every checkpoint). `parity` diffs the smoke event streams
+# cross-driver; `parity-full` does the same for the target demo and regression-checks
+# journeys/goldens/target-demo.events.
+#
 # Supporting:
 #   make record-goldens  regenerate the committed goldens after an INTENTIONAL journey/state change.
 #   make parity-godot    the full journey against a live Godot build (needs a Godot runtime — Aaron's
@@ -39,46 +46,56 @@ test:
 	dotnet test Pockets.sln
 
 ## FAST parity gate: run the smoke journey on the TUI driver (real headless GameView) and the
-## mock-transport Godot driver (shared debug-command handler), then diff the checkpoint streams.
-## Both runs also assert the invariant pack after every step. Fails if either run fails or the
-## streams diverge.
+## mock-transport Godot driver (shared debug-command handler), then diff the checkpoint and event
+## streams. Both runs also assert the invariant pack after every step and the replay gate at the end.
+## Fails if either run fails or the streams diverge.
 parity:
-	dotnet run --project $(RUNNER) -- --driver tui        --script $(SMOKE) --out $(OUT)/smoke.tui.checkpoints
-	dotnet run --project $(RUNNER) -- --driver mock-godot --script $(SMOKE) --out $(OUT)/smoke.mock-godot.checkpoints
+	dotnet run --project $(RUNNER) -- --driver tui        --script $(SMOKE) --out $(OUT)/smoke.tui.checkpoints        --events-out $(OUT)/smoke.tui.events        --replay-check
+	dotnet run --project $(RUNNER) -- --driver mock-godot --script $(SMOKE) --out $(OUT)/smoke.mock-godot.checkpoints --events-out $(OUT)/smoke.mock-godot.events --replay-check
 	dotnet run --project $(RUNNER) -- --compare $(OUT)/smoke.tui.checkpoints $(OUT)/smoke.mock-godot.checkpoints --label "smoke cross-driver"
+	dotnet run --project $(RUNNER) -- --compare $(OUT)/smoke.tui.events      $(OUT)/smoke.mock-godot.events      --label "smoke cross-driver events"
 
 ## FULL demo gate: the complete 30-minute target-demo journey on tui + mock-godot, cross-driver
-## diffed, then regression-checked against the committed goldens — the VM checkpoint stream
-## (journeys/goldens/target-demo.checkpoints) and the TUI ledger-row buffers
+## diffed (checkpoints and events), then regression-checked against the committed goldens — the VM
+## checkpoint stream (journeys/goldens/target-demo.checkpoints), the event stream
+## (journeys/goldens/target-demo.events) and the TUI ledger-row buffers
 ## (journeys/goldens/buffers/*.txt, captured at each progressive-UI materialization). Depends on
 ## `parity`, so a single `make parity-full` runs BOTH journeys on both drivers. A golden mismatch
 ## means either a regression or an intentional change — in the latter case run `make record-goldens`.
 parity-full: parity
-	dotnet run --project $(RUNNER) -- --driver tui        --script $(FULL) --out $(OUT)/target-demo.tui.checkpoints --goldens $(OUT)/buffers
-	dotnet run --project $(RUNNER) -- --driver mock-godot --script $(FULL) --out $(OUT)/target-demo.mock-godot.checkpoints
+	dotnet run --project $(RUNNER) -- --driver tui        --script $(FULL) --out $(OUT)/target-demo.tui.checkpoints        --events-out $(OUT)/target-demo.tui.events        --replay-check --goldens $(OUT)/buffers
+	dotnet run --project $(RUNNER) -- --driver mock-godot --script $(FULL) --out $(OUT)/target-demo.mock-godot.checkpoints --events-out $(OUT)/target-demo.mock-godot.events --replay-check
 	dotnet run --project $(RUNNER) -- --compare      $(OUT)/target-demo.tui.checkpoints $(OUT)/target-demo.mock-godot.checkpoints --label "target-demo cross-driver"
+	dotnet run --project $(RUNNER) -- --compare      $(OUT)/target-demo.tui.events      $(OUT)/target-demo.mock-godot.events      --label "target-demo cross-driver events"
 	dotnet run --project $(RUNNER) -- --compare      $(GOLDENS)/target-demo.checkpoints $(OUT)/target-demo.tui.checkpoints          --label "golden: VM checkpoint stream"
+	dotnet run --project $(RUNNER) -- --compare      $(GOLDENS)/target-demo.events      $(OUT)/target-demo.tui.events               --label "golden: event stream"
 	dotnet run --project $(RUNNER) -- --compare-dirs $(GOLDENS)/buffers                 $(OUT)/buffers                                --label "golden: TUI ledger-row buffers"
 	@echo "PARITY-FULL OK — target demo green on both drivers, goldens clean"
 
 ## Regenerate the committed goldens from the target-demo journey (TUI driver). The VM checkpoint
 ## stream is driver-independent (byte-identical across drivers by construction), so recording it
-## from tui is canonical; the buffer goldens are TUI-only render surfaces. Run this ONLY after an
+## from tui is canonical (so is the event stream, diffed cross-driver by `parity-full`); the buffer
+## goldens are TUI-only render surfaces. Run this ONLY after an
 ## intentional journey/state change, then commit journeys/goldens/.
 record-goldens:
-	dotnet run --project $(RUNNER) -- --driver tui --script $(FULL) --out $(GOLDENS)/target-demo.checkpoints --goldens $(GOLDENS)/buffers
-	@echo "Recorded goldens → $(GOLDENS)/ (VM stream + TUI ledger-row buffers). Review the diff, then commit."
+	dotnet run --project $(RUNNER) -- --driver tui --script $(FULL) --out $(GOLDENS)/target-demo.checkpoints --events-out $(GOLDENS)/target-demo.events --goldens $(GOLDENS)/buffers
+	@echo "Recorded goldens → $(GOLDENS)/ (VM stream + event stream + TUI ledger-row buffers). Review the diff, then commit."
 
 ## Real-Godot pass, EXTENDED TO THE FULL JOURNEY (Slice 8). Requires a running Godot build exposing
 ## the debug WebSocket server on port 9080 (a machine with a Godot .NET runtime — NOT this WSL env;
-## see design/parity-drift-report.md). Diffs the live Godot stream against the TUI baseline and, at
+## see design/parity-drift-report.md). Start Godot FRESH (no input before the run): bag names in the event
+## stream (`bag#N`) count from the controller's first event. Diffs the live Godot checkpoint and event
+## streams against the TUI baseline and the event stream against the golden (the replay gate needs an
+## in-process session, so it runs on the tui leg only) and, at
 ## each golden-flagged ledger row, saves a viewport screenshot into $(SHOTS)/ — the Godot render
 ## golden set for a vision-model pass. The screenshot capture is scripted here but only runs where a
 ## Godot viewport exists; it never blocks the in-process gates above.
 parity-godot:
-	dotnet run --project $(RUNNER) -- --driver tui   --script $(FULL) --out $(OUT)/target-demo.tui.checkpoints
-	dotnet run --project $(RUNNER) -- --driver godot --script $(FULL) --out $(OUT)/target-demo.godot.checkpoints --url ws://localhost:9080 --screenshots $(SHOTS)
+	dotnet run --project $(RUNNER) -- --driver tui   --script $(FULL) --out $(OUT)/target-demo.tui.checkpoints   --events-out $(OUT)/target-demo.tui.events --replay-check
+	dotnet run --project $(RUNNER) -- --driver godot --script $(FULL) --out $(OUT)/target-demo.godot.checkpoints --events-out $(OUT)/target-demo.godot.events --url ws://localhost:9080 --screenshots $(SHOTS)
 	dotnet run --project $(RUNNER) -- --compare $(OUT)/target-demo.tui.checkpoints $(OUT)/target-demo.godot.checkpoints --label "tui vs live-godot"
+	dotnet run --project $(RUNNER) -- --compare $(OUT)/target-demo.tui.events      $(OUT)/target-demo.godot.events      --label "tui vs live-godot events"
+	dotnet run --project $(RUNNER) -- --compare $(GOLDENS)/target-demo.events      $(OUT)/target-demo.godot.events      --label "golden: event stream (live-godot)"
 	@echo "Godot ledger-row screenshots → $(SHOTS)/"
 
 clean-parity:

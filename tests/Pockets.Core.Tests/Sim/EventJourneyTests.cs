@@ -129,4 +129,31 @@ public class EventJourneyTests
         var kinds = first.Select(l => l.Split(' ')[2]).ToHashSet();
         Assert.Superset(new HashSet<string> { "IntentApplied", "CursorMoved", "TimeAdvanced" }, kinds);
     }
+
+    /// <summary>
+    /// The frontend stream (every DebugCommandHandler response's <c>events</c>, one EventText per run) equals
+    /// the stream of re-stepping the recorded intents with <see cref="Simulation.Step"/> per sub-intent — an
+    /// event-only no-op (a refused peek during a beat) is in the intent log, so replay loses nothing.
+    /// </summary>
+    [Theory]
+    [InlineData("smoke.journey.json")]
+    [InlineData("target-demo.journey.json")]
+    public void Journey_FrontendEventStream_EqualsReplayedStream(string journeyFile)
+    {
+        var controller = new GameController(NewDemoSession());
+        var path = Path.Combine(TestPaths.RepoRoot, "journeys", journeyFile);
+        var steps = ((JsonObject)JsonNode.Parse(File.ReadAllText(path))!)["steps"]!.AsArray().Select(n => (JsonObject)n!);
+        var frontend = new List<string>();
+        foreach (var cmd in steps.SelectMany(CommandsFor))
+            frontend.AddRange(JsonNode.Parse(DebugCommandHandler.Handle(controller, cmd))!["events"]!.AsArray()
+                .Select(e => e!.GetValue<string>()));
+
+        var text = new EventText();
+        var replayed = new List<string>();
+        Replay(controller.Session.IntentLog.Select(e => e.Intent).ToList(),
+            (_, _, result) => replayed.AddRange(result.Events.Select(text.Line)));
+
+        Assert.NotEmpty(frontend);
+        Assert.Equal(replayed, frontend);
+    }
 }

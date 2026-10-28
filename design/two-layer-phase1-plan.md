@@ -298,7 +298,7 @@ dependencies are given in §Order below.
 - **Risk:** low to medium. The Godot side cannot be run in WSL; it is covered by mock-godot,
   which shares `DebugCommandHandler`.
 
-### Slice 1.7 — Event-stream golden + replay gate in parity
+### Slice 1.7 — Event-stream golden + replay gate in parity ✓ landed (see §Addendum — Slice 1.7)
 - The journey runner gets `--events-out <file>`: one canonical line per event
   (`step seq kind payload…`, invariant culture, no GUIDs per P1-D8), emitted per journey step.
 - Makefile changes:
@@ -741,3 +741,47 @@ re-recorded.
 - For replay (`--replay-check`), `EventJourneyTests.Replay` is still the loop. Note that its stream comes from
   `Simulation.Step` per sub-intent and the frontends' stream comes from `GameSession.ApplyTraced`. They should
   match, but compare them once before you pin a golden to either.
+
+## Addendum — Slice 1.7 as built (2026-10-28)
+
+**Golden-neutral for the existing goldens.** The VM checkpoint golden and the 11 TUI buffer goldens are byte-identical:
+`make record-goldens` was run once to write the new file, and `git status` showed only `?? journeys/goldens/target-demo.events`.
+That makes it the one golden this phase adds. No action-log text changed (P1-D6).
+
+**Pre-pin cross-check (asked for in the 1.6 handoff).** Before pinning the golden I compared three streams on both journeys:
+1. the frontend stream: every `DebugCommandHandler` response's `events`;
+2. `EventJourneyTests.Replay`, one `Simulation.Step` per sub-intent;
+3. `GameSession.ApplyTraced` per logged intent.
+
+Streams 2 and 3 were identical, and the VM matched. **Stream 1 had extra lines**: smoke 149 vs 148, target-demo 305 vs 303.
+Each extra line was a lone `Bumped … reason=FailedPeek`. It came from a `Peek` on an enter-only bag while the failed-peek beat
+was already fired: the 1.5 "bump with no state change" case. `ApplyTraced` returned `this` for an unchanged session and left
+the intent out of `IntentLog`, so replay could reproduce the state but not the cue.
+
+**Fix:** `ApplyTraced` now logs an intent when it changed the session **or emitted at least one event**. It still returns the same
+instance when it did neither. This changes no gameplay and no golden, because the intent log is not in the VM and no undo is
+pushed. It does change the shell's `IntentLog` rule (1.3: "an intent that changed nothing is left out") to "an intent that changed
+nothing *and emitted nothing* is left out". After the fix, all three streams are identical, and so are tui vs mock-godot (below).
+
+| Piece | Where | Notes |
+|---|---|---|
+| Golden line format | `Sim/ReplayCheck.cs` → `EventGolden.Lines` | `<journeyStep>:<k> <step> <seq> <Kind> field=value…`. The tail is the 1.5 `EventText` line, unchanged. `journeyStep` is the journey script's step index (the checkpoint stream's `step`; `-1` = start). `k` is the 0-based ordinal of the `Simulation.Step` within that journey step: it advances on every line whose seq is `0`, because every Step restarts Seq at 0. `(journeyStep, k, seq)` is unique; `(Step, Seq)` alone is not, since untimed intents share a step number with the next timed one. **Step and Seq are not renumbered** (contract). The prefix is computed from the lines alone, so live Godot over the wire produces it identically. Example: `72:0 25 0 Bumped loc=B bag=bag#1 at=(1,2) dir=- reason=FailedPeek`. |
+| `--events-out <file>` | `tools/journey-runner` | Writes `RunResult.EventLines` (each step's `DriverObservation.Events`, prefixed). Always LF, and the parent dir is created by the runner. Works for all three drivers (godot collects its lines from the responses, as in 1.6). One `EventText` per run (TuiDriver's own; one per controller in `DebugCommandHandler`), so `bag#N` names are stable. |
+| Replay gate `--replay-check` | `Sim/ReplayCheck.cs`, `JourneyRunnerCore` | `ISessionDriver` (tui, mock-godot) exposes the live `GameSession`. At the start and after every step the runner records a `ReplayBoundary(journeyStep, IntentLog.Count, VM json, event lines)`. After the run, `ReplayCheck.Run(profile.NewSession(), IntentLog, boundaries)` re-applies the log through the shell (`ApplyTraced`, one `EventText`) and checks the **VM and the event lines at every boundary**, plus the replayed `IntentLog` itself. Failures are prefixed `replay:`. godot has no in-process session, so the gate is skipped there with a note. It is also skipped if the journey stopped on a thrown action. |
+| Makefile | `Makefile` | **`parity`**: both drivers run with `--events-out --replay-check`, then a smoke cross-driver diff of the events. **`parity-full`**: the same for the target demo, plus `golden: event stream` against `journeys/goldens/target-demo.events`. **`record-goldens`**: also writes the events golden. **`parity-godot`**: the tui leg runs `--replay-check`; the godot leg writes `--events-out`; diffs tui vs live-godot events and the golden vs live-godot events. Every recipe is still plain `dotnet run` lines (Windows rule). |
+
+**Acceptance:**
+1. `make parity-full` is green with the new `journeys/goldens/target-demo.events` (305 lines, 21 kinds, no GUID).
+2. VM and buffer goldens unchanged.
+3. Replay passes on both journeys and both in-process drivers: smoke 65 intents, 76 checkpoints, 149 event lines; target-demo 141 intents, 156 checkpoints, 305 event lines. The tui and mock-godot event streams are byte-identical on both journeys.
+4. Mutation: `ReplayCheckTests.MutatedEvent_FailsTheGate_NamingTheJourneyStep` (both journeys), plus a dropped event, a mutated VM, a boundary past the log, and an altered log. A one-line mutated golden also fails `--compare` (checked by hand: `reason=Unnavigable` for `FailedPeek` → 1 diverging line, exit 1).
+- New tests: `ReplayCheckTests` (5 methods, 7 cases); `EventJourneyTests.Journey_FrontendEventStream_EqualsReplayedStream` (both journeys, pins the pre-pin cross-check); `PeekTests.Peek_OnEnterOnly_RepeatedRefusal_IsLoggedEvenWhenStateIsUnchanged`.
+- **Edited test (by design):** `PeekTests.FireFailedPeek_IsIdempotentAcrossCalls_AndDoesNotChangeCensus` asserted `Assert.Same(once, twice)` for a repeated refused peek. It now asserts the same `Current`, equal dialogue, and a log grown by one, because the repeat bumps and is logged. `IntentStepTests.NoOpIntent_ReturnsSameSession_AndIsNotLogged` is unchanged and green.
+- `dotnet test`: Core 987 (977 + 10), App 54, spikes 109. All green. Godot builds in WSL. No Godot file changed.
+
+**For Aaron (Windows, real Godot):** start the Godot build fresh, so no input reaches it before the run (the `bag#N` names count from the controller's first event). Then run `make parity-godot`. It now also diffs `artifacts/parity/target-demo.godot.events` against the tui stream and against the golden. A Godot build older than 1.6 fails the 1.6 `VerifyEvents` check, since it sends no `events`.
+
+**For 1.8 (event log + undo):**
+- The intent log now includes event-only intents. Undo truncation should cut the log by step *and* entry. A logged event-only intent pushes no undo snapshot, so "truncate to the snapshot's step" must keep or drop those entries consistently. The simplest rule is to record the log length with each snapshot.
+- Neither journey undoes, so the events golden should stay unchanged through 1.8 (its acceptance 4). `ReplayCheck` replays through the shell, so a journey with `Undo` would replay it too, once `Rewound` exists. It would then be a new golden line, so only after a decision.
+- `ReplayCheck` keeps one `EventText` across the replay. If 1.8 makes the `EventLog` the source of the frontend stream, the gate can compare against the log directly.

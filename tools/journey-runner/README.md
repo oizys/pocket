@@ -50,6 +50,7 @@ dotnet run --project tools/journey-runner -- \
   --script journeys/target-demo.journey.json \
   [--out artifacts/parity/tui.checkpoints] \
   [--goldens <dir>] [--screenshots <dir>] \
+  [--events-out <file>] [--replay-check] \
   [--data <dir>] [--seed <int>] [--url ws://localhost:9080] [--dump]
 ```
 
@@ -61,6 +62,30 @@ Exit code `0` = pass, `1` = a failed assertion / invariant / driver error, `2` =
 - `--screenshots <dir>` — at every `"golden": true` checkpoint, ask a screenshot-capable driver
   (real **godot** only) to save `<dir>/<label>.png` (the transport-local `screenshot` action). Other
   drivers note-skip; it never blocks the run.
+
+- `--events-out <file>` — write the run's event golden (below).
+- `--replay-check` — replay the run's intent log on a fresh session (tui, mock-godot); fails if any
+  step's view-model or event stream differs. Skipped with a note for `godot`.
+
+## Event golden + replay check (Phase 1 Slice 1.7)
+
+`--events-out` writes one line per simulation event, LF-terminated:
+
+```
+<journeyStep>:<k> <step> <seq> <Kind> field=value…
+```
+
+`<step> <seq> <Kind> field=value…` is the canonical `EventText` line (invariant culture, bags named
+`bag#N` by first appearance). `<journeyStep>` is the script step index (`-1` = the start observation) and
+`<k>` the 0-based ordinal of the `Simulation.Step` within that journey step (it advances whenever `seq`
+is `0`). The prefix exists because `(step, seq)` is not unique: untimed intents share a step number with
+the next timed one and every Step restarts `seq` at 0. It is derived from the lines alone, so every driver
+produces it identically; Step/Seq themselves are never renumbered. Streams are diffed across drivers with
+`--compare`.
+
+`--replay-check` records the intent count, view-model text and event lines at every step, then replays
+`GameSession.IntentLog` from `profile.NewSession()` and requires identical view-models and event streams
+at every boundary (and an identical replayed log). Failures are prefixed `replay:`.
 
 ## Drivers
 

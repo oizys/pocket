@@ -209,6 +209,27 @@ public class PeekTests
         Assert.Equal(BumpReason.FailedPeek, Assert.Single(again.Events.OfType<SimEvent.Bumped>()).Reason);
     }
 
+    /// <summary>
+    /// A refused peek that changes no state but bumps is an event-emitting no-op: it is still appended to
+    /// the IntentLog (so replay reproduces the Bumped event) while pushing no undo.
+    /// </summary>
+    [Fact]
+    public void Peek_OnEnterOnly_RepeatedRefusal_IsLoggedEvenWhenStateIsUnchanged()
+    {
+        var c = MakeController();
+        c.HandleKey(GameKey.Right); // to the pocket
+        c.HandleKey(GameKey.Peek);  // first refusal (the dialogue beat fires)
+        c.HandleKey(GameKey.Primary); // dismiss the beat
+
+        var before = c.Session;
+        var again = c.HandleKey(GameKey.Peek);
+
+        Assert.Single(again.Events.OfType<SimEvent.Bumped>());
+        Assert.Equal(before.IntentLog.Count + 1, c.Session.IntentLog.Count);
+        Assert.IsType<Intent.Peek>(c.Session.IntentLog[^1].Intent);
+        Assert.Equal(before.UndoDepth, c.Session.UndoDepth);
+    }
+
     [Fact]
     public void Peek_OnEnterOnly_DoesNotPushUndo()
     {
@@ -250,8 +271,11 @@ public class PeekTests
         Assert.True(once.Current.Dialogue.IsActive);
 
         var twice = once.Apply(new Intent.Peek(LocationId.B));
-        // Already queued/fired → same instance, no second copy in the queue.
-        Assert.Same(once, twice);
+        // Already queued/fired → state unchanged, no second copy in the queue. The repeat still bumps, so the
+        // session instance differs only by the logged intent (event-emitting no-op).
+        Assert.Same(once.Current, twice.Current);
+        Assert.Equal(once.Current.Dialogue, twice.Current.Dialogue);
+        Assert.Equal(once.IntentLog.Count + 1, twice.IntentLog.Count);
         Assert.Equal(censusBefore, InvariantChecker.Census(twice.Current));
     }
 }

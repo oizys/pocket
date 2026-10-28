@@ -63,9 +63,12 @@ public record GameSession(
 {
     /// <summary>
     /// The intent log (Slice 1.3; A6 "intents are the only input"): every intent <see cref="Apply"/> was handed
-    /// that changed the session, in order, with the step it landed in (<c>TickCount + 1</c> at the time).
-    /// Re-applying it to a fresh session of the same profile reproduces the session exactly; an intent that
-    /// changed nothing is left out, which replay never notices. Append-only; Slice 1.8 adds retention and
+    /// that changed the session or emitted at least one event, in order, with the step it landed in
+    /// (<c>TickCount + 1</c> at the time). Re-applying it to a fresh session of the same profile reproduces
+    /// the session and its event stream exactly; an intent that changed nothing and emitted nothing is left
+    /// out, which replay never notices. An intent whose only effect is a cue (a refused peek during a dialogue
+    /// beat bumps without changing state) is logged so replay reproduces the stream; it is not in the
+    /// view-model, so view-model goldens are unaffected. Append-only; Slice 1.8 adds retention and
     /// undo truncation.
     /// </summary>
     public ImmutableList<(int Step, Intent Intent)> IntentLog { get; init; } = ImmutableList<(int Step, Intent Intent)>.Empty;
@@ -134,7 +137,8 @@ public record GameSession(
     /// Applies one intent (the shell's dispatcher, the plan's <c>GameSession.Step(intents)</c>): runs it
     /// through <see cref="Simulation.Step"/> (a composite <see cref="Intent.Click"/> / <see cref="Intent.CommitSplit"/>
     /// as its sub-intents, one step each), writes the action log, pushes undo, and records the intent in
-    /// <see cref="IntentLog"/>. Returns this same session when the intent changed nothing.
+    /// <see cref="IntentLog"/>. Returns this same session when the intent changed nothing and emitted no
+    /// events; an intent that only emitted events (a cue) is still logged, so the returned session differs.
     /// </summary>
     public GameSession Apply(Intent intent) => ApplyTraced(intent).Session;
 
@@ -142,12 +146,14 @@ public record GameSession(
     /// <see cref="Apply"/>, also returning how the (last) step resolved — the controller reads it to pick its
     /// status message — and the events of every step it ran, in order (Slice 1.5): the controller moves its
     /// panel focus and raises its bump cue from them. The trace is null for <see cref="Intent.Undo"/> and
-    /// empty composites.
+    /// empty composites. The intent is logged when it changed the session or emitted at least one event (an
+    /// event-only no-op such as a refused peek is replayable); it returns this same instance when it did
+    /// neither.
     /// </summary>
     internal (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) ApplyTraced(Intent intent)
     {
         var (next, trace, events) = Dispatch(intent);
-        if (next == this)
+        if (next == this && events.IsEmpty)
             return (this, trace, events);
         return (next with { IntentLog = IntentLog.Add((TickCount + 1, intent)) }, trace, events);
     }

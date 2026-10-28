@@ -12,7 +12,7 @@ namespace Pockets.JourneyRunner;
 /// in environments (like WSL) where the Godot editor/runtime can't run headless. The real
 /// <see cref="GodotWebSocketDriver"/> talks to a running Godot binary on a machine that has one.
 /// </summary>
-public sealed class MockGodotDriver : IJourneyDriver
+public sealed class MockGodotDriver : IJourneyDriver, ISessionDriver
 {
     private readonly GameController _controller;
 
@@ -22,6 +22,9 @@ public sealed class MockGodotDriver : IJourneyDriver
     public MockGodotDriver(GameController controller) => _controller = controller;
 
     public string Name => "mock-godot";
+
+    /// <inheritdoc />
+    public GameSession Session => _controller.Session;
 
     public DriverObservation Observe()
     {

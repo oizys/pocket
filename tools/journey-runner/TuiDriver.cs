@@ -19,7 +19,7 @@ namespace Pockets.JourneyRunner;
 ///
 /// Terminal.Gui's Application is global/static, so at most one TuiDriver may exist at a time.
 /// </summary>
-public sealed class TuiDriver : IJourneyDriver
+public sealed class TuiDriver : IJourneyDriver, ISessionDriver
 {
     private readonly GameView _view;
     private readonly int _cols;
@@ -51,6 +51,9 @@ public sealed class TuiDriver : IJourneyDriver
     }
 
     public string Name => "tui";
+
+    /// <inheritdoc />
+    public GameSession Session => _view.Controller.Session;
 
     public DriverObservation Observe()
     {
