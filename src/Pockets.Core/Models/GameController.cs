@@ -8,7 +8,9 @@ namespace Pockets.Core.Models;
 /// checkpoints/goldens) — it lives on the per-frontend <see cref="GameController"/> and is consumed
 /// on read (<see cref="GameController.ConsumeFeedbackPulse"/>). The demo's only pulse today is the
 /// enter-only <see cref="FailedPeek"/> shake/flash; the beat teaches the rule once, the pulse fires
-/// every time so the tell survives after the dialogue is spent.
+/// every time so the tell survives after the dialogue is spent. Since Slice 1.5 the controller raises it
+/// from the step's <see cref="SimEvent.Bumped"/> events; Slice 1.6 moves the frontends onto the events and
+/// deletes it.
 /// </summary>
 public enum FeedbackPulse
 {
@@ -241,7 +243,8 @@ public class GameController
         {
             // A move refused by an unnavigable tree queues the one-shot bump shake/flash (the fire-once
             // axe-absence beat is handled inside the step; this cue fires on every bump).
-            if (Send(new Intent.Move(_focus, direction.Value))?.Route == Route.Bumped)
+            Send(new Intent.Move(_focus, direction.Value));
+            if (Bumped(BumpReason.Unnavigable))
                 _feedbackPulse = FeedbackPulse.Bump;
             return ControllerResult.Handle(_session, $"Move: {direction.Value} ({_focus})");
         }
@@ -262,11 +265,9 @@ public class GameController
         // Leave/close — if focused on C or W, close that panel. Otherwise leave bag.
         if (key == GameKey.LeaveBag)
         {
-            if (Send(new Intent.Leave(_focus))?.Route == Route.LeaveClosePanel)
-            {
-                _focus = LocationId.B;
+            Send(new Intent.Leave(_focus));
+            if (FollowFocus())
                 return ControllerResult.Handle(_session, $"Closed panel, focus → B");
-            }
             return ControllerResult.Handle(_session, "Action: LeaveBag");
         }
 
@@ -285,43 +286,54 @@ public class GameController
 
         if (intent is not null)
         {
-            FollowFocus(Send(intent));
+            Send(intent);
+            FollowFocus();
             return ControllerResult.Handle(_session, $"Action: {key}");
         }
 
         return ControllerResult.Unhandled(_session);
     }
 
+    /// <summary>The events of the last intent <see cref="Send"/> handed to the session (Slice 1.5).</summary>
+    private ImmutableArray<SimEvent> _lastEvents = ImmutableArray<SimEvent>.Empty;
+
     /// <summary>
     /// Hands one intent to the session (the only way the controller changes it) and returns how the
-    /// step resolved, for focus, status and cue decisions.
+    /// step resolved, for the status message. Its events are kept in <see cref="_lastEvents"/>: focus and
+    /// the bump cue are read from them.
     /// </summary>
     private StepTrace? Send(Intent intent)
     {
-        var (session, trace) = _session.ApplyTraced(intent);
+        var (session, trace, events) = _session.ApplyTraced(intent);
         _session = session;
+        _lastEvents = events;
         return trace;
     }
 
+    /// <summary>True when the last intent emitted a <see cref="SimEvent.Bumped"/> for <paramref name="reason"/>.</summary>
+    private bool Bumped(BumpReason reason) =>
+        _lastEvents.OfType<SimEvent.Bumped>().Any(b => b.Reason == reason);
+
     /// <summary>
-    /// Moves focus after a routed Primary the way the controller always did: a panel that opened takes
-    /// focus (C for a facility or a peeked toolbar bag, W for a wilderness), closing the peeked toolbar bag
-    /// returns focus to B, and every other outcome leaves focus where it is.
+    /// Moves focus by the last intent's panel events, the way the controller always did: a C or W panel
+    /// that opened takes focus (a facility or a peeked bag → C, a wilderness → W); a panel that closed
+    /// returns focus to B; anything else leaves focus where it is. Returns true when a panel closed.
     /// </summary>
-    private void FollowFocus(StepTrace? trace)
+    private bool FollowFocus()
     {
-        switch (trace?.Route)
+        foreach (var e in _lastEvents)
         {
-            case Route.OpenContainer or Route.ToolbarPeek:
-                _focus = LocationId.C;
-                break;
-            case Route.OpenWorld:
-                _focus = LocationId.W;
-                break;
-            case Route.ToolbarClose:
-                _focus = LocationId.B;
-                break;
+            switch (e)
+            {
+                case SimEvent.PanelOpened { Loc: LocationId.C or LocationId.W } opened:
+                    _focus = opened.Loc;
+                    return false;
+                case SimEvent.PanelClosed:
+                    _focus = LocationId.B;
+                    return true;
+            }
         }
+        return false;
     }
 
     /// <summary>
@@ -337,10 +349,12 @@ public class GameController
     {
         var at = _focus;
         var trace = Send(new Intent.Peek(at));
+        FollowFocus();
+        if (Bumped(BumpReason.FailedPeek))
+            _feedbackPulse = FeedbackPulse.FailedPeek;
         switch (trace?.Route)
         {
             case Route.PeekClosePanel:
-                _focus = LocationId.B;
                 return ControllerResult.Handle(_session, $"Peek: closed {at}");
             case Route.PeekNothingToClose:
                 return ControllerResult.Handle(_session, "Peek: nothing to close");
@@ -349,13 +363,10 @@ public class GameController
             case Route.PeekBagNotFound:
                 return ControllerResult.Handle(_session, "Peek: bag not found");
             case Route.PeekRefused:
-                _feedbackPulse = FeedbackPulse.FailedPeek;
                 return ControllerResult.Handle(_session, "Can't just peek at this one — press E to enter.");
             case Route.PeekCloseBag:
-                _focus = LocationId.B;
                 return ControllerResult.Handle(_session, $"Peek: closed {trace.Detail}");
             case Route.PeekOpen:
-                _focus = LocationId.C;
                 return ControllerResult.Handle(_session, $"Peek: {trace.Detail}");
             default:
                 return ControllerResult.Handle(_session, "Peek: could not open");
@@ -391,9 +402,9 @@ public class GameController
         if (_session.Current.Locations.Has(panelId))
             _focus = panelId;
 
-        var trace = Send(new Intent.Click(_focus, pos, type));
+        Send(new Intent.Click(_focus, pos, type));
         if (type == ClickType.Primary)
-            FollowFocus(trace);
+            FollowFocus();
 
         var clickName = type == ClickType.Primary ? "LClick" : "RClick";
         return ControllerResult.Handle(_session, $"{clickName} {_focus}: ({pos.Row},{pos.Col})");
@@ -410,11 +421,9 @@ public class GameController
     /// </summary>
     public ControllerResult HandleBackClick()
     {
-        if (Send(new Intent.Leave(_focus))?.Route == Route.LeaveClosePanel)
-        {
-            _focus = LocationId.B;
+        Send(new Intent.Leave(_focus));
+        if (FollowFocus())
             return ControllerResult.Handle(_session, "Closed panel");
-        }
         return ControllerResult.Handle(_session, "Back (click)");
     }
 

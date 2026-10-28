@@ -139,22 +139,24 @@ public record GameSession(
     public GameSession Apply(Intent intent) => ApplyTraced(intent).Session;
 
     /// <summary>
-    /// <see cref="Apply"/>, also returning how the (last) step resolved — the controller reads it to move
-    /// its panel focus and pick its status message. Null for <see cref="Intent.Undo"/> and empty composites.
+    /// <see cref="Apply"/>, also returning how the (last) step resolved — the controller reads it to pick its
+    /// status message — and the events of every step it ran, in order (Slice 1.5): the controller moves its
+    /// panel focus and raises its bump cue from them. The trace is null for <see cref="Intent.Undo"/> and
+    /// empty composites.
     /// </summary>
-    internal (GameSession Session, StepTrace? Trace) ApplyTraced(Intent intent)
+    internal (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) ApplyTraced(Intent intent)
     {
-        var (next, trace) = Dispatch(intent);
+        var (next, trace, events) = Dispatch(intent);
         if (next == this)
-            return (this, trace);
-        return (next with { IntentLog = IntentLog.Add((TickCount + 1, intent)) }, trace);
+            return (this, trace, events);
+        return (next with { IntentLog = IntentLog.Add((TickCount + 1, intent)) }, trace, events);
     }
 
     /// <summary>Routes one intent: undo to the shell, a composite to its sub-intents, anything else to one step.</summary>
-    private (GameSession Session, StepTrace? Trace) Dispatch(Intent intent)
+    private (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) Dispatch(Intent intent)
     {
         if (intent is Intent.Undo)
-            return (UndoCore(), null);
+            return (UndoCore(), null, ImmutableArray<SimEvent>.Empty);
 
         var subs = Simulation.Expand(ToSimState(), intent);
         if (subs.Count == 1 && ReferenceEquals(subs[0], intent))
@@ -162,25 +164,31 @@ public record GameSession(
 
         var session = this;
         StepTrace? last = null;
+        var all = ImmutableArray.CreateBuilder<SimEvent>();
         foreach (var sub in subs)
-            (session, last) = session.RunStep(sub);
-        return (session, last);
+        {
+            (session, last, var events) = session.RunStep(sub);
+            all.AddRange(events);
+        }
+        return (session, last, all.ToImmutable());
     }
 
     /// <summary>
     /// Shell around one <see cref="Simulation.Step"/> of one intent. When the step changed state it counts
     /// it and writes the new L1 state back; then, by how the intent resolved, it pushes the undo snapshot and
     /// appends the action-log lines exactly as the pre-1.3 methods did: <c>FAILED: …</c> for a rejected tool,
-    /// otherwise the action's line followed by any craft-completion lines.
+    /// otherwise the action's line followed by any craft-completion lines. A step that emitted events but
+    /// changed nothing (a bump when no counter moved) is not a change.
     /// </summary>
-    private (GameSession Session, StepTrace? Trace) RunStep(Intent intent)
+    private (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) RunStep(Intent intent)
     {
         var traces = new List<StepTrace>(1);
-        var result = Simulation.StepTraced(ToSimState(), new[] { intent }, traces);
+        var pre = ToSimState();
+        var result = Simulation.StepTraced(pre, new[] { intent }, traces);
         var trace = traces.Count > 0 ? traces[^1] : null;
         var events = result.Events;
         var rejected = events.Length > 0 ? events[0] as SimEvent.IntentRejected : null;
-        var changed = events.Length > 0 && rejected is null;
+        var changed = rejected is null && result.State != pre;
 
         var session = this;
         if (changed)
@@ -189,7 +197,7 @@ public record GameSession(
             session = WithSimState(result.State);
         }
         if (trace is null)
-            return (session, null);
+            return (session, null, events);
 
         // Push the pre-step snapshot (a tool run at a panel pushes the swapped frame, as RunAt did).
         GameSession Undoable(GameState snapshot) => session with { UndoStack = PushWithLimit(UndoStack, snapshot) };
@@ -211,11 +219,11 @@ public record GameSession(
                 var inner = trace.Inner ?? intent;
                 var view = LocationOf(inner) is { } at ? Simulation.SwapIn(Current, at) : Current;
                 if (rejected is not null)
-                    session = Log(new[] { $"FAILED: {ToolLog(inner, view, trace.Detail)} — {rejected.Reason}" });
+                    session = Log(new[] { $"FAILED: {ToolLog(inner, view, trace.Detail, events)} — {rejected.Reason}" });
                 else if (changed)
                 {
                     session = Undoable(view);
-                    session = Log(WithCompletions(ToolLog(inner, view, trace.Detail)));
+                    session = Log(WithCompletions(ToolLog(inner, view, trace.Detail, events)));
                 }
                 break;
             }
@@ -261,7 +269,7 @@ public record GameSession(
                 break;
         }
 
-        return (session, trace);
+        return (session, trace, events);
     }
 
     /// <summary>The target location of a tool intent (null for location-free intents such as DSL).</summary>
@@ -287,7 +295,7 @@ public record GameSession(
     /// A tool's action-log line, named from <paramref name="v"/> — the pre-step state in the tool's own frame
     /// (B swapped to the tool's location) — exactly as each pre-1.3 <c>Execute*</c> method's log lambda read it.
     /// </summary>
-    private string ToolLog(Intent tool, GameState v, string? detail)
+    private static string ToolLog(Intent tool, GameState v, string? detail, ImmutableArray<SimEvent> events)
     {
         var cell = v.CurrentCell;
         var handFull = v.HasItemsInHand;
@@ -318,7 +326,7 @@ public record GameSession(
             Intent.ModalSplit m => FormatModalSplitLog(cell.Stack, m.LeftCount),
             Intent.Sort => "Sort: reorganized bag",
             Intent.Harvest => cell.Stack is { } item ? $"Harvest: {item.Count} {item.ItemType.Name}" : "Harvest: empty cell",
-            Intent.AcquireRandom => AcquireLog(v),
+            Intent.AcquireRandom => AcquireLog(v, events),
             Intent.Dsl d => d.Expression + (detail ?? ""),
             _ => throw new InvalidOperationException($"No tool log for {tool.GetType().Name}")
         };
@@ -343,19 +351,15 @@ public record GameSession(
     };
 
     /// <summary>
-    /// The AcquireRandom log line (P1-D6, unchanged text). The shell previews the step's exact draw (same RNG,
-    /// same step: pure) on the pre-step state to name the acquired stack. The diff reads the <i>root</i> grid,
-    /// so inside a nested bag the line says "added random item" — kept as is. Slice 1.5's events can replace this.
+    /// The AcquireRandom log line (P1-D6, unchanged text), named from the step's <see cref="SimEvent.Acquired"/>
+    /// event (Slice 1.5; it replaces the 1.1 preview, which re-ran the draw on the pre-step state). Only an
+    /// arrival in the <i>root</i> bag of the tool's frame names the item, so inside a nested bag the line still
+    /// says "added random item", exactly as the old root-grid diff did.
     /// </summary>
-    private string AcquireLog(GameState v)
+    private static string AcquireLog(GameState v, ImmutableArray<SimEvent> events)
     {
-        var result = v.ToolAcquireRandom(NextStepRandom(SimStream.Acquire));
-        var newItem = result.State.RootBag.Grid.Cells
-            .Where(c => !c.IsEmpty)
-            .Select(c => c.Stack!)
-            .Except(v.RootBag.Grid.Cells.Where(c => !c.IsEmpty).Select(c => c.Stack!))
-            .FirstOrDefault();
-        return newItem != null ? $"Acquire: +1 {newItem.ItemType.Name}" : "Acquire: added random item";
+        var acquired = events.OfType<SimEvent.Acquired>().FirstOrDefault(e => e.Cell.Bag == v.RootBagId);
+        return acquired is not null ? $"Acquire: +1 {acquired.Item.Name}" : "Acquire: added random item";
     }
 
     /// <summary>
@@ -507,12 +511,6 @@ public record GameSession(
     /// </summary>
     public SimState ToSimState() => new(Current, TickCount, Elapsed, SplitMode, RecipeMenu, Content, WorldRng);
 
-    /// <summary>
-    /// A <see cref="System.Random"/> over <paramref name="stream"/> positioned exactly where the next
-    /// <see cref="Simulation.Step"/> will draw (step <c>TickCount + 1</c>). Used by the shell to preview a draw Step makes.
-    /// </summary>
-    private SimRandom NextStepRandom(SimStream stream) => WorldRng.AtStep(TickCount + 1).AsRandom(stream);
-
     /// <summary>Writes a stepped <see cref="SimState"/> back onto the session's L1 fields.</summary>
     private GameSession WithSimState(SimState s) => this with
     {
@@ -529,14 +527,27 @@ public record GameSession(
     /// <see cref="SimEvent.CraftCompleted"/> events, in emission (facility) order. The recipe name is
     /// resolved against the facility's recipe set under the <i>pre-step</i> known recipes, as the tick
     /// loop itself does, falling back to the recipe id.
+    /// <para>
+    /// <b>Kept quirk (Slice 1.5):</b> a <see cref="SimEvent.CraftAborted"/> also writes a "crafted" line. Before
+    /// 1.5 the rule reported any "was crafting, now idle" transition as a completion, aborts included, and the
+    /// log text must not change (P1-D6). The events now tell the two apart; fixing the line is a decision.
+    /// </para>
     /// </summary>
     private IEnumerable<string> CompletionLogs(ImmutableArray<SimEvent> events, GameState after) =>
-        events.OfType<SimEvent.CraftCompleted>().Select(e =>
-        {
-            var environment = (after.Store.GetById(e.FacilityBagId) ?? Current.Store.GetById(e.FacilityBagId))!.EnvironmentType;
-            var recipe = GetRecipesForFacility(environment).FirstOrDefault(r => r.Id == e.RecipeId);
-            return $"✦ {environment} crafted: {recipe?.Name ?? e.RecipeId}";
-        });
+        events
+            .Select(e => e switch
+            {
+                SimEvent.CraftCompleted c => (Facility: c.FacilityBagId, RecipeId: (string?)c.RecipeId),
+                SimEvent.CraftAborted a => (Facility: a.Facility, RecipeId: (string?)a.RecipeId),
+                _ => (Facility: Guid.Empty, RecipeId: (string?)null)
+            })
+            .Where(c => c.RecipeId is not null)
+            .Select(c =>
+            {
+                var environment = (after.Store.GetById(c.Facility) ?? Current.Store.GetById(c.Facility))!.EnvironmentType;
+                var recipe = GetRecipesForFacility(environment).FirstOrDefault(r => r.Id == c.RecipeId);
+                return $"✦ {environment} crafted: {recipe?.Name ?? c.RecipeId}";
+            });
 
     /// <summary>
     /// Returns recipes applicable to a facility by environment type, under the current known recipes.

@@ -20,8 +20,34 @@ public sealed class PlantGrowthRule : ITickRule
     public TimeClass Time => TimeClass.ClosedForm;
 
     /// <inheritdoc />
-    public ImmutableArray<Type> EventKinds { get; } = ImmutableArray<Type>.Empty;
+    public ImmutableArray<Type> EventKinds { get; } = ImmutableArray.Create(typeof(SimEvent.PlantGrew));
 
-    /// <inheritdoc />
-    public GameState Apply(GameState state, RuleContext context) => PlantLogic.TickPlants(state);
+    /// <summary>
+    /// Grows every plant one step (<see cref="PlantLogic.TickPlants"/>) and emits one
+    /// <see cref="SimEvent.PlantGrew"/> per plant that grew, bags in canonical order, cells by index.
+    /// </summary>
+    public GameState Apply(GameState state, RuleContext context)
+    {
+        var next = PlantLogic.TickPlants(state);
+        if (ReferenceEquals(next.Store, state.Store))
+            return next;
+
+        var grown = next.Store.Entries
+            .Where(e => state.Store.GetById(e.Key) is { } old && !ReferenceEquals(old.Grid, e.Value.Grid))
+            .Select(e => e.Key)
+            .ToList();
+        var step = context.Step;
+        foreach (var id in EventDeriver.CanonicalOrder(next, grown))
+        {
+            var (a, b) = (state.Store.GetById(id)!.Grid, next.Store.GetById(id)!.Grid);
+            for (var i = 0; i < b.Cells.Length; i++)
+            {
+                if (a.Cells[i] == b.Cells[i] || b.Cells[i].Stack is not { } plant) continue;
+                var cell = new CellRef(id, i);
+                var (stage, of) = (plant.GetInt("Progress") ?? 0, plant.GetInt("Duration") ?? 0);
+                context.Emit(seq => new SimEvent.PlantGrew(step, seq, cell, stage, of));
+            }
+        }
+        return next;
+    }
 }

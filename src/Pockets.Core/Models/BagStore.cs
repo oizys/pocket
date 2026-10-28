@@ -66,6 +66,13 @@ public class BagStore
     public IEnumerable<Bag> All => _bags.Values;
 
     /// <summary>
+    /// Every bag with the id it is stored under. The key is authoritative: a tool may store a fresh bag
+    /// (new <see cref="Bag.Id"/>) under an existing key, as the drop tool does with the emptied hand.
+    /// The event deriver (Slice 1.5) diffs stores by key.
+    /// </summary>
+    public IEnumerable<KeyValuePair<Guid, Bag>> Entries => _bags;
+
+    /// <summary>
     /// Returns all bags that have a FacilityState (i.e. are facilities).
     /// </summary>
     public IEnumerable<Bag> Facilities =>

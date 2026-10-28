@@ -73,7 +73,7 @@ public class SimContractTests
         SimEvent[] shuffled =
         {
             new SimEvent.TimeAdvanced(2, 1),
-            new SimEvent.CraftCompleted(1, 2, Facility, "compass"),
+            new SimEvent.CraftCompleted(1, 2, Facility, "compass", ImmutableArray<Placed>.Empty, ImmutableArray<CellRef>.Empty, null),
             new SimEvent.UiTriggerFired(2, 0, UiTrigger.FirstTimedAction),
             new SimEvent.IntentApplied(1, 0, new Intent.Tick()),
             new SimEvent.TimeAdvanced(1, 1),
@@ -103,7 +103,7 @@ public class SimContractTests
         {
             new SimEvent.IntentApplied(1, 0, new Intent.Tick()),
             new SimEvent.TimeAdvanced(1, 1),
-            new SimEvent.CraftCompleted(1, 2, Facility, "compass"),
+            new SimEvent.CraftCompleted(1, 2, Facility, "compass", ImmutableArray<Placed>.Empty, ImmutableArray<CellRef>.Empty, null),
         };
 
         Assert.Equal(stream, stream.OrderBy(e => e, SimEvent.Order).ToArray());

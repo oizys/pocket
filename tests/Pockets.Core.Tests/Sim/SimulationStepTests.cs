@@ -7,8 +7,8 @@ namespace Pockets.Core.Tests.Sim;
 
 /// <summary>
 /// Slice 1.2: <see cref="Simulation.Step"/> semantics, namely the no-op / rejected / applied split, the
-/// time flag (P1-D2; since Slice 1.3 read from <see cref="SimContent.TickMode"/>, not the intent), coarse
-/// events in (Step, Seq) emission order, and craft completion.
+/// time flag (P1-D2; since Slice 1.3 read from <see cref="SimContent.TickMode"/>, not the intent), events in
+/// (Step, Seq) emission order (semantic since Slice 1.5), and craft completion.
 /// </summary>
 public class SimulationStepTests
 {
@@ -83,7 +83,14 @@ public class SimulationStepTests
         var r = Simulation.Step(s, new[] { intent });
 
         Assert.Equal(3, r.State.TickCount);
-        Assert.Equal(new SimEvent[] { new SimEvent.IntentApplied(3, 0, intent) }, r.Events.ToArray());
+        // Slice 1.5: the envelope, then what the grab did (rock: root cell 0 → hand slot 0).
+        var root = s.Game.RootBagId;
+        var hand = s.Game.HandBagId;
+        Assert.Equal(new SimEvent[]
+        {
+            new SimEvent.IntentApplied(3, 0, intent),
+            new SimEvent.StackMoved(3, 1, Rock, 5, new CellRef(root, 0), new CellRef(hand, 0), StackCause.Grab)
+        }, r.Events.ToArray());
         // The loaded workbench did not start crafting: no time passed.
         Assert.All(r.State.Game.Store.Facilities, f => Assert.Null(f.FacilityState!.RecipeId));
     }
@@ -96,8 +103,10 @@ public class SimulationStepTests
 
         var r = Simulation.Step(s, new[] { intent });
 
-        Assert.IsType<SimEvent.IntentApplied>(r.Events[0]);
-        Assert.IsType<SimEvent.TimeAdvanced>(r.Events[1]);
+        // Slice 1.5: envelope, the tool's own events, then the tick phase (the loaded workbench starts).
+        Assert.Equal(
+            new[] { typeof(SimEvent.IntentApplied), typeof(SimEvent.StackMoved), typeof(SimEvent.TimeAdvanced), typeof(SimEvent.CraftStarted) },
+            r.Events.Select(e => e.GetType()).ToArray());
         Assert.Equal(Enumerable.Range(0, r.Events.Length), r.Events.Select(e => e.Seq));
         Assert.All(r.Events, e => Assert.Equal(1, e.Step));
         Assert.Contains(r.State.Game.Store.Facilities, f => f.FacilityState!.RecipeId == AxeRecipe.Id);

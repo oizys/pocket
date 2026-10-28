@@ -6,8 +6,10 @@ namespace Pockets.Core.Sim;
 /// <summary>
 /// How <see cref="Simulation.Step"/> resolved one intent (Slice 1.3). The session shell reads it to write
 /// the action-log line exactly as before (P1-D6) and to decide the undo snapshot; the controller reads it
-/// to move its panel focus. Not part of the step's output contract: events are (Slice 1.5 replaces most
-/// of this with semantic events).
+/// for its status message. Not part of the step's output contract: events are. Since Slice 1.5 the
+/// controller's focus and bump cue come from events (<see cref="SimEvent.PanelOpened"/>,
+/// <see cref="SimEvent.PanelClosed"/>, <see cref="SimEvent.Bumped"/>) and the AcquireRandom log line from
+/// <see cref="SimEvent.Acquired"/>; what remains here is log and status wording.
 /// </summary>
 internal enum Route
 {
@@ -113,10 +115,10 @@ public static partial class Simulation
             return ApplyToolAt(s, intent, at, tool, step, events);
         }
 
-        SimState Change(Route route, SimState next, string? detail = null)
+        SimState Change(Route route, SimState next, string? detail = null, IEnumerable<Func<int, SimEvent>>? extra = null)
         {
             Trace(route, null, detail);
-            return Changed(s, next, intent, step, events);
+            return Changed(s, next, intent, step, events, extra);
         }
 
         switch (intent)
@@ -168,8 +170,16 @@ public static partial class Simulation
             // --- Cursor ---
             case Intent.Move m:
             {
-                var (moved, bumped) = MoveCursor(s.Game, m.At, m.Dir, s.Content.Beats);
-                return Change(bumped ? Route.Bumped : Route.Moved, s with { Game = moved });
+                var fired = new List<Func<int, SimEvent>>();
+                var (moved, bumped) = MoveCursor(s.Game, m.At, m.Dir, s.Content.Beats,
+                    trigger => fired.Add(seq => new SimEvent.UiTriggerFired(step, seq, trigger)));
+                if (!bumped)
+                    return Change(Route.Moved, s with { Game = moved }, extra: fired);
+
+                // A refused move always emits Bumped (the cue fires on every bump), even when the bump count
+                // didn't change (a beat is showing) and the state is otherwise untouched.
+                var bump = BumpAt(s.Game, m.At, m.Dir, BumpReason.Unnavigable, step);
+                return BumpedChange(s, s with { Game = moved }, intent, Route.Bumped, bump);
             }
             case Intent.SetCursor c:
             {
@@ -184,7 +194,10 @@ public static partial class Simulation
             case Intent.AdvanceDialogue:
             {
                 var (advanced, dismissed) = AdvanceDialogue(s.Game, s.Content.Beats);
-                return Change(Route.Dialogue, s with { Game = advanced }, dismissed);
+                var extra = s.Game.Dialogue.ActiveBeatId is { } beat
+                    ? new Func<int, SimEvent>[] { seq => new SimEvent.DialogueAdvanced(step, seq, beat, dismissed is not null) }
+                    : null;
+                return Change(Route.Dialogue, s with { Game = advanced }, dismissed, extra);
             }
 
             // --- Inline split ---
@@ -219,6 +232,28 @@ public static partial class Simulation
             default:
                 throw new InvalidOperationException($"Unhandled intent {intent.GetType().Name}");
         }
+
+        // A bump: the Bumped event always, behind the envelope and the change when anything changed.
+        SimState BumpedChange(SimState pre, SimState next, Intent i, Route route, Func<int, SimEvent> bump)
+        {
+            Trace(route);
+            if (next != pre)
+                return Changed(pre, next, i, step, events, new[] { bump });
+            events.Add(bump(events.Count));
+            return pre;
+        }
+    }
+
+    /// <summary>
+    /// A <see cref="SimEvent.Bumped"/> at <paramref name="at"/>'s cursor (in the bag it shows), in
+    /// <paramref name="dir"/>, for <paramref name="reason"/>.
+    /// </summary>
+    private static Func<int, SimEvent> BumpAt(GameState g, LocationId at, Direction? dir, BumpReason reason, int step)
+    {
+        var loc = g.Locations.TryGet(at);
+        var bag = loc is not null ? ResolveBag(g, loc)?.Id ?? loc.BagId : g.ActiveBagId;
+        var pos = loc?.Cursor.Position ?? g.Cursor.Position;
+        return seq => new SimEvent.Bumped(step, seq, at, bag, pos, dir, reason);
     }
 
     // ==================== Routed verbs (moved from GameController, focus → the intent's At) ====================
@@ -337,8 +372,12 @@ public static partial class Simulation
         if (bag.EnterOnly)
         {
             trace(Route.PeekRefused, null, bag.EnvironmentType);
-            return Changed(s, s with { Game = FireBeats(g, s.Content.Beats, DialogueTriggerKind.FirstFailedPeek) },
-                p, step, events);
+            var bump = BumpAt(g, at, null, BumpReason.FailedPeek, step);
+            var next = s with { Game = FireBeats(g, s.Content.Beats, DialogueTriggerKind.FirstFailedPeek) };
+            if (next != s)
+                return Changed(s, next, p, step, events, new[] { bump });
+            events.Add(bump(events.Count));
+            return s;
         }
 
         if (g.Locations.TryGet(LocationId.C) is { } cLoc && cLoc.BagId == bagId
@@ -446,8 +485,11 @@ public static partial class Simulation
         newState = newState.ReplaceBagById(activeBag.Id, updated,
             stack => stack.WithProperty("Progress", new IntValue(0)));
 
-        trace(Route.RecipeSwitched, null, updated.FacilityState!.ActiveRecipeId);
-        return Changed(s, s with { Game = SwapOut(newState, s.Game, c.At) }, c, step, events);
+        var switchedTo = updated.FacilityState!.ActiveRecipeId!;
+        var owner = OwnerCell(g, activeBag.Id);
+        trace(Route.RecipeSwitched, null, switchedTo);
+        return Changed(s, s with { Game = SwapOut(newState, s.Game, c.At) }, c, step, events,
+            new Func<int, SimEvent>[] { seq => new SimEvent.RecipeSelected(step, seq, activeBag.Id, switchedTo, owner, true) });
     }
 
     /// <summary>
@@ -487,8 +529,10 @@ public static partial class Simulation
         var newState = s.Game.ReplaceBagById(menu.FacilityBagId, updated,
             stack => stack.WithProperty("Progress", new IntValue(0)));
 
+        var owner = OwnerCell(s.Game, menu.FacilityBagId);
         trace(Route.SetRecipe, null, recipeId);
-        return Changed(s, closed with { Game = newState }, intent, step, events);
+        return Changed(s, closed with { Game = newState }, intent, step, events,
+            new Func<int, SimEvent>[] { seq => new SimEvent.RecipeSelected(step, seq, menu.FacilityBagId, recipeId, owner, false) });
     }
 
     /// <summary>
@@ -552,7 +596,8 @@ public static partial class Simulation
     /// cursor stays put, a bump is recorded and the Nth-bump beat may fire (Bumped = true). A B cursor
     /// coming to rest on an item runs the cursor-rest triggers. Unchanged when the location or bag is missing.
     /// </summary>
-    private static (GameState State, bool Bumped) MoveCursor(GameState g, LocationId at, Direction direction, DialogueBook beats)
+    private static (GameState State, bool Bumped) MoveCursor(
+        GameState g, LocationId at, Direction direction, DialogueBook beats, Action<UiTrigger> fired)
     {
         if (g.Locations.TryGet(at) is not { } loc || ResolveBag(g, loc) is not { } activeBag)
             return (g, false);
@@ -569,7 +614,7 @@ public static partial class Simulation
 
         // Inspecting = the inventory (B) cursor resting on an item: reveals the description pane and
         // feeds the Nth-unique-inspect condition. Inert while a dialogue is blocking the world.
-        return (at == LocationId.B ? EvaluateCursorRest(moved, beats) : moved, false);
+        return (at == LocationId.B ? EvaluateCursorRest(moved, beats, fired) : moved, false);
     }
 
     /// <summary>
@@ -603,9 +648,9 @@ public static partial class Simulation
     /// Cursor-rest triggers after a B-cursor move: resting on an item fires <see cref="UiTrigger.FirstCursorRest"/>
     /// (and <see cref="UiTrigger.NoticeClock"/> on the Shrine clock slot) and records a unique inspection,
     /// firing any <see cref="DialogueTriggerKind.NthUniqueInspect"/> beat whose threshold it reaches. Returns
-    /// the same state when nothing changes.
+    /// the same state when nothing changes. Each trigger that grew the ledger is reported through <paramref name="fired"/>.
     /// </summary>
-    private static GameState EvaluateCursorRest(GameState state, DialogueBook beats)
+    private static GameState EvaluateCursorRest(GameState state, DialogueBook beats, Action<UiTrigger> fired)
     {
         if (state.Dialogue.IsActive)
             return state; // the world is blocked while a beat is showing
@@ -614,11 +659,20 @@ public static partial class Simulation
         if (cell.IsEmpty)
             return state;
 
-        var ui = state.Ui.Fire(UiTrigger.FirstCursorRest);
+        var ui = state.Ui;
+        void Fire(UiTrigger trigger)
+        {
+            var next = ui.Fire(trigger);
+            if (!ReferenceEquals(next, ui))
+                fired(trigger);
+            ui = next;
+        }
+
+        Fire(UiTrigger.FirstCursorRest);
         // Resting on the Shrine's Clock slot is where the player notices "it was always ticking"
         // (journey 15:00): the clock readout materializes. Deterministic — keyed to the clock glyph.
         if (cell.Frame is FeatureSlotFrame { Glyph: FeatureSlotFrame.ClockGlyph })
-            ui = ui.Fire(UiTrigger.NoticeClock);
+            Fire(UiTrigger.NoticeClock);
         var dialogue = state.Dialogue;
 
         var typeName = cell.Stack!.ItemType.Name;
@@ -672,7 +726,7 @@ public static partial class Simulation
     // ==================== Location helpers ====================
 
     /// <summary>The bag a location is showing (its trail followed from its root bag); null when broken.</summary>
-    private static Bag? ResolveBag(GameState g, Location loc)
+    internal static Bag? ResolveBag(GameState g, Location loc)
     {
         var bagId = loc.BagId;
         foreach (var entry in loc.Breadcrumbs.Reverse())
@@ -685,6 +739,10 @@ public static partial class Simulation
         }
         return g.Store.GetById(bagId);
     }
+
+    /// <summary>The cell holding <paramref name="bagId"/>'s stack (where a facility's progress lives); null for a root bag.</summary>
+    internal static CellRef? OwnerCell(GameState g, Guid bagId) =>
+        g.Store.GetOwnerOf(bagId) is { } owner ? new CellRef(owner.ParentBagId, owner.CellIndex) : null;
 
     /// <summary>The cell under <paramref name="at"/>'s cursor; B's cursor cell when the location or its bag is missing.</summary>
     internal static Cell CellAt(GameState g, LocationId at) =>

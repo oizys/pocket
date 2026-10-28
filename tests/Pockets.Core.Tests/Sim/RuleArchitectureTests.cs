@@ -96,8 +96,14 @@ public class RuleArchitectureTests
             (FacilityCraftRule.Instance.Kind, FacilityCraftRule.Instance.Time));
         Assert.Equal((RuleKind.Field, TimeClass.ClosedForm),
             (PlantGrowthRule.Instance.Kind, PlantGrowthRule.Instance.Time));
-        Assert.Equal(new[] { typeof(SimEvent.CraftCompleted) }, FacilityCraftRule.Instance.EventKinds.ToArray());
-        Assert.Empty(PlantGrowthRule.Instance.EventKinds);
+        // Slice 1.5: the facility rule's full craft lifecycle, and the plant rule's first event.
+        Assert.Equal(new[]
+            {
+                typeof(SimEvent.CraftStarted), typeof(SimEvent.CraftProgressed),
+                typeof(SimEvent.CraftAborted), typeof(SimEvent.CraftCompleted)
+            },
+            FacilityCraftRule.Instance.EventKinds.ToArray());
+        Assert.Equal(new[] { typeof(SimEvent.PlantGrew) }, PlantGrowthRule.Instance.EventKinds.ToArray());
     }
 
     [Fact]

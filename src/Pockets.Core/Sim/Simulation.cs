@@ -16,8 +16,10 @@ namespace Pockets.Core.Sim;
 public static partial class Simulation
 {
     /// <summary>
-    /// Applies <paramref name="intents"/> in order and returns the next state plus the step's coarse
-    /// events. Every event carries <c>Step = s.TickCount + 1</c> and a step-global <c>Seq</c>.
+    /// Applies <paramref name="intents"/> in order and returns the next state plus the step's semantic
+    /// events (Slice 1.5: each applied intent's <see cref="SimEvent.IntentApplied"/> envelope, then what its
+    /// tool did — derived by <see cref="EventDeriver"/> — then the rules' and hooks' own events). A refused
+    /// move or peek emits <see cref="SimEvent.Bumped"/> even when the state is unchanged. Every event carries <c>Step = s.TickCount + 1</c> and a step-global <c>Seq</c>.
     /// Per intent:
     /// <list type="bullet">
     /// <item>Tool-style intents (the tools, the routed panel verbs, <see cref="Intent.Dsl"/>): a failed tool
@@ -58,10 +60,14 @@ public static partial class Simulation
     /// <see cref="SimEvent.IntentApplied"/>, the tick phase in rogue mode (P1-D2), the transition hooks,
     /// then <paramref name="after"/> on the hooked state, and <c>TickCount + 1</c>. <paramref name="rng"/> is
     /// the step's RNG (already advanced by any draw the tool made); it is committed with the state.
+    /// Slice 1.5: after the envelope come the tool's semantic events, derived from the state it was handed and
+    /// the state it returned (<see cref="EventDeriver"/>), with <paramref name="frame"/> the location the tool ran
+    /// at; then the tick phase's and the hooks' own events, then any dialogue beats that fired.
     /// </summary>
     private static SimState ApplyToolResult(
         SimState s, Intent intent, ToolResult result, SimRng rng, int step,
-        ImmutableArray<SimEvent>.Builder events, Func<GameState, GameState>? after = null)
+        ImmutableArray<SimEvent>.Builder events, Func<GameState, GameState>? after = null,
+        LocationId frame = LocationId.B)
     {
         var before = s.Game;
         if (!result.Success)
@@ -75,6 +81,8 @@ public static partial class Simulation
             return s;
 
         var pending = new List<Func<int, SimEvent>> { seq => new SimEvent.IntentApplied(step, seq, intent) };
+        EventDeriver.Locations(before, result.State, frame, step, pending.Add);
+        EventDeriver.Stacks(before, result.State, before, intent, step, pending.Add);
 
         // In rogue mode, tick facilities and plants after each action. In realtime, ticks are external.
         var newState = s.Content.TickMode == TickMode.Rogue
@@ -85,11 +93,11 @@ public static partial class Simulation
         // hooks. They run after every state-changing action (tool actions, panel open/close,
         // enter/leave, clock ticks), so the demo profile's chrome grows identically on every
         // frontend/driver and a craft completing during a tick fires exactly like a player action.
-        newState = RunTransitionHooks(before, newState, s.Content, trigger =>
-            pending.Add(seq => new SimEvent.UiTriggerFired(step, seq, trigger)));
+        newState = RunTransitionHooks(before, newState, s.Content, step, pending.Add);
 
         if (after is not null)
             newState = after(newState);
+        EventDeriver.Dialogue(before.Dialogue, newState.Dialogue, step, pending.Add);
 
         foreach (var make in pending)
             events.Add(make(events.Count));
@@ -109,7 +117,7 @@ public static partial class Simulation
     {
         var swapped = s with { Game = SwapIn(s.Game, at) };
         var (result, rng) = tool(swapped.Game, s.Rng.AtStep(step));
-        var applied = ApplyToolResult(swapped, intent, result, rng, step, events);
+        var applied = ApplyToolResult(swapped, intent, result, rng, step, events, frame: at);
         return ReferenceEquals(applied, swapped) ? s : applied with { Game = SwapOut(applied.Game, s.Game, at) };
     }
 
@@ -151,8 +159,8 @@ public static partial class Simulation
         var rng = s.Rng.AtStep(step);
         var pending = new List<Func<int, SimEvent>>();
         var newState = AdvanceTime(before, before, s.Content, step, ref rng, pending);
-        newState = RunTransitionHooks(before, newState, s.Content, trigger =>
-            pending.Add(seq => new SimEvent.UiTriggerFired(step, seq, trigger)));
+        newState = RunTransitionHooks(before, newState, s.Content, step, pending.Add);
+        EventDeriver.Dialogue(before.Dialogue, newState.Dialogue, step, pending.Add);
         if (newState == before)
             return s;
 
@@ -164,13 +172,27 @@ public static partial class Simulation
     /// <summary>
     /// A direct L1 change that is not a timed action (cursor, dialogue, modal state, clock readout, recipe
     /// switch): emits <see cref="SimEvent.IntentApplied"/> when <paramref name="next"/> differs from
-    /// <paramref name="s"/>; no tick, no hooks, no TickCount bump.
+    /// <paramref name="s"/>; no tick, no hooks, no TickCount bump. Slice 1.5: the envelope is followed by the
+    /// derived location and stack events, then <paramref name="extra"/> (the dispatcher's explicit events, such
+    /// as <see cref="SimEvent.Bumped"/> or <see cref="SimEvent.RecipeSelected"/>), then any beats that fired.
     /// </summary>
-    private static SimState Changed(SimState s, SimState next, Intent intent, int step, ImmutableArray<SimEvent>.Builder events)
+    private static SimState Changed(
+        SimState s, SimState next, Intent intent, int step, ImmutableArray<SimEvent>.Builder events,
+        IEnumerable<Func<int, SimEvent>>? extra = null)
     {
         if (next == s)
             return s;
-        events.Add(new SimEvent.IntentApplied(step, events.Count, intent));
+        void Emit(Func<int, SimEvent> make) => events.Add(make(events.Count));
+        Emit(seq => new SimEvent.IntentApplied(step, seq, intent));
+        if (!ReferenceEquals(s.Game, next.Game))
+        {
+            EventDeriver.Locations(s.Game, next.Game, LocationId.B, step, Emit);
+            EventDeriver.Stacks(s.Game, next.Game, s.Game, intent, step, Emit);
+        }
+        if (extra is not null)
+            foreach (var make in extra)
+                Emit(make);
+        EventDeriver.Dialogue(s.Game.Dialogue, next.Game.Dialogue, step, Emit);
         return next;
     }
 
@@ -183,8 +205,8 @@ public static partial class Simulation
 
     /// <summary>
     /// The time phase: emits <see cref="SimEvent.TimeAdvanced"/>, then runs <see cref="RuleRegistry.TickPhase"/>
-    /// in order (Slice 1.4): <see cref="FacilityCraftRule"/> (one <see cref="SimEvent.CraftCompleted"/> per
-    /// finished craft, in facility order), then <see cref="PlantGrowthRule"/>.
+    /// in order (Slice 1.4): <see cref="FacilityCraftRule"/> (craft started / progressed / aborted / completed,
+    /// in facility order), then <see cref="PlantGrowthRule"/> (<see cref="SimEvent.PlantGrew"/>).
     /// <paramref name="preStep"/> supplies the known-recipe set, exactly as the session read
     /// <c>Current.KnownRecipes</c> (the pre-action state) while ticking the post-tool state. Recipe
     /// outputs draw from <paramref name="rng"/>'s <see cref="SimStream.Craft"/> stream, which is advanced in place.
@@ -217,16 +239,17 @@ public static partial class Simulation
     /// <summary>
     /// Runs the shared state→state transition hooks after any successful mutation, whether from a
     /// player action or a facility tick: chrome triggers, structural dialogue beats, known-recipe
-    /// learning, and minimap zone entry. Each trigger that grows the UI ledger is reported through
-    /// <paramref name="fired"/>.
+    /// learning, and minimap zone entry. Emits <see cref="SimEvent.UiTriggerFired"/> for each trigger that grows
+    /// the UI ledger, <see cref="SimEvent.RecipeLearned"/> per card learned and <see cref="SimEvent.ZoneReached"/>
+    /// (the queued beats are diffed by the caller).
     /// </summary>
     private static GameState RunTransitionHooks(
-        GameState before, GameState after, SimContent content, Action<UiTrigger> fired)
+        GameState before, GameState after, SimContent content, int step, Action<Func<int, SimEvent>> emit)
     {
-        after = ApplyUiTriggers(before, after, fired);
+        after = ApplyUiTriggers(before, after, trigger => emit(seq => new SimEvent.UiTriggerFired(step, seq, trigger)));
         after = FireStructuralDialogue(before, after, content.Beats);
-        after = RegisterKnownRecipes(after);
-        after = RegisterZoneEntry(before, after);
+        after = RegisterKnownRecipes(after, step, emit);
+        after = RegisterZoneEntry(before, after, step, emit);
         return after;
     }
 
@@ -306,7 +329,7 @@ public static partial class Simulation
     /// never lights a wedge. Distinct + monotonic (a re-entry never double-counts). Returns the same
     /// state when nothing new is reached.
     /// </summary>
-    private static GameState RegisterZoneEntry(GameState before, GameState after)
+    private static GameState RegisterZoneEntry(GameState before, GameState after, int step, Action<Func<int, SimEvent>> emit)
     {
         if (after.BreadcrumbStack.Count() <= before.BreadcrumbStack.Count())
             return after;
@@ -315,6 +338,7 @@ public static partial class Simulation
         var id = after.ActiveBagId;
         if (after.ZonesReached.Contains(id))
             return after;
+        emit(seq => new SimEvent.ZoneReached(step, seq, id));
         return after with { ZonesReached = after.ZonesReached.Add(id) };
     }
 
@@ -337,15 +361,16 @@ public static partial class Simulation
     /// <b>poof on learn</b> (playtest fix, 2026-08-04). A recipe item is any <see cref="ItemStack"/>
     /// carrying a <see cref="GameState.RecipeItemProperty"/>. This is a <i>sanctioned</i> census removal —
     /// the journey's conservation checks account for the exact card(s) that vanished (see the runner's
-    /// <c>expectDelta</c>). Returns the same state when nothing new is learned.
+    /// <c>expectDelta</c>). Returns the same state when nothing new is learned. Emits one
+    /// <see cref="SimEvent.RecipeLearned"/> per card, naming its cell.
     /// </summary>
-    private static GameState RegisterKnownRecipes(GameState state)
+    private static GameState RegisterKnownRecipes(GameState state, int step, Action<Func<int, SimEvent>> emit)
     {
         var known = state.KnownRecipes;
         var store = state.Store;
 
         // Clear-and-learn one grid: any cell holding a recipe card learns its id and empties.
-        (Bag, bool) LearnAndClear(Bag bag)
+        (Bag, bool) LearnAndClear(Guid bagId, Bag bag)
         {
             var changed = false;
             var builder = bag.Grid.Cells.ToBuilder();
@@ -353,6 +378,8 @@ public static partial class Simulation
             {
                 if (builder[i].Stack?.GetString(GameState.RecipeItemProperty) is not { } recipeId) continue;
                 known = known.Add(recipeId);
+                var card = new CellRef(bagId, i);
+                emit(seq => new SimEvent.RecipeLearned(step, seq, recipeId, card));
                 builder[i] = builder[i] with { Stack = null };
                 changed = true;
             }
@@ -360,7 +387,7 @@ public static partial class Simulation
         }
 
         // Hand.
-        var (newHand, handChanged) = LearnAndClear(state.HandBag);
+        var (newHand, handChanged) = LearnAndClear(state.HandBagId, state.HandBag);
         if (handChanged) store = store.Set(state.HandBagId, newHand);
 
         // Toolbar + one level into each toolbar carrying bag (matches the acquire/serializer nesting depth).
@@ -369,10 +396,10 @@ public static partial class Simulation
             foreach (var cell in toolbar.Grid.Cells)
                 if (cell.Stack?.ContainedBagId is { } nestedId && store.GetById(nestedId) is { } nested)
                 {
-                    var (newNested, nestedChanged) = LearnAndClear(nested);
+                    var (newNested, nestedChanged) = LearnAndClear(nestedId, nested);
                     if (nestedChanged) store = store.Set(nestedId, newNested);
                 }
-            var (newToolbar, toolbarChanged) = LearnAndClear(store.GetById(toolbarId)!);
+            var (newToolbar, toolbarChanged) = LearnAndClear(toolbarId, store.GetById(toolbarId)!);
             if (toolbarChanged) store = store.Set(toolbarId, newToolbar);
         }
 
