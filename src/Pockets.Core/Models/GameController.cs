@@ -443,6 +443,14 @@ public class GameController
         });
 
     /// <summary>
+    /// Test and gate only (Slice 2.8, the runner's <c>--fuzz-fine</c>): overwrites the session's L2a fine state with
+    /// seeded noise (offsets only when <paramref name="bodies"/> is false). It bypasses <see cref="GameSession.Apply"/> on
+    /// purpose: it is no intent, is never logged or replayed, and L1 must not notice it (the fuzz invariant).
+    /// </summary>
+    public void FuzzFine(int seed, int salt, bool bodies = true) =>
+        _session = _session.WithFuzzedFine(seed, salt, bodies);
+
+    /// <summary>
     /// Holds the body of <paramref name="at"/> in <paramref name="dir"/>, or releases it when null
     /// (<see cref="Intent.Steer"/>). No Step runs; the shell changes the session's fine state.
     /// </summary>

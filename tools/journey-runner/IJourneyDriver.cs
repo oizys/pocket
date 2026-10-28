@@ -93,3 +93,13 @@ public interface ISessionDriver
     /// <summary>The driver's current session, including its intent log.</summary>
     GameSession Session { get; }
 }
+
+/// <summary>
+/// A driver whose session's L2a fine state the runner can overwrite with seeded noise (<c>--fuzz-fine</c>, Slice 2.8):
+/// the in-process drivers (tui, mock-godot), through <see cref="GameController.FuzzFine"/>. The live Godot driver cannot.
+/// </summary>
+public interface IFineFuzzDriver
+{
+    /// <summary>Overwrites the fine state with the noise of <paramref name="seed"/> and <paramref name="salt"/> (offsets only unless <paramref name="bodies"/>).</summary>
+    void FuzzFine(int seed, int salt, bool bodies);
+}

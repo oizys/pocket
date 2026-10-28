@@ -10,9 +10,10 @@ gate — see [design/parity-drift-report.md](../../design/parity-drift-report.md
 
 ```bash
 make parity          # FAST gate: tui + mock-godot over journeys/smoke.journey.json, diff the VM, event and pose streams, replay check
-make parity-full     # FULL gate: BOTH journeys on both drivers + target-demo VM, buffer, events and poses goldens
+make parity-full     # FULL gate: all three journeys on both drivers + goldens + the fine-state fuzz (--fuzz-fine)
 make record-goldens  # regenerate journeys/goldens/ after an INTENTIONAL journey/state change
 make parity-godot    # the full journey vs a live Godot build + screenshot set (needs a Godot runtime)
+make parity-godot-free-move  # the free-move journey vs a live Godot build (restart Godot fresh first)
 make test            # the shipping suites (Core + App)
 ```
 
@@ -26,7 +27,9 @@ Two standing gates (build plan sync policy — both pre-push):
   [`journeys/target-demo.journey.json`](../../journeys/target-demo.journey.json), the complete
   30-minute thread. Runs both journeys on both drivers (it depends on `parity`), then
   regression-checks the committed **goldens** (below). Smoke is a proper VM-prefix of the target
-  demo, so any smoke regression is also a target-demo regression.
+  demo, so any smoke regression is also a target-demo regression. Since Phase 2 Slice 2.8 it also runs the
+  [fine-state fuzz](#fine-state-fuzz-phase-2-slice-28) on smoke and the target demo, and the
+  [free-move journey](#the-free-move-journey-phase-2-slice-28) with its goldens.
 
 ### Goldens (Slice 8)
 
@@ -48,6 +51,11 @@ Committed under [`journeys/goldens/`](../../journeys/goldens/):
   [Pose golden](#pose-golden-phase-2-slice-24), recorded from tui, diffed cross-driver, and compared by
   `parity-full` (`golden: pose stream`). LF-pinned like the others.
 
+- `free-move.checkpoints`, `free-move.events`, `free-move.poses` (Phase 2 Slice 2.8). The D2-B journey's VM, event and
+  pose streams (57, 87 and 66 lines), recorded from tui, diffed cross-driver and against these by `parity-full`. The
+  journey flags no `golden` checkpoints, so it has **no buffer goldens**: the TUI cannot show sub-cell motion (P2-D4,
+  P2-D14), and its buffers would only repeat the VM.
+
 `make record-goldens` regenerates them all after an intentional change (then commit the diff). On Aaron's
 Windows box, `make parity-godot` additionally saves a Godot **screenshot** per ledger row into
 `artifacts/godot-screenshots/` — the render-golden set for a vision-model pass (see drift report).
@@ -61,6 +69,7 @@ dotnet run --project tools/journey-runner -- \
   [--out artifacts/parity/tui.checkpoints] \
   [--goldens <dir>] [--screenshots <dir>] \
   [--events-out <file>] [--replay-check] [--poses-out <file>] \
+  [--fuzz-fine <seed> | --fuzz-fine-offsets <seed>] \
   [--data <dir>] [--seed <int>] [--url ws://localhost:9080] [--dump]
 ```
 
@@ -77,6 +86,8 @@ Exit code `0` = pass, `1` = a failed assertion / invariant / driver error, `2` =
 - `--replay-check` — replay the run's intent log on a fresh session (tui, mock-godot); fails if any
   step's view-model or event stream differs, or any commit's pose lines differ. Skipped with a note for `godot`.
 - `--poses-out <file>` — write the run's pose golden (below).
+- `--fuzz-fine <seed>` / `--fuzz-fine-offsets <seed>` — overwrite the session's L2a fine state with seeded noise after
+  every step (tui, mock-godot; [below](#fine-state-fuzz-phase-2-slice-28)).
 
 ## Event golden + replay check (Phase 1 Slice 1.7)
 
@@ -99,8 +110,9 @@ produces it identically; Step/Seq themselves are never renumbered. Streams are d
 at every boundary (and an identical replayed log). Failures are prefixed `replay:`. This is guardrail G6
 in its Phase 1 form: replay(intents) ≡ state. The replay goes through the shell (`ApplyTraced`), so it
 includes `Undo`. The intent log is the full history, undos included: undo truncates the *event* log, not
-the intent log (ratified 2026-10-28). Undo appears in the stream as one `Rewound toStep=N` line. No
-journey undoes today, so the golden has no `Rewound`. Adding an undo to a journey adds golden lines,
+the intent log (ratified 2026-10-28). Undo appears in the stream as one `Rewound toStep=N` line. The
+demo journeys do not undo, so `target-demo.events` has no `Rewound`; the free-move journey undoes once
+(`free-move.events` has one `Rewound toStep=4`). Adding an undo to a journey adds golden lines,
 so treat it as a deliberate change and run `record-goldens`.
 
 Notes:
@@ -134,6 +146,23 @@ Notes:
   matches the event golden.
 - Example: `112:0 u=2/4 t=62 entity=Body(B) bag=bag#7 col=3 row=1 subX=-8 subY=0 height=- facing=E` (a walk's midpoint).
 
+**Driven commits (Slice 2.8, D2-B).** A free body has no tracks: its glide *is* its fine position, re-read on each
+commit. So the sampled lines alone never show it. A commit is **driven** when a shown location's body is driven
+(stored with a held direction or a non-zero velocity) before or after it. After its sampled lines, a driven commit adds:
+
+```
+<journeyStep>:<k> fine <PoseText>
+```
+
+- first, one line per driven body whose rest pose (cell plus `Px`/`Py`) changed, in `B, H, T` order;
+- then one line per stack that stayed in its cell but whose offset changed (the P2-D11 nudge), in scene order.
+
+Each line is the **new rest pose**. A commit with no driven body adds nothing, so a grid-locked journey's pose stream is
+unchanged (`target-demo.poses` is byte-identical). With one `advanceTime: 125` per journey step (one fine tick), the
+`fine` lines pin every 1/16 step of the walk. The lines come from `PoseStream.Commit`, so tui, mock-godot, live Godot's
+debug server and the pose replay all produce them. Example: `20:0 fine entity=Body(B) bag=bag#2 col=0 row=1 subX=0
+subY=-4 height=- facing=S` (just after a crossing S).
+
 Where the lines come from:
 - mock-godot and live Godot: the `"poses"` array that `Pockets.Realization.PoseDebugCommandHandler` adds to every
   success response (one `PoseStream` per controller; `state` returns `[]`). It wraps Core's `DebugCommandHandler`, which
@@ -147,6 +176,43 @@ Where the lines come from:
 - Timings are policy (`RealizationPolicy`, P2-D5). Tuning one is a pose re-record (`make record-goldens`), never an
   L1 change; the VM, event and buffer goldens must not move.
 
+## Fine-state fuzz (Phase 2 Slice 2.8)
+
+`--fuzz-fine <seed>` checks D5's wall behaviourally: **fuzz L2a ⇒ identical L1**. After the start observation and after
+every journey step, the runner overwrites the session's fine state (`GameController.FuzzFine` →
+`GameSession.WithFuzzedFine` → `Pockets.Core.Fine.FineFuzz.Generate`):
+
+- about half the occupied cells of every location's active bag get an offset in ±6 per axis;
+- every location's body gets a resting position in ±7 per axis (no velocity, nothing held);
+- the noise is counter-hashed from `(seed, journeyStep)`, so it is the same on both drivers and every machine.
+
+The overwrite is not an intent: it is not logged or replayed, so `--replay-check` is skipped under the fuzz with a note,
+and the pose stream legitimately differs (do not compare it). The VM checkpoint and event streams must equal the
+unfuzzed run's. `parity-full` checks that with `--compare` on smoke and the target demo, on both drivers (`FUZZ := 1`).
+
+- **Caveat, by design:** the fuzz runs *after* each step's input, so it never changes which `Move`s the integrator derives
+  within a step. A full fuzz of a **steered** body does change them, so the free-move journey is fuzzed with
+  `--fuzz-fine-offsets` only (bodies kept). The Core test `FreeMoveJourneyTests.FullFuzz_OfASteeredBody_DoesChangeL1_ByDesign`
+  pins that caveat. Fuzzing the integrator's inputs is the L1-projection test's job (`FreeMoveJourneyTests`).
+- The mutation check: `FineFuzzTests.Mutation_L1ReadsAnOffset_FailsTheFuzz` uses the internal `GameSession.FineLeakForTests`
+  hook (L1 reads an offset) and requires the fuzz to diverge.
+
+## The free-move journey (Phase 2 Slice 2.8)
+
+[`journeys/free-move.journey.json`](../../journeys/free-move.journey.json) drives D2-B. It uses the demo profile
+(realtime) and enters Quiet 1 in six steps. It then sends `setMovement B Free` and steers, with one `advanceTime: 125`
+(one 8 Hz fine tick) per journey step:
+
+1. a tree bump (clamp to 7, bump once, then a blocked tick);
+2. a settle, then a crossing S;
+3. a diagonal SE (two crossings in one tick, X then Y);
+4. a walk E through Dry Grass, which nudges it, and a second tree bump;
+5. a harvest, which clears the offset, and an undo, which restores it with the L1 snapshot;
+6. a D2-A key `Move` of the undriven body (P2-D14);
+7. the outer-edge clamp at column 0, then leaving.
+
+`parity-full` runs it on both drivers with `--replay-check` and diffs it cross-driver and against its goldens.
+
 ### Running `make parity-godot` on Windows (Aaron)
 
 1. `dotnet build src/Pockets.Godot`, then launch the game. **Start a fresh Godot build and send it no
@@ -159,6 +225,10 @@ Where the lines come from:
      events and poses goldens vs live-godot. A pre-2.4 Godot build sends no `poses`; rebuild it (it now references
      `Pockets.Realization`).
 3. To run it again, restart Godot first (step 1).
+4. **Free-move (Slice 2.8):** restart Godot fresh, send no input, then `make parity-godot-free-move`. It runs the tui leg
+   and the godot leg of the free-move journey and makes five comparisons: checkpoints, events and poses tui vs
+   live-godot, and the events and poses goldens vs live-godot. Disconnected, the scene drives fine ticks from its frame
+   loop; under the runner a client is connected, so every fine tick comes from the journey's `advanceTime` steps.
 
 ## Drivers
 

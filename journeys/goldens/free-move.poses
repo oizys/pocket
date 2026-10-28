@@ -1,0 +1,66 @@
+2:0 u=0/4 t=0 entity=Cursor(B) bag=bag#1 col=0 row=0 subX=0 subY=0 height=- facing=-
+2:0 u=1/4 t=15 entity=Cursor(B) bag=bag#1 col=0 row=0 subX=0 subY=4 height=- facing=-
+2:0 u=2/4 t=30 entity=Cursor(B) bag=bag#1 col=0 row=1 subX=0 subY=-8 height=- facing=-
+2:0 u=3/4 t=45 entity=Cursor(B) bag=bag#1 col=0 row=1 subX=0 subY=-4 height=- facing=-
+3:0 u=0/4 t=0 entity=Cursor(B) bag=bag#1 col=0 row=1 subX=0 subY=0 height=- facing=-
+3:0 u=1/4 t=15 entity=Cursor(B) bag=bag#1 col=0 row=1 subX=4 subY=0 height=- facing=-
+3:0 u=2/4 t=30 entity=Cursor(B) bag=bag#1 col=1 row=1 subX=-8 subY=0 height=- facing=-
+3:0 u=3/4 t=45 entity=Cursor(B) bag=bag#1 col=1 row=1 subX=-4 subY=0 height=- facing=-
+4:0 u=0/4 t=0 entity=Cursor(B) bag=bag#1 col=1 row=1 subX=0 subY=0 height=- facing=-
+4:0 u=1/4 t=15 entity=Cursor(B) bag=bag#1 col=1 row=1 subX=4 subY=0 height=- facing=-
+4:0 u=2/4 t=30 entity=Cursor(B) bag=bag#1 col=2 row=1 subX=-8 subY=0 height=- facing=-
+4:0 u=3/4 t=45 entity=Cursor(B) bag=bag#1 col=2 row=1 subX=-4 subY=0 height=- facing=-
+9:0 fine entity=Body(B) bag=bag#2 col=0 row=0 subX=4 subY=0 height=- facing=S
+9:0 fine entity=Stack(bag#2[0]) bag=bag#2 col=0 row=0 subX=1 subY=0 height=- facing=-
+10:0 fine entity=Body(B) bag=bag#2 col=0 row=0 subX=8 subY=0 height=- facing=S
+10:0 fine entity=Stack(bag#2[0]) bag=bag#2 col=0 row=0 subX=2 subY=0 height=- facing=-
+11:0 fine entity=Body(B) bag=bag#2 col=0 row=0 subX=7 subY=0 height=- facing=E
+14:0 fine entity=Body(B) bag=bag#2 col=0 row=0 subX=3 subY=0 height=- facing=E
+14:0 fine entity=Stack(bag#2[0]) bag=bag#2 col=0 row=0 subX=1 subY=0 height=- facing=-
+15:0 fine entity=Body(B) bag=bag#2 col=0 row=0 subX=0 subY=0 height=- facing=E
+18:0 fine entity=Body(B) bag=bag#2 col=0 row=0 subX=0 subY=4 height=- facing=E
+18:0 fine entity=Stack(bag#2[0]) bag=bag#2 col=0 row=0 subX=1 subY=1 height=- facing=-
+19:0 fine entity=Body(B) bag=bag#2 col=0 row=0 subX=0 subY=8 height=- facing=E
+19:0 fine entity=Stack(bag#2[0]) bag=bag#2 col=0 row=0 subX=1 subY=2 height=- facing=-
+20:0 fine entity=Body(B) bag=bag#2 col=0 row=1 subX=0 subY=-4 height=- facing=S
+21:0 fine entity=Body(B) bag=bag#2 col=0 row=1 subX=0 subY=0 height=- facing=S
+23:0 fine entity=Body(B) bag=bag#2 col=0 row=1 subX=3 subY=3 height=- facing=S
+24:0 fine entity=Body(B) bag=bag#2 col=0 row=1 subX=6 subY=6 height=- facing=S
+25:0 fine entity=Body(B) bag=bag#2 col=1 row=2 subX=-7 subY=-7 height=- facing=S
+27:0 fine entity=Body(B) bag=bag#2 col=1 row=2 subX=-3 subY=-3 height=- facing=S
+28:0 fine entity=Body(B) bag=bag#2 col=1 row=2 subX=0 subY=0 height=- facing=S
+30:0 fine entity=Body(B) bag=bag#2 col=1 row=2 subX=4 subY=0 height=- facing=S
+31:0 fine entity=Body(B) bag=bag#2 col=1 row=2 subX=8 subY=0 height=- facing=S
+31:0 fine entity=Stack(bag#2[14]) bag=bag#2 col=2 row=2 subX=1 subY=0 height=- facing=-
+32:0 fine entity=Body(B) bag=bag#2 col=2 row=2 subX=-4 subY=0 height=- facing=E
+32:0 fine entity=Stack(bag#2[14]) bag=bag#2 col=2 row=2 subX=2 subY=0 height=- facing=-
+33:0 fine entity=Body(B) bag=bag#2 col=2 row=2 subX=0 subY=0 height=- facing=E
+33:0 fine entity=Stack(bag#2[14]) bag=bag#2 col=2 row=2 subX=3 subY=0 height=- facing=-
+34:0 fine entity=Body(B) bag=bag#2 col=2 row=2 subX=4 subY=0 height=- facing=E
+34:0 fine entity=Stack(bag#2[14]) bag=bag#2 col=2 row=2 subX=4 subY=0 height=- facing=-
+35:0 fine entity=Body(B) bag=bag#2 col=2 row=2 subX=8 subY=0 height=- facing=E
+35:0 fine entity=Stack(bag#2[14]) bag=bag#2 col=2 row=2 subX=5 subY=0 height=- facing=-
+36:0 fine entity=Body(B) bag=bag#2 col=2 row=2 subX=7 subY=0 height=- facing=E
+38:0 fine entity=Body(B) bag=bag#2 col=2 row=2 subX=3 subY=0 height=- facing=E
+38:0 fine entity=Stack(bag#2[14]) bag=bag#2 col=2 row=2 subX=4 subY=0 height=- facing=-
+39:0 fine entity=Body(B) bag=bag#2 col=2 row=2 subX=0 subY=0 height=- facing=E
+42:0 u=0/4 t=0 entity=Body(B) bag=bag#2 col=2 row=2 subX=0 subY=0 height=- facing=W
+42:0 u=1/4 t=31 entity=Body(B) bag=bag#2 col=2 row=2 subX=-3 subY=0 height=- facing=W
+42:0 u=2/4 t=62 entity=Body(B) bag=bag#2 col=2 row=2 subX=-8 subY=0 height=- facing=W
+42:0 u=3/4 t=93 entity=Body(B) bag=bag#2 col=1 row=2 subX=2 subY=0 height=- facing=W
+42:0 u=4/4 t=125 entity=Body(B) bag=bag#2 col=1 row=2 subX=0 subY=0 height=- facing=W
+44:0 fine entity=Body(B) bag=bag#2 col=1 row=2 subX=-4 subY=0 height=- facing=W
+45:0 fine entity=Body(B) bag=bag#2 col=1 row=2 subX=-8 subY=0 height=- facing=W
+45:0 fine entity=Stack(bag#2[12]) bag=bag#2 col=0 row=2 subX=-1 subY=0 height=- facing=-
+46:0 fine entity=Body(B) bag=bag#2 col=0 row=2 subX=4 subY=0 height=- facing=W
+46:0 fine entity=Stack(bag#2[12]) bag=bag#2 col=0 row=2 subX=-2 subY=0 height=- facing=-
+47:0 fine entity=Body(B) bag=bag#2 col=0 row=2 subX=0 subY=0 height=- facing=W
+47:0 fine entity=Stack(bag#2[12]) bag=bag#2 col=0 row=2 subX=-3 subY=0 height=- facing=-
+48:0 fine entity=Body(B) bag=bag#2 col=0 row=2 subX=-4 subY=0 height=- facing=W
+48:0 fine entity=Stack(bag#2[12]) bag=bag#2 col=0 row=2 subX=-4 subY=0 height=- facing=-
+49:0 fine entity=Body(B) bag=bag#2 col=0 row=2 subX=-8 subY=0 height=- facing=W
+49:0 fine entity=Stack(bag#2[12]) bag=bag#2 col=0 row=2 subX=-5 subY=0 height=- facing=-
+50:0 fine entity=Body(B) bag=bag#2 col=0 row=2 subX=-7 subY=0 height=- facing=W
+52:0 fine entity=Body(B) bag=bag#2 col=0 row=2 subX=-3 subY=0 height=- facing=W
+52:0 fine entity=Stack(bag#2[12]) bag=bag#2 col=0 row=2 subX=-4 subY=0 height=- facing=-
+53:0 fine entity=Body(B) bag=bag#2 col=0 row=2 subX=0 subY=0 height=- facing=W

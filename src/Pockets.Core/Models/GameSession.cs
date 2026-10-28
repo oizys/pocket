@@ -118,6 +118,12 @@ public record GameSession(
     public ImmutableList<FineCheckpoint> FineCheckpoints { get; init; } = ImmutableList<FineCheckpoint>.Empty;
 
     /// <summary>
+    /// Test-only mutation hook (Slice 2.8): when set, every Step sees its pre-state passed through it with the fine state,
+    /// which is exactly the L1-reads-L2a leak the fuzz gate exists to catch. Null in every game path.
+    /// </summary>
+    internal Func<SimState, FineState, SimState>? FineLeakForTests { get; init; }
+
+    /// <summary>
     /// The event position of the oldest retained snapshot (P1-D9): events before it are compacted away. The
     /// session's start counts as a snapshot until a bound evicts it, so it stays 0 until the undo stack (rogue)
     /// or the checkpoint ring (realtime) first trims; it then follows the oldest one kept.
@@ -298,6 +304,18 @@ public record GameSession(
         return (session, last, all.ToImmutable());
     }
 
+    /// <summary>
+    /// The fuzz gate's overwrite (Slice 2.8, D5): this session with its fine state replaced by seeded noise
+    /// (<see cref="FineFuzz.Generate"/> over <see cref="Current"/>); with <paramref name="bodies"/> false only the offsets
+    /// are replaced and the bodies kept. Not an intent and not logged: fuzzed state is by design not replayable, and L1
+    /// must not notice it. Nothing else changes.
+    /// </summary>
+    public GameSession WithFuzzedFine(int seed, int salt, bool bodies = true)
+    {
+        var noise = FineFuzz.Generate(Current, seed, salt);
+        return this with { Fine = bodies ? noise : Fine with { Offsets = noise.Offsets } };
+    }
+
     /// <summary>True when the body of <paramref name="at"/> is integrated: realtime, a world bag, and the free movement flag.</summary>
     public bool IsFree(LocationId at) => Integrator.IsFree(Current, TickMode, at);
 
@@ -325,7 +343,7 @@ public record GameSession(
     private (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) RunStepCore(Intent intent)
     {
         var traces = new List<StepTrace>(1);
-        var pre = ToSimState();
+        var pre = FineLeakForTests is { } leak ? leak(ToSimState(), Fine) : ToSimState();
         var result = Simulation.StepTraced(pre, new[] { intent }, traces);
         var trace = traces.Count > 0 ? traces[^1] : null;
         var events = result.Events;

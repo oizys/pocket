@@ -1,0 +1,87 @@
+1:0 1 0 IntentApplied intent=AdvanceDialogue
+1:0 1 1 DialogueAdvanced beatId="opening" dismissed=true
+2:0 1 0 IntentApplied intent=Move(B, Down)
+2:0 1 1 CursorMoved loc=B bag=bag#1 from=(0,0) to=(1,0)
+2:0 1 2 UiTriggerFired trigger=FirstCursorRest
+3:0 1 0 IntentApplied intent=Move(B, Right)
+3:0 1 1 CursorMoved loc=B bag=bag#1 from=(1,0) to=(1,1)
+4:0 1 0 IntentApplied intent=Move(B, Right)
+4:0 1 1 CursorMoved loc=B bag=bag#1 from=(1,1) to=(1,2)
+4:0 1 2 DialogueQueued beatId="amnesia"
+5:0 1 0 IntentApplied intent=AdvanceDialogue
+5:0 1 1 DialogueAdvanced beatId="amnesia" dismissed=true
+6:0 1 0 IntentApplied intent=Primary(B)
+6:0 1 1 BagEntered loc=B bag=bag#2 depth=1
+6:0 1 2 UiTriggerFired trigger=FirstEnter
+6:0 1 3 ZoneReached bag=bag#2
+9:0 2 0 IntentApplied intent=SetElapsed(00:00:00.1250000)
+10:0 2 0 IntentApplied intent=SetElapsed(00:00:00.2500000)
+11:0 2 0 IntentApplied intent=SetElapsed(00:00:00.3750000)
+11:1 2 0 IntentApplied intent=Move(B, Right)
+11:1 2 1 Bumped loc=B bag=bag#2 at=(0,0) dir=Right reason=Unnavigable
+12:0 2 0 IntentApplied intent=SetElapsed(00:00:00.5000000)
+14:0 2 0 IntentApplied intent=SetElapsed(00:00:00.6250000)
+15:0 2 0 IntentApplied intent=SetElapsed(00:00:00.7500000)
+16:0 2 0 IntentApplied intent=SetElapsed(00:00:00.8750000)
+18:0 2 0 IntentApplied intent=SetElapsed(00:00:01)
+18:1 2 0 TimeAdvanced
+18:1 2 1 PlantGrew cell=bag#1[28] stage=1 of=6
+18:1 2 2 PlantGrew cell=bag#1[29] stage=1 of=6
+19:0 3 0 IntentApplied intent=SetElapsed(00:00:01.1250000)
+20:0 3 0 IntentApplied intent=SetElapsed(00:00:01.2500000)
+20:1 3 0 IntentApplied intent=Move(B, Down)
+20:1 3 1 CursorMoved loc=B bag=bag#2 from=(0,0) to=(1,0)
+21:0 3 0 IntentApplied intent=SetElapsed(00:00:01.3750000)
+23:0 3 0 IntentApplied intent=SetElapsed(00:00:01.5000000)
+24:0 3 0 IntentApplied intent=SetElapsed(00:00:01.6250000)
+25:0 3 0 IntentApplied intent=SetElapsed(00:00:01.7500000)
+25:1 3 0 IntentApplied intent=Move(B, Right)
+25:1 3 1 CursorMoved loc=B bag=bag#2 from=(1,0) to=(1,1)
+25:2 3 0 IntentApplied intent=Move(B, Down)
+25:2 3 1 CursorMoved loc=B bag=bag#2 from=(1,1) to=(2,1)
+27:0 3 0 IntentApplied intent=SetElapsed(00:00:01.8750000)
+28:0 3 0 IntentApplied intent=SetElapsed(00:00:02)
+28:1 3 0 TimeAdvanced
+28:1 3 1 PlantGrew cell=bag#1[28] stage=2 of=6
+28:1 3 2 PlantGrew cell=bag#1[29] stage=2 of=6
+30:0 4 0 IntentApplied intent=SetElapsed(00:00:02.1250000)
+31:0 4 0 IntentApplied intent=SetElapsed(00:00:02.2500000)
+32:0 4 0 IntentApplied intent=SetElapsed(00:00:02.3750000)
+32:1 4 0 IntentApplied intent=Move(B, Right)
+32:1 4 1 CursorMoved loc=B bag=bag#2 from=(2,1) to=(2,2)
+33:0 4 0 IntentApplied intent=SetElapsed(00:00:02.5000000)
+34:0 4 0 IntentApplied intent=SetElapsed(00:00:02.6250000)
+35:0 4 0 IntentApplied intent=SetElapsed(00:00:02.7500000)
+36:0 4 0 IntentApplied intent=SetElapsed(00:00:02.8750000)
+36:1 4 0 IntentApplied intent=Move(B, Right)
+36:1 4 1 Bumped loc=B bag=bag#2 at=(2,2) dir=Right reason=Unnavigable
+38:0 4 0 IntentApplied intent=SetElapsed(00:00:03)
+38:1 4 0 TimeAdvanced
+38:1 4 1 PlantGrew cell=bag#1[28] stage=3 of=6
+38:1 4 2 PlantGrew cell=bag#1[29] stage=3 of=6
+39:0 5 0 IntentApplied intent=SetElapsed(00:00:03.1250000)
+40:0 5 0 IntentApplied intent=Primary(B)
+40:0 5 1 Harvested cell=bag#2[14] yields=[1×"Dry Grass"@bag#1[11]]
+41:0 6 0 Rewound toStep=4
+42:0 6 0 IntentApplied intent=Move(B, Left)
+42:0 6 1 CursorMoved loc=B bag=bag#2 from=(2,2) to=(2,1)
+44:0 6 0 IntentApplied intent=SetElapsed(00:00:03.2500000)
+45:0 6 0 IntentApplied intent=SetElapsed(00:00:03.3750000)
+46:0 6 0 IntentApplied intent=SetElapsed(00:00:03.5000000)
+46:1 6 0 IntentApplied intent=Move(B, Left)
+46:1 6 1 CursorMoved loc=B bag=bag#2 from=(2,1) to=(2,0)
+47:0 6 0 IntentApplied intent=SetElapsed(00:00:03.6250000)
+48:0 6 0 IntentApplied intent=SetElapsed(00:00:03.7500000)
+49:0 6 0 IntentApplied intent=SetElapsed(00:00:03.8750000)
+50:0 6 0 IntentApplied intent=SetElapsed(00:00:04)
+50:1 6 0 TimeAdvanced
+50:1 6 1 PlantGrew cell=bag#1[28] stage=4 of=6
+50:1 6 2 PlantGrew cell=bag#1[29] stage=4 of=6
+52:0 7 0 IntentApplied intent=SetElapsed(00:00:04.1250000)
+53:0 7 0 IntentApplied intent=SetElapsed(00:00:04.2500000)
+54:0 7 0 IntentApplied intent=Leave(B)
+54:0 7 1 BagLeft loc=B bag=bag#1 depth=0
+55:0 8 0 IntentApplied intent=SetElapsed(00:00:05.2500000)
+55:1 8 0 TimeAdvanced
+55:1 8 1 PlantGrew cell=bag#1[28] stage=5 of=6
+55:1 8 2 PlantGrew cell=bag#1[29] stage=5 of=6

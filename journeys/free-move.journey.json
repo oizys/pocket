@@ -1,0 +1,302 @@
+{
+  "name": "free-move",
+  "description": "Two-layer Phase 2, Slice 2.8: the D2-B free-movement journey. The demo profile (realtime) walks into the Quiet 1 wilderness, turns its bag Free (setMovement B Free), then steers with held directions, one advanceTime 125 = one 8 Hz fine tick per step: a tree bump (clamp, bump once), settle, a crossing, a diagonal (X then Y in one tick), a nudge of a Dry Grass stack and a second tree bump, a harvest, an undo, a D2-A key move, the outer-edge clamp, and leaving. Goldens: journeys/goldens/free-move.checkpoints, .events and .poses (the poses carry `fine` lines for driven commits).",
+  "steps": [
+    {
+      "checkpoint": "frame-0"
+    },
+    {
+      "key": "Primary",
+      "comment": "Dismiss the opening beat."
+    },
+    {
+      "key": "Down"
+    },
+    {
+      "key": "Right"
+    },
+    {
+      "key": "Right",
+      "comment": "Onto the enter-only Quiet 1 wilderness at (1,2); the amnesia beat shows."
+    },
+    {
+      "key": "Primary",
+      "comment": "Dismiss the amnesia beat."
+    },
+    {
+      "checkpoint": "fm-entered",
+      "assertViewModel": {
+        "cursor": {
+          "row": 0,
+          "col": 0
+        },
+        "isNested": true
+      },
+      "key": "Primary",
+      "comment": "Enter Quiet 1 (E works where C won't). Cursor (0,0) on Dry Grass, a tree immediately E at (0,1)."
+    },
+    {
+      "checkpoint": "fm-free",
+      "setMovement": {
+        "loc": "B",
+        "model": "Free"
+      },
+      "comment": "D2-B on: Quiet 1 becomes a free bag (realtime, world bag, flag Free)."
+    },
+    {
+      "checkpoint": "fm-steer-e",
+      "steer": "E",
+      "comment": "Hold E toward the tree. Steer only sets Held; nothing has moved yet."
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125,
+      "checkpoint": "fm-tree-bump",
+      "assertViewModel": {
+        "cursor": {
+          "row": 0,
+          "col": 0
+        },
+        "dialogue": null
+      },
+      "comment": "Glide E (Px 4, 8, then 12 -> crossing refused by the tree: clamp to 7, bump once), then one blocked tick with no second bump."
+    },
+    {
+      "checkpoint": "fm-release-1",
+      "steer": "none"
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125,
+      "checkpoint": "fm-settled-1",
+      "assertViewModel": {
+        "cursor": {
+          "row": 0,
+          "col": 0
+        }
+      },
+      "comment": "Settle to centre (7 -> 3 -> 0), then an idle tick."
+    },
+    {
+      "steer": "S",
+      "comment": "Hold S into the open cell (1,0)."
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125,
+      "checkpoint": "fm-cross-s",
+      "assertViewModel": {
+        "cursor": {
+          "row": 1,
+          "col": 0
+        }
+      },
+      "comment": "Py 4, 8, 12 -> crossing accepted (Move S, Py -4), then 0."
+    },
+    {
+      "steer": "SE",
+      "comment": "Hold SE: diagonal, 3/16 per axis."
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125,
+      "checkpoint": "fm-diagonal",
+      "assertViewModel": {
+        "cursor": {
+          "row": 2,
+          "col": 1
+        }
+      },
+      "comment": "(3,3), (6,6), (9,9) -> two crossings in one tick, X then Y: (1,1) Bone Chips then (2,1)."
+    },
+    {
+      "steer": "none"
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125,
+      "checkpoint": "fm-settled-2",
+      "assertViewModel": {
+        "cursor": {
+          "row": 2,
+          "col": 1
+        }
+      }
+    },
+    {
+      "steer": "E",
+      "comment": "Hold E through the Dry Grass at (2,2) toward the tree at (2,3): the walk nudges the grass."
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125,
+      "checkpoint": "fm-nudge-bump",
+      "assertViewModel": {
+        "cursor": {
+          "row": 2,
+          "col": 2
+        }
+      },
+      "comment": "Px 4, 8 (the grass is half under the body: nudged), 12 -> cross onto the grass (-4), 0, 4, 8, then 12 -> refused by the tree at (2,3): clamp 7, the second bump."
+    },
+    {
+      "steer": "none"
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125,
+      "checkpoint": "fm-settled-3",
+      "assertViewModel": {
+        "cursor": {
+          "row": 2,
+          "col": 2
+        }
+      }
+    },
+    {
+      "checkpoint": "fm-harvest",
+      "assertViewModel": {
+        "cursor": {
+          "row": 2,
+          "col": 2
+        },
+        "handEmpty": true
+      },
+      "key": "Primary",
+      "comment": "Harvest the nudged grass: its offset clears (any L1 move of a stack clears it)."
+    },
+    {
+      "checkpoint": "fm-undo",
+      "assertViewModel": {
+        "cursor": {
+          "row": 2,
+          "col": 2
+        }
+      },
+      "key": "Undo",
+      "comment": "Undo: L1 rewinds and the fine state returns to the harvest's snapshot (the nudged offset is back)."
+    },
+    {
+      "checkpoint": "fm-key-move",
+      "assertViewModel": {
+        "cursor": {
+          "row": 2,
+          "col": 1
+        }
+      },
+      "key": "Left",
+      "comment": "A key Move of an undriven body in a free bag is still a D2-A walk (P2-D14), re-anchored."
+    },
+    {
+      "steer": "W",
+      "comment": "Hold W: into the Ruin at (2,0), then the outer edge."
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125,
+      "checkpoint": "fm-edge-clamp",
+      "assertViewModel": {
+        "cursor": {
+          "row": 2,
+          "col": 0
+        }
+      }
+    },
+    {
+      "steer": "none"
+    },
+    {
+      "advanceTime": 125
+    },
+    {
+      "advanceTime": 125,
+      "checkpoint": "fm-settled-4",
+      "assertViewModel": {
+        "cursor": {
+          "row": 2,
+          "col": 0
+        }
+      }
+    },
+    {
+      "checkpoint": "fm-left",
+      "assertViewModel": {
+        "cursor": {
+          "row": 1,
+          "col": 2
+        },
+        "isNested": false
+      },
+      "key": "LeaveBag",
+      "comment": "Leave Quiet 1."
+    },
+    {
+      "checkpoint": "fm-after-leave",
+      "advanceTime": 1000
+    }
+  ]
+}

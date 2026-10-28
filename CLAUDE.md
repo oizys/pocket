@@ -72,7 +72,7 @@ dotnet build Pockets.sln        # build all projects
 dotnet test                     # run all tests
 dotnet run --project src/Pockets.App  # run the TUI app
 make parity                     # fast gate: smoke journey, tui vs mock-godot, events + replay check
-make parity-full                # full gate (pre-push): both journeys + VM, buffer and events goldens
+make parity-full                # full gate (pre-push): all three journeys + VM, buffer, events and poses goldens + fine fuzz
 ```
 
 ## Current Stage: Stage 1

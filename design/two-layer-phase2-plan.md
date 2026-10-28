@@ -1110,7 +1110,8 @@ own player the same commit with the same deterministic `atMs`.
 4. **D2-B (the 2.7 part; same build).** Disconnect any socket client first: the scene sends fine ticks from its frame
    loop only while no client is connected. Then play into Quiet 1 by hand. Send
    `{"action":"setMovement","loc":"B","model":"Free"}` from a one-shot client (for example a tiny `websocat` call), then
-   close it, or run the scratch free-move steps through `parity-godot` once 2.8 adds the journey.
+   close it. Since 2.8 there is also the scripted check: restart Godot fresh and run `make parity-godot-free-move`
+   (see the 2.8 addendum).
    - **setMovement B Free:** after it, an arrow press no longer jumps one cell.
    - **Held-arrow glide:** a held arrow glides the body smoothly at about 2 cells/s. It crosses into the next cell about
      every half second. The highlight follows the body's sub-cell position.
@@ -1312,3 +1313,172 @@ Shape pin: 33 → 36 intent cases (`FineTick`, `SetMovement`, `Steer`).
 - **Interpolation:** none was added. In Godot the body moves in 4/16-cell steps, 8 times a second (`PosePlayer.Advance`
   has no track to play between fine ticks). If Aaron's pass says it stutters, a short `Body` interpolation track over
   `TickMs` for fine commits is the candidate. It is a policy and golden change.
+
+## Addendum — Slice 2.8 as built (2026-10-28)
+
+The fuzz invariant is in CI, and the `free-move` journey drives D2-B on both drivers. This slice adds **exactly the three
+free-move goldens**: `journeys/goldens/free-move.checkpoints` (57 lines), `.events` (87) and `.poses` (66). It adds **no
+buffer goldens**: parity-full's buffer pattern is tied to `"golden": true` ledger-row checkpoints, the free-move journey
+flags none, and the TUI cannot show sub-cell motion anyway (P2-D4, P2-D14). Nothing that already existed under
+`journeys/goldens/` changed: `git status journeys/` shows only `?? journeys/free-move.journey.json` and the three new
+goldens. `target-demo.poses` is byte-identical.
+
+- `dotnet test` is green: Core 1167 (up from 1144), App 54, Realization 169 (up from 163).
+- `make parity-full` is green (about 42 s in WSL), with 26 compares.
+- `dotnet build src/Pockets.Godot/Pockets.Godot.csproj --no-incremental` gives 0 warnings and 0 errors. **No Godot file
+  changed.**
+- The tests were written first and seen failing (compile: `FineFuzz`, `FuzzFine`, `WithFuzzedFine`, `FineLeakForTests`;
+  then 2 of the driven-line tests, and the nudge-line test with the stack half removed) before the production code.
+
+**`Simulation.Step` review flag: not raised.** No `Sim/**` file was edited.
+
+### `--fuzz-fine` (runner, tui and mock-godot)
+
+- **`Pockets.Core.Fine.FineFuzz.Generate(game, seed, salt)`** is pure and int-only. It is counter-hashed (a murmur-style
+  finalizer, no `Random`), so a seed gives the same noise on every driver and machine. For each location present, in
+  `LocationId` order:
+  - about half the occupied cells of the active bag get an offset in ±6 per axis;
+  - the body gets `(Px, Py)` in ±7, with no velocity and no `Held` (the 2.7 caveat: a fuzzed `Held` body could read as
+    blocked).
+- **`GameSession.WithFuzzedFine(seed, salt, bodies = true)`** replaces `Fine` (only the offsets when `bodies` is false).
+  **`GameController.FuzzFine(seed, salt, bodies)`** writes it into the controller.
+  - **Deviation from "Apply is the only public mutation":** this overwrite bypasses `Apply` on purpose. It is not an
+    intent: fuzzed state is by design not replayable, so it must never enter the intent log. It touches only L2a, and
+    the wall tests still pass (`GameController` names no fine type).
+- Runner:
+  - `IFineFuzzDriver` (tui and mock-godot) and `FuzzSpec(Seed, Bodies)`.
+  - `JourneyRunnerCore.Run(…, fuzz)` overwrites after the start observation and after every step, salted by the index of
+    the next step.
+  - Under the fuzz the replay check is skipped with a note, and the pose stream is not compared.
+  - Flags: `--fuzz-fine <seed>`, and `--fuzz-fine-offsets <seed>` (offsets only).
+- **Makefile `parity-full`** (`FUZZ := 1`) reruns smoke and target-demo on both drivers with `--fuzz-fine` and compares
+  the checkpoints and events with the unfuzzed runs: 8 compares.
+  - The optional offsets-only fuzz of free-move is in too, on mock-godot: 2 compares.
+  - A full fuzz of free-move is **not** run: a fuzzed steered body derives different Moves.
+    `FreeMoveJourneyTests.FullFuzz_OfASteeredBody_DoesChangeL1_ByDesign` pins that caveat.
+
+### The mutation check
+
+- **`GameSession.FineLeakForTests`** is an `internal` init property, `Func<SimState, FineState, SimState>?`, and null in
+  every game path. When set, `RunStepCore` passes each Step's pre-state through it with the fine state. It is
+  session-scoped (carried by `with`), not a static, so parallel tests cannot see each other's hooks.
+- `FineFuzzTests.Mutation_L1ReadsAnOffset_FailsTheFuzz` sets a leak: any offset snaps the B cursor home.
+  - Unfuzzed, the smoke run is identical to the baseline, because the fine state stays empty.
+  - Fuzzed, it diverges.
+- **The real gate, run once:** the same leak was hard-coded into `RunStepCore` temporarily, and `make parity-full` was
+  run, then the edit was reverted.
+  - The first fuzzed run (smoke, tui) **failed with 32 failures**, starting with `[3 inspect-2] assert-viewmodel: 'cursor': 'col':
+    expected 2, got 1`, and make stopped (exit 2).
+  - Every unfuzzed gate before it stayed green, as expected: the unfuzzed fine state is empty, so the leak is inert.
+
+### Pinning the glide: `fine` lines for driven commits (the PM decision)
+
+This is in `PoseStream.Commit`, so tui, mock-godot, live Godot's debug server and `PoseReplayCheck` all produce it, and
+`parity-godot` diffs it too. Format, documented in `tools/journey-runner/README.md` §Pose golden:
+
+```
+<journeyStep>:<k> fine <PoseText>
+```
+
+- A commit is **driven** when a shown location's body is driven (`Scene.Driven`: stored with `Held` or a non-zero `v`)
+  before **or** after it. "Before" catches the last settle tick, after which the body is at rest and removed.
+- After the sampled lines, a driven commit adds:
+  - one line per driven body whose rest pose changed (`Shown` order);
+  - one line per stack that stayed in its cell but whose offset changed: **the nudge**.
+- **Extension beyond the PM's wording ("the body's pose line"):** the stack lines are extra. Without them the nudge was
+  invisible in every golden, because a nudged stack has no track and its offset shows only in rest poses. They are added
+  only in driven commits, so they cannot touch a grid-locked journey either.
+- No driven body ⇒ nothing is added. Both demo journeys never store a body, so `target-demo.poses` is byte-identical.
+  The fallback (FineText in checkpoints) was not needed.
+- Not pinned in the poses: the harvest clearing an offset and the undo restoring it (neither commit is driven). Those
+  are covered by `FineReconcileTests`/`FineSessionTests`, and the journey's undo is in `free-move.events`
+  (`Rewound toStep=4`).
+
+### `journeys/free-move.journey.json` (55 steps)
+
+It uses the demo profile (realtime) and enters Quiet 1 in 6 steps (opening dismissed, Down, Right, Right, amnesia
+dismissed, enter), rather than the scratch's target-demo 0–73. That gives a shorter, independent golden with the same
+Quiet 1 layout (cursor (0,0), tree E). Then `setMovement B Free`, and one `advanceTime: 125` (one fine tick) per step:
+
+1. **steer E:** Px 4, 8, then 12 is refused by the tree at (0,1): a clamp to 7 and **one** `Bumped`, then a blocked
+   tick with no second bump;
+2. **release:** it settles 7 → 3 → 0, then an idle tick (no line);
+3. **S:** crosses into (1,0);
+4. **SE:** (3,3), (6,6), (9,9) gives **two Moves in one tick, X then Y**, through Bone Chips to (2,1);
+5. **E:** through the Dry Grass at (2,2), nudging it 1/16 per tick up to 5, into a second tree bump at (2,3), then a
+   settle (which nudges back by 1);
+6. **harvest** (Primary) clears the offset; **undo** (`Rewound toStep=4`) restores L1 and the snapshot's fine state;
+7. a **key Move** Left, a D2-A walk of the undriven body (P2-D14). It writes sampled lines and no `fine` line;
+8. **W:** crosses onto the Ruin at (2,0), then the **outer edge clamps** at −7 with no Move (P2-D10). The Ruin is
+   nudged too;
+9. **leave**, then `advanceTime 1000`.
+
+`parity-full` runs it on both drivers with `--replay-check` ("92 intents, 57 checkpoints, 87 event lines; 55 commits,
+66 pose lines identical"). It then makes 3 cross-driver and 3 golden compares, and the 2 offsets-only fuzz compares.
+`record-goldens` also records the three free-move goldens.
+
+### The L1-projection test and the property test (Core.Tests)
+
+- **`FreeMoveJourneyTests.TheDerivedMoves_ReplayedOnAPlainD2ASession_GiveIdenticalL1`:**
+  - it records the journey's intent log and replays it through the shell (`ReplayCheck.Replay`), collecting each
+    `FineTick`'s `IntentApplied(Move)` envelopes;
+  - it builds the D2-A log: each `FineTick` is replaced by its derived Moves (0–2), each `Steer` is dropped, and
+    everything else (the `SetMovement`s and the `Undo`) is kept;
+  - it applies that log on a fresh session, which never grows fine state (asserted);
+  - the VM and the event lines (one `EventText` per side) are identical after **every** original intent;
+  - it is not vacuous: 7 derived Moves, one tick with 2, a derived `Bumped`, and an `Undo`. Dropping one derived Move
+    fails it (checked once).
+- **`FineFuzzTests.RandomFineStates_TimesRandomL1Streams_GiveIdenticalL1`** (10 seeds × 120 commands):
+  - the commands are random keys (no steering), a few `advanceTime`s and random `setMovement Free/GridLocked`;
+  - one of two controllers is fuzzed before every command;
+  - the events, the VM and the final `TickCount` must be identical.
+- Also: `Fuzz_AfterEveryStep_…` (smoke × 2 seeds, target-demo), the generator's determinism and bounds, the
+  offsets-only mode, `FuzzFine` changing neither the logs nor the VM, and `OffsetsOnlyFuzz` of free-move × 3 seeds.
+- Realization `DrivenPoseLineTests` (6): a steer that moves nothing writes no line; the tick lines across a crossing;
+  settle down to rest, then nothing; the nudge's stack line after the body; an undriven key Move; a grid-locked bag.
+- `JourneyCommands` (test plumbing) drives a journey through `DebugCommandHandler`, including `steer`/`setMovement`.
+
+### Found along the way (pre-existing, not fixed: an L1/controller bug, out of scope)
+
+The property test's random streams hit a **`KeyNotFoundException` in `Simulation.SwapIn`**:
+- an Undo that removes an open C look-in (Peek or Primary opened it) leaves `GameController`'s focus on C;
+- the next tool key (Sort, here) is routed to the missing location and throws.
+- Repro: seed 18 of the property test's stream.
+
+It is fine-independent, and the test tolerates it only when both controllers throw identically. The fix probably belongs
+in the controller's focus-follow after Undo (`FollowFocus`). It is a small, golden-neutral L1 fix for a later slice.
+
+### Windows check (updates the 2.5/2.7 list)
+
+- `make parity-godot` is unchanged. It runs target-demo, whose poses have no `fine` lines.
+- **New: `make parity-godot-free-move`.** Restart Godot fresh, send no input, and run it. It makes five compares: the
+  checkpoints, events and poses tui vs live-godot, and the events and poses goldens vs live-godot.
+  - It needs no Godot change: `steer`/`setMovement`/`advanceTime` already reach the controller through
+    `PoseDebugCommandHandler` (2.7), and the `fine` lines come from Realization.
+  - While the runner is connected the scene sends no frame-driven fine ticks (2.7's `HasPeers`), so the ticks come only
+    from the journey's `advanceTime` steps.
+  - If it diverges only on `fine` lines while the events match, suspect frame ticks leaking past `HasPeers`.
+- It cannot run after `parity-godot` on the same instance (start state and `bag#N` naming), so it is a separate target.
+
+### Notes for 2.9 (close-out)
+
+- **Docs to carry:**
+  - two-layer.md Phase 2 ✓: the fuzz gate, the `fine` line format, and the free-move journey;
+  - CLAUDE.md's "Realization and fine state" section: the wall tests, plus `FineFuzzTests`, `FreeMoveJourneyTests` and
+    `DrivenPoseLineTests`;
+  - the README's `--fuzz-fine`/free-move/`parity-godot-free-move` sections are already written (2.9 only needs to
+    review them).
+- **Drift-note items:**
+  - `FuzzFine`/`WithFuzzedFine` are public non-`Apply` writers (test and gate only);
+  - the `fine` lines include nudged stacks;
+  - free-move enters Quiet 1 by its own 6-step route;
+  - no buffer goldens for free-move;
+  - the pre-existing focus-after-Undo throw above;
+  - intent-log growth is real: the free-move journey's 55 steps log 92 intents, 32 of them `FineTick`s (and 35 `SetElapsed`s). Every moving or
+    settling tick is logged, at 8 per second while a body moves. No fix until Phase 7 retention (risk 6).
+- **The D2-B verdict** needs Aaron's Windows pass (2.5/2.7 list plus `parity-godot-free-move`). Any policy change to
+  speed, settle or 8 Hz re-records only `free-move.poses`, plus `free-move.events`/`.checkpoints` wherever crossings
+  move to other ticks. It never touches the demo goldens.
+- The full fuzz stays on smoke and target-demo. If 2.9 wants a full fuzz on free-move, fuzz only bodies with
+  `Held == null`, or skip a step while `NeedsFineTick` (2.7's options). Neither is needed for the exit criterion as
+  written.

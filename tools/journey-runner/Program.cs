@@ -11,11 +11,13 @@ using Pockets.JourneyRunner;
 //   journey-runner --driver tui|godot|mock-godot --script <file> [--out <file>]
 //                  [--data <dir>] [--seed <int>] [--url ws://host:port] [--dump]
 //                  [--goldens <dir>] [--screenshots <dir>] [--events-out <file>] [--replay-check]
-//                  [--poses-out <file>]
+//                  [--poses-out <file>] [--fuzz-fine <seed> | --fuzz-fine-offsets <seed>]
 // --events-out writes the event golden (one `<journeyStep>:<k> <step> <seq> <Kind> field=value…` line per
 // event); --replay-check replays the run's intent log on a fresh session and requires identical VMs and
 // events (in-process drivers only; Slice 1.7) and, since Slice 2.4, identical pose lines at every commit.
 // --poses-out writes the pose golden (Slice 2.4): `<journeyStep>:<k> u=<q>/4 t=<ms> <PoseText>` per moving entity.
+// --fuzz-fine overwrites the session's L2a fine state with seeded noise after every step (Slice 2.8); the run's VM and
+// event streams must equal the unfuzzed run's (the Makefile --compares them). --fuzz-fine-offsets fuzzes the offsets only.
 // --goldens captures the TUI character buffer at every golden-flagged checkpoint (Slice 8 ledger-row
 // render goldens); --screenshots captures a Godot viewport PNG at the same checkpoints (real Godot only).
 //
@@ -50,7 +52,7 @@ if (args.Length > 0 && args[0] is "--compare" or "--compare-dirs")
 var opts = ParseArgs(args);
 if (opts is null) { PrintUsage(); return 2; }
 
-var (driverName, scriptPath, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck, posesOut) = opts.Value;
+var (driverName, scriptPath, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck, posesOut, fuzz) = opts.Value;
 
 var script = JourneyScript.Load(scriptPath);
 
@@ -76,7 +78,7 @@ using IJourneyDriver driver = driverName switch
 Console.Error.WriteLine($"[journey-runner] driver={driver.Name} script={script.Name} steps={script.Steps.Count}");
 
 var result = JourneyRunnerCore.Run(driver, script, screenshotsDir,
-    replayFrom: replayCheck && profile is not null ? () => profile.NewSession() : null);
+    replayFrom: replayCheck && profile is not null ? () => profile.NewSession() : null, fuzz: fuzz);
 
 if (outPath is not null)
 {
@@ -135,13 +137,14 @@ return 1;
 // --- arg parsing ---
 
 static (string driver, string script, string? outPath, string dataDir, int? seed, string url, bool dump,
-        string? goldensDir, string? screenshotsDir, string? eventsOut, bool replayCheck, string? posesOut)?
+        string? goldensDir, string? screenshotsDir, string? eventsOut, bool replayCheck, string? posesOut, FuzzSpec? fuzz)?
     ParseArgs(string[] args)
 {
     string? driver = null, script = null, outPath = null, dataDir = null, url = "ws://localhost:9080";
     string? goldensDir = null, screenshotsDir = null, eventsOut = null, posesOut = null;
     bool replayCheck = false;
     int? seed = null;
+    FuzzSpec? fuzz = null;
     bool dump = false;
 
     for (int i = 0; i < args.Length; i++)
@@ -160,6 +163,8 @@ static (string driver, string script, string? outPath, string dataDir, int? seed
             case "--events-out": eventsOut = Next(args, ref i); break;
             case "--replay-check": replayCheck = true; break;
             case "--poses-out": posesOut = Next(args, ref i); break;
+            case "--fuzz-fine": fuzz = new FuzzSpec(int.Parse(Next(args, ref i))); break;
+            case "--fuzz-fine-offsets": fuzz = new FuzzSpec(int.Parse(Next(args, ref i)), Bodies: false); break;
             default:
                 Console.Error.WriteLine($"Unknown argument: {args[i]}");
                 return null;
@@ -168,7 +173,7 @@ static (string driver, string script, string? outPath, string dataDir, int? seed
 
     if (driver is null || script is null) return null;
     dataDir ??= DefaultDataDir();
-    return (driver, script, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck, posesOut);
+    return (driver, script, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck, posesOut, fuzz);
 }
 
 // Optional --label <text> for the compare modes (names the gate in PASS/FAIL output). Empty if absent.
@@ -206,8 +211,11 @@ static void PrintUsage() => Console.Error.WriteLine(
     "                      [--data <dir>] [--seed <int>] [--url ws://host:port] [--dump]\n" +
     "                      [--goldens <dir>] [--screenshots <dir>]\n" +
     "                      [--events-out <file>] [--replay-check] [--poses-out <file>]\n" +
+    "                      [--fuzz-fine <seed> | --fuzz-fine-offsets <seed>]\n" +
     "  --goldens <dir>      write a TUI character-buffer golden per golden-flagged checkpoint (tui driver)\n" +
     "  --screenshots <dir>  save a Godot viewport PNG per golden-flagged checkpoint (godot driver)\n" +
     "  --events-out <file>  write the event golden: `<journeyStep>:<k> <step> <seq> <Kind> field=value…` per line\n" +
     "  --replay-check       replay the intent log on a fresh session; VMs, events and poses must be identical (tui, mock-godot)\n" +
-    "  --poses-out <file>   write the pose golden: `<journeyStep>:<k> u=<q>/4 t=<ms> entity=… bag=… col=… …` per line");
+    "  --poses-out <file>   write the pose golden: `<journeyStep>:<k> u=<q>/4 t=<ms> entity=… bag=… col=… …` per line\n" +
+    "  --fuzz-fine <seed>   overwrite the fine state (offsets ±6, bodies ±7) after every step; compare its VM/events to an unfuzzed run\n" +
+    "  --fuzz-fine-offsets <seed>  the same, offsets only (bodies kept)");

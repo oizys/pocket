@@ -7,6 +7,13 @@ using Pockets.Realization;
 
 namespace Pockets.JourneyRunner;
 
+/// <summary>
+/// The fine-state fuzz of a run (Slice 2.8, <c>--fuzz-fine</c>): after every observation the session's L2a state is
+/// overwritten with the noise of <see cref="Seed"/>, salted by the index of the next journey step. With
+/// <see cref="Bodies"/> false only the stack offsets are replaced (the free-move journey keeps its steered bodies).
+/// </summary>
+public record FuzzSpec(int Seed, bool Bodies = true);
+
 /// <summary>A golden render capture at a flagged checkpoint (Slice 8): its label + the render probe.</summary>
 public record GoldenCapture(string Label, string RenderProbe);
 
@@ -48,8 +55,13 @@ public static class JourneyRunnerCore
     /// in-process (<see cref="ISessionDriver"/>) driver the run's intent log is replayed on it after the loop
     /// and must reproduce every step's view-model and event stream (<see cref="ReplayCheck"/>).
     /// </param>
+    /// <param name="fuzz">
+    /// When non-null (<c>--fuzz-fine</c>), the run overwrites the fine state after the start observation and after every
+    /// step (<see cref="FuzzSpec"/>). Its checkpoint and event streams must then equal the unfuzzed run's, which the
+    /// Makefile checks with <c>--compare</c>; the pose stream legitimately differs and the replay check is skipped.
+    /// </param>
     public static RunResult Run(IJourneyDriver driver, JourneyScript script, string? screenshotDir = null,
-        Func<GameSession>? replayFrom = null)
+        Func<GameSession>? replayFrom = null, FuzzSpec? fuzz = null)
     {
         var checkpoints = new List<string>();
         var failures = new List<string>();
@@ -62,6 +74,16 @@ public static class JourneyRunnerCore
         var boundaries = new List<ReplayBoundary>();
         var sessionDriver = driver as ISessionDriver;
         var completed = true;
+
+        var fuzzer = fuzz is null ? null : driver as IFineFuzzDriver;
+        if (fuzz is not null)
+        {
+            if (fuzzer is null)
+                failures.Add($"--fuzz-fine needs an in-process session; {driver.Name} cannot overwrite its fine state.");
+            if (replayFrom is not null)
+                notes.Add("replay check skipped under --fuzz-fine (the fuzzed fine state is not in the intent log by design).");
+            replayFrom = null;
+        }
 
         var screenshotter = driver as IScreenshotDriver;
         if (screenshotDir is not null)
@@ -83,6 +105,7 @@ public static class JourneyRunnerCore
         if (replayFrom is not null && sessionDriver is not null)
             boundaries.Add(Boundary(-1, sessionDriver, start));
         VerifyStructural(driver.Name, -1, "start", start, failures, notes);
+        fuzzer?.FuzzFine(fuzz!.Seed, 0, fuzz.Bodies);
 
         for (int i = 0; i < script.Steps.Count; i++)
         {
@@ -174,6 +197,8 @@ public static class JourneyRunnerCore
                     catch (Exception ex) { failures.Add($"[{i} {label}] screenshot failed: {ex.Message}"); }
                 }
             }
+
+            fuzzer?.FuzzFine(fuzz!.Seed, i + 1, fuzz.Bodies);
         }
 
         if (replayFrom is not null)
@@ -198,6 +223,9 @@ public static class JourneyRunnerCore
                     notes.Add($"replay check: {poseCommits.Count} commits and {poseCommits.Sum(c => c.Lines.Count)} pose lines identical");
             }
         }
+
+        if (fuzzer is not null)
+            notes.Add($"fuzz-fine: seed {fuzz!.Seed}, {(fuzz.Bodies ? "offsets and bodies" : "offsets only")}, overwritten after each of {script.Steps.Count + 1} observations");
 
         if (posesMissing)
             notes.Add($"{driver.Name} sent no poses (a pre-2.4 build?) — its pose stream is empty.");

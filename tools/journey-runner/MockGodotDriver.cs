@@ -12,7 +12,7 @@ namespace Pockets.JourneyRunner;
 /// in environments (like WSL) where the Godot editor/runtime can't run headless. The real
 /// <see cref="GodotWebSocketDriver"/> talks to a running Godot binary on a machine that has one.
 /// </summary>
-public sealed class MockGodotDriver : IJourneyDriver, ISessionDriver
+public sealed class MockGodotDriver : IJourneyDriver, ISessionDriver, IFineFuzzDriver
 {
     private readonly GameController _controller;
 
@@ -58,6 +58,12 @@ public sealed class MockGodotDriver : IJourneyDriver, ISessionDriver
     /// <summary>Slice 2.7: the debug <c>setMovement</c> command.</summary>
     public void SetMovement(LocationId at, MovementModel model) =>
         Send(new JsonObject { ["action"] = "setMovement", ["loc"] = at.ToString(), ["model"] = model.ToString() });
+
+    /// <summary>
+    /// Slice 2.8: overwrites the controller's fine state with seeded noise (<c>--fuzz-fine</c>). In process, not over the
+    /// protocol: fuzzing is a gate, not a debug command a client may send.
+    /// </summary>
+    public void FuzzFine(int seed, int salt, bool bodies) => _controller.FuzzFine(seed, salt, bodies);
 
     public void Back() =>
         Send(new JsonObject { ["action"] = "back" });

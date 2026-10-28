@@ -25,7 +25,7 @@ namespace Pockets.JourneyRunner;
 ///
 /// Terminal.Gui's Application is global/static, so at most one TuiDriver may exist at a time.
 /// </summary>
-public sealed class TuiDriver : IJourneyDriver, ISessionDriver
+public sealed class TuiDriver : IJourneyDriver, ISessionDriver, IFineFuzzDriver
 {
     private readonly GameView _view;
     private readonly int _cols;
@@ -119,6 +119,9 @@ public sealed class TuiDriver : IJourneyDriver, ISessionDriver
         Record(_view.Controller.SetMovement(at, model).Events, atMs: 0);
         Render();
     }
+
+    /// <summary>Slice 2.8: overwrites the view's session fine state with seeded noise (<c>--fuzz-fine</c>); nothing is recorded or rendered.</summary>
+    public void FuzzFine(int seed, int salt, bool bodies) => _view.Controller.FuzzFine(seed, salt, bodies);
 
     /// <summary>
     /// Scripted clock advance (Slice 5). The harness GameView is built with enableTickTimer:false, so
