@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Pockets.Core.Data;
 using Pockets.Core.Models;
+using Pockets.Core.Sim;
 
 namespace Pockets.Core.Tests.Models;
 
@@ -403,7 +404,69 @@ public class RecipeCycleTests
         Assert.Contains(session.ActionLog, log => log.Contains("crafted") && log.Contains("Stone Axe"));
     }
 
+    [Fact]
+    public void Tick_CompletedCraft_WritesTheCraftedLine()
+    {
+        var session = GameSession.New(RootWith(CreateFacilityWithFilledInputs(AxeRecipe)), Recipes, WorkbenchRecipeMap, TickMode.Realtime);
+
+        // AxeRecipe Duration=3: the third tick completes
+        session = session.Apply(new Intent.Tick()).Apply(new Intent.Tick()).Apply(new Intent.Tick());
+
+        Assert.Equal("✦ Workbench crafted: Stone Axe", session.ActionLog[^1]);
+        Assert.DoesNotContain(session.ActionLog, log => log.Contains("craft aborted"));
+    }
+
+    [Fact]
+    public void Tick_AbortedCraft_WritesTheAbortedLine_NotACraftedLine()
+    {
+        var facility = CreateFacilityWithFilledInputs(AxeRecipe);
+        var state = RootWith(facility).OpenAsContainer(facility.Id).State;
+        var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Realtime);
+
+        // Start the craft, pull the rocks out of input slot 0, then tick: the inputs no longer match
+        session = session.Apply(new Intent.Tick());
+        Assert.Single(session.ActiveCrafts());
+        session = session.Apply(new Intent.Grab(LocationId.C));
+        var (after, _, events) = session.ApplyTraced(new Intent.Tick());
+
+        Assert.Contains(events, e => e is SimEvent.CraftAborted);
+        Assert.Equal("✦ Workbench craft aborted: Stone Axe", after.ActionLog[^1]);
+        Assert.DoesNotContain(after.ActionLog, log => log.Contains("crafted:"));
+    }
+
+    // ==================== Undo at a panel other than B ====================
+
+    [Fact]
+    public void CycleRecipeAtPanelC_UndoRestoresThePreSwitchState()
+    {
+        var facility = CreateFacilityWithRecipe(AxeRecipe);
+        var state = RootWith(facility).OpenAsContainer(facility.Id).State;
+        var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Rogue);
+        var before = session.Current;
+
+        var cycled = session.Apply(new Intent.CycleRecipe(LocationId.C));
+        Assert.Equal("workbench-shield", cycled.Current.Store.GetById(facility.Id)!.FacilityState!.ActiveRecipeId);
+        var undone = cycled.Apply(new Intent.Undo());
+
+        Assert.Equal(before, undone.Current);
+        Assert.Equal(before.RootBag.Id, undone.Current.Locations.Get(LocationId.B).BagId);
+    }
+
     // ==================== Helpers ====================
+
+    /// <summary>A 4×2 root holding <paramref name="facility"/> at cell 0, with a 1×1 hand and every test type.</summary>
+    private static GameState RootWith(Bag facility)
+    {
+        var bagItemType = new ItemType("Workbench Bag", Category.Bag, IsStackable: false);
+        var rootGrid = Grid.Create(4, 2);
+        rootGrid = rootGrid.SetCell(0, rootGrid.GetCell(0) with { Stack = new ItemStack(bagItemType, 1, ContainedBagId: facility.Id) });
+        var rootBag = new Bag(rootGrid);
+        var handBag = new Bag(Grid.Create(1, 1));
+        return new GameState(
+            BagStore.Empty.Add(rootBag).Add(handBag).Add(facility),
+            LocationMap.Create(handBag.Id, rootBag.Id),
+            ImmutableArray.Create(Rock, Wood, Fiber, Axe, Shield));
+    }
 
     private static Bag CreateFacilityWithRecipe(Recipe recipe)
     {

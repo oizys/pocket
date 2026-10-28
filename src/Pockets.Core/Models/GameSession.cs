@@ -219,7 +219,7 @@ public record GameSession(
     /// Shell around one <see cref="Simulation.Step"/> of one intent. When the step changed state it counts
     /// it and writes the new L1 state back; then, by how the intent resolved, it pushes the undo snapshot and
     /// appends the action-log lines exactly as the pre-1.3 methods did: <c>FAILED: …</c> for a rejected tool,
-    /// otherwise the action's line followed by any craft-completion lines. A step that emitted events but
+    /// otherwise the action's line followed by any craft-end (completed or aborted) lines. A step that emitted events but
     /// changed nothing (a bump when no counter moved) is not a change. The step's events go on the
     /// <see cref="EventLog"/>, and every snapshot it pushes is marked with where the log stood before them.
     /// </summary>
@@ -253,17 +253,18 @@ public record GameSession(
         if (trace is null)
             return (session, null, events);
 
-        // Push the pre-step snapshot (a tool run at a panel pushes the swapped frame, as RunAt did).
+        // Push the pre-step snapshot. A tool run at a panel other than B still pushes the unswapped
+        // pre-step state: the swapped frame is only the tool's view (and its log line's).
         GameSession Undoable(GameState snapshot) => session.PushSnapshot(snapshot, mark);
         GameSession Log(IEnumerable<string> lines) => session with { ActionLog = session.ActionLog.AddRange(lines) };
-        IEnumerable<string> WithCompletions(string line) => new[] { line }.Concat(CompletionLogs(events, session.Current));
+        IEnumerable<string> WithCompletions(string line) => new[] { line }.Concat(CraftLogs(events, session.Current));
 
         switch (trace.Route)
         {
             case Route.Tick when changed:
             {
                 session = Undoable(Current);
-                var completions = CompletionLogs(events, session.Current).ToList();
+                var completions = CraftLogs(events, session.Current).ToList();
                 session = Log(completions.Count > 0 ? completions : new List<string> { $"Tick #{TickCount + 1}" });
                 break;
             }
@@ -276,7 +277,7 @@ public record GameSession(
                     session = Log(new[] { $"FAILED: {ToolLog(inner, view, trace.Detail, events)} — {rejected.Reason}" });
                 else if (changed)
                 {
-                    session = Undoable(view);
+                    session = Undoable(Current);
                     session = Log(WithCompletions(ToolLog(inner, view, trace.Detail, events)));
                 }
                 break;
@@ -318,7 +319,7 @@ public record GameSession(
                 session = Log(new[] { "FAILED: recipe switch — no room to set down the current items" });
                 break;
             case Route.RecipeSwitched:
-                session = Undoable(LocationOf(intent) is { } switchAt ? Simulation.SwapIn(Current, switchAt) : Current);
+                session = Undoable(Current);
                 session = Log(new[] { $"CycleRecipe: switched to {trace.Detail}" });
                 break;
         }
@@ -592,30 +593,26 @@ public record GameSession(
     };
 
     /// <summary>
-    /// The craft-completion log lines (<c>✦ {facility} crafted: {recipe name}</c>) for a step's
-    /// <see cref="SimEvent.CraftCompleted"/> events, in emission (facility) order. The recipe name is
-    /// resolved against the facility's recipe set under the <i>pre-step</i> known recipes, as the tick
-    /// loop itself does, falling back to the recipe id.
-    /// <para>
-    /// <b>Kept quirk (Slice 1.5):</b> a <see cref="SimEvent.CraftAborted"/> also writes a "crafted" line. Before
-    /// 1.5 the rule reported any "was crafting, now idle" transition as a completion, aborts included, and the
-    /// log text must not change (P1-D6). The events now tell the two apart; fixing the line is a decision.
-    /// </para>
+    /// The craft log lines for a step's craft-end events, in emission (facility) order:
+    /// <c>✦ {facility} crafted: {recipe name}</c> per <see cref="SimEvent.CraftCompleted"/> and
+    /// <c>✦ {facility} craft aborted: {recipe name}</c> per <see cref="SimEvent.CraftAborted"/> (its inputs no
+    /// longer match). The recipe name is resolved against the facility's recipe set under the <i>pre-step</i>
+    /// known recipes, as the tick loop itself does, falling back to the recipe id.
     /// </summary>
-    private IEnumerable<string> CompletionLogs(ImmutableArray<SimEvent> events, GameState after) =>
+    private IEnumerable<string> CraftLogs(ImmutableArray<SimEvent> events, GameState after) =>
         events
             .Select(e => e switch
             {
-                SimEvent.CraftCompleted c => (Facility: c.FacilityBagId, RecipeId: (string?)c.RecipeId),
-                SimEvent.CraftAborted a => (Facility: a.Facility, RecipeId: (string?)a.RecipeId),
-                _ => (Facility: Guid.Empty, RecipeId: (string?)null)
+                SimEvent.CraftCompleted c => (Facility: c.FacilityBagId, RecipeId: (string?)c.RecipeId, Verb: "crafted"),
+                SimEvent.CraftAborted a => (Facility: a.Facility, RecipeId: (string?)a.RecipeId, Verb: "craft aborted"),
+                _ => (Facility: Guid.Empty, RecipeId: (string?)null, Verb: "")
             })
             .Where(c => c.RecipeId is not null)
             .Select(c =>
             {
                 var environment = (after.Store.GetById(c.Facility) ?? Current.Store.GetById(c.Facility))!.EnvironmentType;
                 var recipe = GetRecipesForFacility(environment).FirstOrDefault(r => r.Id == c.RecipeId);
-                return $"✦ {environment} crafted: {recipe?.Name ?? c.RecipeId}";
+                return $"✦ {environment} {c.Verb}: {recipe?.Name ?? c.RecipeId}";
             });
 
     /// <summary>

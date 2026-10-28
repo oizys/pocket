@@ -11,8 +11,8 @@ namespace Pockets.Core.Tests.Sim;
 /// Slice 1.8 acceptance 1, session level: the shell's <see cref="GameSession.EventLog"/> holds every step's
 /// events; undo truncates it to the snapshot's mark and appends one <see cref="SimEvent.Rewound"/>; retention
 /// follows the oldest retained snapshot (the undo stack in rogue, the checkpoint ring in realtime); the cap
-/// leaves a marker. Also pins what 1.8 deliberately keeps: the intent log is not truncated (undo replays),
-/// and the known swapped-frame undo snapshot (Slice 1.3).
+/// leaves a marker. Also pins what 1.8 deliberately keeps (the intent log is not truncated: undo replays),
+/// and undo of a tool at any panel restoring the exact pre-tool state.
 /// </summary>
 public class EventLogSessionTests
 {
@@ -288,24 +288,48 @@ public class EventLogSessionTests
         Assert.Matches(@"^\d+ 0 Rewound toStep=\d+$", line);
     }
 
-    // ==================== Kept as is ====================
+    // ==================== Undo at a panel other than B ====================
 
     /// <summary>
-    /// Pins the known Slice 1.3 latent bug, which 1.8 must keep exactly (no ruling yet): a tool run at a panel
-    /// other than B pushes the <i>swapped</i> frame, so undoing it restores a state whose B shows that panel's bag.
+    /// Regression for the Slice 1.3 latent bug (fixed after Phase 1): a tool run at a panel other than B used to
+    /// push the <i>swapped</i> frame as its undo snapshot, so undoing it left B showing that panel's bag. Undo now
+    /// restores the exact pre-tool state at every panel.
     /// </summary>
-    [Fact]
-    public void KnownBug_ToolAtPanelC_UndoRestoresTheSwappedFrame()
+    [Theory]
+    [InlineData(LocationId.C)]
+    [InlineData(LocationId.W)]
+    public void ToolAtPanelOtherThanB_UndoRestoresThePreToolState(LocationId at)
     {
-        var state = MakeState(out var facilityId).OpenAsContainer(facilityId).State;
+        var state = MakeState(out var facilityId);
+        state = (at == LocationId.C ? state.OpenAsContainer(facilityId) : state.OpenAsWorld(facilityId)).State;
         var session = GameSession.New(state, ImmutableArray<Recipe>.Empty, TickMode.Rogue);
-        var rootId = session.Current.Locations.Get(LocationId.B).BagId;
+        var before = session.Current;
 
-        var split = session.Apply(new Intent.QuickSplit(LocationId.C));
+        var split = session.Apply(new Intent.QuickSplit(at));
         Assert.True(split.CanUndo);
+        Assert.NotEqual(before, split.Current);
         var undone = split.Apply(Undo);
 
-        Assert.NotEqual(rootId, undone.Current.Locations.Get(LocationId.B).BagId);
-        Assert.Equal(facilityId, undone.Current.Locations.Get(LocationId.B).BagId);
+        Assert.Equal(before, undone.Current);
+        Assert.Equal(before.Locations.Get(LocationId.B).BagId, undone.Current.Locations.Get(LocationId.B).BagId);
+        Assert.Equal(facilityId, undone.Current.Locations.Get(at).BagId);
+        Assert.Equal(6, undone.Current.Store.GetById(facilityId)!.Grid.GetCell(0).Stack!.Count);
+    }
+
+    /// <summary>The B-panel path is unchanged: undo of a tool at B restores the pre-tool state.</summary>
+    [Fact]
+    public void ToolAtPanelB_UndoRestoresThePreToolState()
+    {
+        var state = MakeState(out var facilityId).OpenAsContainer(facilityId).State;
+        var session = GameSession.New(state, ImmutableArray<Recipe>.Empty, TickMode.Rogue)
+            .Apply(Right);
+        var before = session.Current;
+
+        var split = session.Apply(new Intent.QuickSplit(LocationId.B));
+        Assert.True(split.CanUndo);
+        Assert.NotEqual(before, split.Current);
+        var undone = split.Apply(Undo);
+
+        Assert.Equal(before, undone.Current);
     }
 }
