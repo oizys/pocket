@@ -18,12 +18,19 @@ public record DemoProfile(
     DialogueBook Dialogue)
 {
     /// <summary>
+    /// The world seed the session's <see cref="Sim.SimRng"/> is keyed on (Slice 1.1): the profile's
+    /// init seed, so the same seed gives the same start state and the same in-step draws.
+    /// </summary>
+    public ulong WorldSeed { get; init; }
+
+    /// <summary>
     /// Builds the session both frontends run. Centralizing this guarantees the tick mode
-    /// (and thus per-action tick semantics) and the dialogue beat book are identical across
-    /// TUI and Godot.
+    /// (and thus per-action tick semantics), the dialogue beat book and the world seed are
+    /// identical across TUI and Godot.
     /// </summary>
     public GameSession NewSession() =>
-        GameSession.New(State, Recipes, FacilityRecipeMap, TickMode) with { Book = Dialogue };
+        (GameSession.New(State, Recipes, FacilityRecipeMap, TickMode) with { Book = Dialogue })
+            .WithWorldSeed(WorldSeed);
 }
 
 /// <summary>
@@ -86,7 +93,10 @@ public static class GameInitializer
         // plain key press must never advance a craft — progress moves only through scripted advanceTime
         // (harness) or the live SystemGameClock. Slices 0–6 pinned Rogue only because nothing crafted on
         // the clock yet; the Crafting Table makes Realtime the correct mode (no per-key drift).
-        return new DemoProfile(state, recipes, facilityRecipeMap, TickMode.Realtime, book);
+        return new DemoProfile(state, recipes, facilityRecipeMap, TickMode.Realtime, book)
+        {
+            WorldSeed = (ulong)(seed ?? DemoSeed)
+        };
     }
 
     /// <summary>
@@ -387,7 +397,7 @@ public static class GameInitializer
         var compass = new Recipe(
             CompassRecipeId, "Quiet Compass",
             new[] { new RecipeInput(Type("Dry Grass"), 3), new RecipeInput(Type("Bone Chips"), 2) },
-            () => RecipeOutput.FromStacks(new[] { new ItemStack(Type("Quiet Compass"), 1) }),
+            _ => RecipeOutput.FromStacks(new[] { new ItemStack(Type("Quiet Compass"), 1) }),
             Duration: 3);
 
         // Explorer path: crafting yields a fresh EnterOnly Quiet 1 wilderness (new bag id each craft).
@@ -397,7 +407,7 @@ public static class GameInitializer
         var anotherQuiet1 = new Recipe(
             AnotherQuiet1RecipeId, "Quiet 1",
             new[] { new RecipeInput(Type("Rough Wood"), 2), new RecipeInput(Type("Plain Rock"), 2) },
-            () =>
+            _ =>
             {
                 var wildGrid = Grid.Create(3, 2)
                     .SetCell(0, new Cell(Stack: new ItemStack(grassType, 2)))
@@ -418,7 +428,7 @@ public static class GameInitializer
         var beltPouch = new Recipe(
             BeltPouchRecipeId, "Belt Pouch",
             new[] { new RecipeInput(Type("Tanned Leather"), 2), new RecipeInput(Type("Woven Fiber"), 1) },
-            () =>
+            _ =>
             {
                 var bag = new Bag(Grid.Create(3, 2), "Pouch", "Brown");
                 return RecipeOutput.WithBags(
@@ -432,7 +442,7 @@ public static class GameInitializer
         var demoAxe = new Recipe(
             DemoAxeRecipeId, "Stone Axe",
             new[] { new RecipeInput(Type("Iron Ore"), 2), new RecipeInput(Type("Bone Chips"), 3) },
-            () => RecipeOutput.FromStacks(new[] { new ItemStack(Type("Stone Axe"), 1) }),
+            _ => RecipeOutput.FromStacks(new[] { new ItemStack(Type("Stone Axe"), 1) }),
             Duration: 3);
 
         // --- ONE empty Crafting Table (playtest fix, 2026-08-04). ---
@@ -515,10 +525,10 @@ public static class GameInitializer
 
     /// <summary>
     /// Creates a Stage 1 game with 4-10 random item stacks from the given item types.
+    /// <paramref name="random"/> is required: init-time generation draws only from the caller's (seeded) RNG.
     /// </summary>
-    public static GameState CreateRandomStage1Game(ImmutableArray<ItemType> itemTypes, Random? random = null)
+    public static GameState CreateRandomStage1Game(ImmutableArray<ItemType> itemTypes, Random random)
     {
-        random ??= new Random();
 
         var stackCount = random.Next(4, 11);
         var stacks = Enumerable.Range(0, stackCount)
@@ -537,10 +547,10 @@ public static class GameInitializer
 
     /// <summary>
     /// Creates a Stage 2 game: Stage 1 base plus a forest wilderness bag in the grid.
+    /// <paramref name="random"/> is required: init-time generation draws only from the caller's (seeded) RNG.
     /// </summary>
-    public static GameState CreateRandomStage2Game(ImmutableArray<ItemType> itemTypes, Random? random = null)
+    public static GameState CreateRandomStage2Game(ImmutableArray<ItemType> itemTypes, Random random)
     {
-        random ??= new Random();
 
         var stackCount = random.Next(4, 11);
         var stacks = Enumerable.Range(0, stackCount)
@@ -579,10 +589,10 @@ public static class GameInitializer
     /// <summary>
     /// Creates a Stage 3 game: Stage 2 base plus 3 facility bags (Workbench, Tanner, Seedling Pot)
     /// and starter crafting materials. Legacy method — uses hardcoded RecipeRegistry/FacilityBuilder.
+    /// <paramref name="random"/> is required: init-time generation draws only from the caller's (seeded) RNG.
     /// </summary>
-    public static GameState CreateRandomStage3Game(ImmutableArray<ItemType> itemTypes, Random? random = null)
+    public static GameState CreateRandomStage3Game(ImmutableArray<ItemType> itemTypes, Random random)
     {
-        random ??= new Random();
         var byName = itemTypes.ToDictionary(t => t.Name);
 
         // Ensure facility bag types exist
@@ -651,11 +661,11 @@ public static class GameInitializer
     /// <summary>
     /// Creates a game from a ContentRegistry. Builds facility bags from facility/recipe definitions,
     /// generates wilderness bags from templates, and places starter materials.
+    /// <paramref name="random"/> is required: init-time generation draws only from the caller's (seeded) RNG.
     /// </summary>
     public static (GameState State, ImmutableArray<Recipe> Recipes) CreateFromRegistry(
-        ContentRegistry registry, Random? random = null)
+        ContentRegistry registry, Random random)
     {
-        random ??= new Random();
         var itemTypes = registry.Items.Values.ToImmutableArray();
         var byName = registry.Items;
         var stacks = new List<ItemStack>();

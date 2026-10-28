@@ -19,7 +19,7 @@ public class FacilityProgressResolutionTests
     private static readonly Recipe AxeRecipe = new(
         "axe", "Stone Axe",
         new[] { new RecipeInput(Rock, 5), new RecipeInput(Wood, 3) },
-        () => RecipeOutput.FromStacks(new List<ItemStack> { new(Axe, 1) }),
+        _ => RecipeOutput.FromStacks(new List<ItemStack> { new(Axe, 1) }),
         Duration: 3);
 
     private static readonly ImmutableDictionary<string, ImmutableArray<string>> FacilityRecipeMap =

@@ -24,7 +24,6 @@ public class GameView : Window
 
     /// <summary>Height of the standalone focused-description pane.</summary>
     private const int FocusedDescriptionHeight = 8;
-    private readonly Random _rng = new();
     private object? _tickTimer;
     private readonly bool _enableTickTimer;
 
@@ -45,7 +44,8 @@ public class GameView : Window
         ImmutableDictionary<string, ImmutableArray<string>>? facilityRecipeMap = null,
         bool enableTickTimer = true,
         TickMode tickMode = TickMode.Realtime,
-        DialogueBook? dialogue = null) : base("Pockets")
+        DialogueBook? dialogue = null,
+        ulong worldSeed = 0) : base("Pockets")
     {
         _enableTickTimer = enableTickTimer;
         X = 0;
@@ -68,6 +68,8 @@ public class GameView : Window
                 : GameSession.New(initialState, recipes, tickMode);
         if (dialogue is not null)
             session = session with { Book = dialogue };
+        // The view owns no randomness: every in-step draw comes from the session's SimRng (Slice 1.1).
+        session = session.WithWorldSeed(worldSeed);
 
         _controller = new GameController(session);
 
@@ -223,7 +225,7 @@ public class GameView : Window
             return base.ProcessKey(keyEvent);
         }
 
-        var result = _controller.HandleKey(gameKey.Value, _rng);
+        var result = _controller.HandleKey(gameKey.Value);
         if (result.Handled)
             UpdateUI();
         return result.Handled || base.ProcessKey(keyEvent);

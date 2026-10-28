@@ -112,7 +112,7 @@ public class ContentLoaderTests
 
         var registry = ContentLoader.LoadFromMarkdown(markdown, "test.md");
         var recipe = registry.Recipes["stone-axe"];
-        var output = recipe.OutputFactory();
+        var output = recipe.OutputFactory(new Random(0));
 
         Assert.Single(output.Stacks);
         Assert.Equal("Stone Axe", output.Stacks[0].ItemType.Name);
@@ -286,7 +286,7 @@ public class ContentLoaderTests
 
         // Tanner recipe uses !attach-bag generator — should produce a Belt Pouch with a bag
         var tannerRecipe = registry.Recipes["tanner-pouch"];
-        var tannerOutput = tannerRecipe.OutputFactory();
+        var tannerOutput = tannerRecipe.OutputFactory(new Random(0));
         Assert.Single(tannerOutput.Stacks);
         Assert.Equal("Belt Pouch", tannerOutput.Stacks[0].ItemType.Name);
         Assert.NotNull(tannerOutput.Stacks[0].ContainedBagId);
@@ -295,7 +295,7 @@ public class ContentLoaderTests
 
         // Seedling recipe uses !wilderness generator — should produce a Forest Bag with a bag
         var seedlingRecipe = registry.Recipes["seedling-forest"];
-        var seedlingOutput = seedlingRecipe.OutputFactory();
+        var seedlingOutput = seedlingRecipe.OutputFactory(new Random(0));
         Assert.Single(seedlingOutput.Stacks);
         Assert.Equal("Forest Bag", seedlingOutput.Stacks[0].ItemType.Name);
         Assert.NotNull(seedlingOutput.Stacks[0].ContainedBagId);
@@ -331,7 +331,7 @@ public class ContentLoaderTests
 
         var registry = ContentLoader.LoadFromMarkdown(markdown, "test.md");
         var recipe = registry.Recipes["tanner-pouch"];
-        var output = recipe.OutputFactory();
+        var output = recipe.OutputFactory(new Random(0));
 
         Assert.Single(output.Stacks);
         Assert.Equal("Belt Pouch", output.Stacks[0].ItemType.Name);
@@ -356,7 +356,7 @@ public class ContentLoaderTests
 
         // Workshop-workbench recipe produces a Workbench with a facility bag
         var workbenchRecipe = registry.Recipes["workshop-workbench"];
-        var workbenchOutput = workbenchRecipe.OutputFactory();
+        var workbenchOutput = workbenchRecipe.OutputFactory(new Random(0));
         Assert.Single(workbenchOutput.Stacks);
         Assert.Equal("Workbench", workbenchOutput.Stacks[0].ItemType.Name);
         Assert.NotNull(workbenchOutput.Stacks[0].ContainedBagId);
@@ -370,7 +370,7 @@ public class ContentLoaderTests
 
         // Workshop-tanner recipe produces a Tanner with a facility bag
         var tannerRecipe = registry.Recipes["workshop-tanner"];
-        var tannerOutput = tannerRecipe.OutputFactory();
+        var tannerOutput = tannerRecipe.OutputFactory(new Random(0));
         Assert.Single(tannerOutput.Stacks);
         Assert.Equal("Tanner", tannerOutput.Stacks[0].ItemType.Name);
         Assert.NotNull(tannerOutput.Stacks[0].ContainedBagId);
@@ -380,7 +380,7 @@ public class ContentLoaderTests
 
         // Workshop-seedling-pot recipe produces a Seedling Pot with a facility bag
         var seedlingRecipe = registry.Recipes["workshop-seedling-pot"];
-        var seedlingOutput = seedlingRecipe.OutputFactory();
+        var seedlingOutput = seedlingRecipe.OutputFactory(new Random(0));
         Assert.Single(seedlingOutput.Stacks);
         Assert.Equal("Seedling Pot", seedlingOutput.Stacks[0].ItemType.Name);
         Assert.NotNull(seedlingOutput.Stacks[0].ContainedBagId);

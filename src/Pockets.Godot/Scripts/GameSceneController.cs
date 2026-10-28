@@ -15,7 +15,6 @@ namespace Pockets.Godot.Scripts;
 public partial class GameSceneController : Control
 {
     private Core.Models.GameController _controller = null!;
-    private readonly Random _rng = new();
 
     // UI references
     private GridDrawControl _gridPanel = null!;
@@ -86,7 +85,8 @@ public partial class GameSceneController : Control
                 new ItemType("Healing Salve", Category.Medicine, true),
                 new ItemType("Stone Axe", Category.Weapon, false)
             );
-            var gameState = GameInitializer.CreateRandomStage1Game(types, _rng);
+            // Seeded: the frontend owns no randomness (Slice 1.1), even on the no-data fallback.
+            var gameState = GameInitializer.CreateRandomStage1Game(types, new Random(GameInitializer.DemoSeed));
             session = GameSession.New(gameState, ImmutableArray<Recipe>.Empty, TickMode.Rogue);
         }
 
@@ -319,7 +319,7 @@ public partial class GameSceneController : Control
         var gameKey = MapKey(key);
         if (gameKey is null) return;
 
-        var result = _controller.HandleKey(gameKey.Value, _rng);
+        var result = _controller.HandleKey(gameKey.Value);
         if (result.Handled)
         {
             RefreshUI();

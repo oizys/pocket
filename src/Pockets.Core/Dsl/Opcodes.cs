@@ -166,7 +166,10 @@ public static class Opcodes
     public static OpResult AcquireRandom(OpResult input,
         [Param(AccessLevel.Bag, DefaultLocation = LocationId.B)] Bag target)
     {
-        var result = input.State.ToolAcquireRandom(new Random());
+        // Draws from the program's RNG (the session's SimRng, Dsl stream); never from an unseeded Random.
+        if (input.Rng is not { } rng)
+            return input.ChainError("acquire-random needs a sim RNG");
+        var result = input.State.ToolAcquireRandom(rng);
         return result.Success ? input.Chain(result.State) : input.ChainError(result.Error!);
     }
 }

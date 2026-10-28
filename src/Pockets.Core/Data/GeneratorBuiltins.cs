@@ -12,7 +12,7 @@ public static class GeneratorBuiltins
     /// <summary>
     /// Creates an empty bag from a GridTemplate.
     /// The template is taken from the input if it is a TemplateValue, otherwise from templateArgs[0].
-    /// Returns a BagValue wrapping the new Bag.
+    /// Returns a BagValue wrapping the new Bag. Draws nothing.
     /// </summary>
     public static PipelineValue Bag(PipelineValue? input, IReadOnlyList<object> templateArgs)
     {
@@ -30,17 +30,17 @@ public static class GeneratorBuiltins
     /// templateArgs[0] = GridTemplate, templateArgs[1] = LootTableTemplate,
     /// templateArgs[2] = ImmutableDictionary&lt;string, ItemType&gt; (items by name).
     /// Fills each cell independently using FillRatio as the per-cell probability,
-    /// choosing items by weighted random selection from the loot table entries.
+    /// choosing items by weighted random selection from the loot table entries, drawing from
+    /// <paramref name="rng"/> (required: the step's SimRng in play, the seeded init RNG at world build).
     /// Returns a BagValue.
     /// </summary>
     public static PipelineValue Wilderness(PipelineValue? input, IReadOnlyList<object> templateArgs,
-        Random? rng = null)
+        Random rng)
     {
         var gridTemplate = (GridTemplate)templateArgs[0];
         var lootTable = (LootTableTemplate)templateArgs[1];
         var items = (ImmutableDictionary<string, ItemType>)templateArgs[2];
 
-        rng ??= new Random();
         var totalWeight = lootTable.Entries.Sum(e => e.Weight);
         var cellCount = gridTemplate.Columns * gridTemplate.Rows;
 
@@ -92,10 +92,10 @@ public static class GeneratorBuiltins
 
     /// <summary>
     /// Randomizes the positions of all non-empty cells in the bag's grid, preserving all stacks.
-    /// Returns a BagValue with the shuffled grid.
+    /// Draws positions from <paramref name="rng"/> (required). Returns a BagValue with the shuffled grid.
     /// </summary>
     public static PipelineValue Shuffle(PipelineValue? input, IReadOnlyList<object> templateArgs,
-        Random? rng = null)
+        Random rng)
     {
         var bag = ((BagValue)input!).Bag;
         var cellCount = bag.Grid.Columns * bag.Grid.Rows;
@@ -106,7 +106,6 @@ public static class GeneratorBuiltins
             .Select(c => c.Stack!)
             .ToList();
 
-        rng ??= new Random();
         var positions = Enumerable.Range(0, cellCount)
             .OrderBy(_ => rng.Next())
             .Take(nonEmptyStacks.Count)
@@ -156,15 +155,16 @@ public static class GeneratorBuiltins
     /// The "wilderness" generator is wrapped to automatically append the items dictionary
     /// as the third template argument, so callers only need to supply grid and loot templates.
     /// getRecipes is a lazy accessor for the resolved recipes dictionary (set after recipe resolution).
+    /// Each generator receives the pipeline's RNG; only "wilderness" and "shuffle" draw from it.
     /// </summary>
     public static ImmutableDictionary<string, GeneratorFunc> GetAll(
         ImmutableDictionary<string, ItemType> items,
         Func<ImmutableDictionary<string, Recipe>?>? getRecipes = null) =>
         ImmutableDictionary<string, GeneratorFunc>.Empty
-            .Add("bag", Bag)
-            .Add("wilderness", (input, args) => Wilderness(input, args.Append(items).ToList()))
-            .Add("attach-bag", AttachBag)
-            .Add("shuffle", (input, args) => Shuffle(input, args))
-            .Add("attach-facility", (input, args) =>
+            .Add("bag", (input, args, _) => Bag(input, args))
+            .Add("wilderness", (input, args, rng) => Wilderness(input, args.Append(items).ToList(), rng))
+            .Add("attach-bag", (input, args, _) => AttachBag(input, args))
+            .Add("shuffle", Shuffle)
+            .Add("attach-facility", (input, args, _) =>
                 AttachFacility(input, args, getRecipes ?? (() => null)));
 }

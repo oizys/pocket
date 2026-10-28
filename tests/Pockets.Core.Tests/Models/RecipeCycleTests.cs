@@ -15,13 +15,13 @@ public class RecipeCycleTests
     private static readonly Recipe AxeRecipe = new(
         "workbench-axe", "Stone Axe",
         new[] { new RecipeInput(Rock, 5), new RecipeInput(Wood, 3) },
-        () => RecipeOutput.FromStacks(new[] { new ItemStack(Axe, 1) }),
+        _ => RecipeOutput.FromStacks(new[] { new ItemStack(Axe, 1) }),
         Duration: 3, GridColumns: 3, GridRows: 1);
 
     private static readonly Recipe ShieldRecipe = new(
         "workbench-shield", "Wooden Shield",
         new[] { new RecipeInput(Wood, 6), new RecipeInput(Fiber, 2) },
-        () => RecipeOutput.FromStacks(new[] { new ItemStack(Shield, 1) }),
+        _ => RecipeOutput.FromStacks(new[] { new ItemStack(Shield, 1) }),
         Duration: 4, GridColumns: 3, GridRows: 1);
 
     private static readonly ImmutableArray<Recipe> Recipes =
@@ -166,7 +166,7 @@ public class RecipeCycleTests
         grid = grid.SetCell(1, grid.GetCell(1) with { Stack = new ItemStack(Wood, 3) });
         facility = facility with { Grid = grid };
 
-        var (ticked, progress, _) = FacilityLogic.Tick(facility, 0, Recipes);
+        var (ticked, progress, _) = FacilityLogic.Tick(facility, 0, Recipes, new Random(0));
 
         // Should start crafting the active recipe
         Assert.Equal("workbench-axe", ticked.FacilityState!.RecipeId);
@@ -197,10 +197,9 @@ public class RecipeCycleTests
             ImmutableArray<ItemType>.Empty);
 
         // Execute an action (AcquireRandom always changes state, triggering a tick in Rogue mode)
-        var rng = new Random(42);
         var stateWithTypes = state with { ItemTypes = allTypes };
         var sessionWithTypes = GameSession.New(stateWithTypes, Recipes, WorkbenchRecipeMap, TickMode.Rogue);
-        var afterAction = sessionWithTypes.ExecuteAcquireRandom(rng);
+        var afterAction = sessionWithTypes.ExecuteAcquireRandom();
 
         // Find the facility bag after the action
         var updatedFacilityBag = FindFacilityBag(afterAction.Current);
@@ -234,8 +233,7 @@ public class RecipeCycleTests
 
         var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Realtime);
 
-        var rng = new Random(42);
-        var afterAction = session.ExecuteAcquireRandom(rng);
+        var afterAction = session.ExecuteAcquireRandom();
 
         // In Realtime mode, facility should NOT have ticked after an action
         var updatedFacilityBag = FindFacilityBag(afterAction.Current);
@@ -397,10 +395,9 @@ public class RecipeCycleTests
         var session = GameSession.New(state, Recipes, WorkbenchRecipeMap, TickMode.Rogue);
 
         // Execute enough actions to complete the recipe (Duration=3)
-        var rng = new Random(42);
-        session = session.ExecuteAcquireRandom(rng);
-        session = session.ExecuteAcquireRandom(rng);
-        session = session.ExecuteAcquireRandom(rng);
+        session = session.ExecuteAcquireRandom();
+        session = session.ExecuteAcquireRandom();
+        session = session.ExecuteAcquireRandom();
 
         // Should have a completion log entry from rogue-mode ticking
         Assert.Contains(session.ActionLog, log => log.Contains("crafted") && log.Contains("Stone Axe"));

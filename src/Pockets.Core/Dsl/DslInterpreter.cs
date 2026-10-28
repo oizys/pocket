@@ -182,11 +182,12 @@ public static class DslInterpreter
         Run(stack, DslParser.Parse(program));
 
     /// <summary>
-    /// Convenience: run a DSL string from a game state. Returns the final OpResult.
+    /// Convenience: run a DSL string from a game state. Returns the final OpResult. Random opcodes draw
+    /// from <paramref name="rng"/>, and fail when it is null.
     /// </summary>
-    public static OpResult RunProgram(GameState state, string program)
+    public static OpResult RunProgram(GameState state, string program, Random? rng = null)
     {
-        var stack = ImmutableStack<object>.Empty.Push(OpResult.Initial(state));
+        var stack = ImmutableStack<object>.Empty.Push(OpResult.Initial(state, rng));
         stack = Run(stack, program);
         return FindOpResult(stack);
     }

@@ -25,7 +25,7 @@ public class PlaytestFixesTests
     private static readonly ItemType TableType = new("Crafting Table", Category.Structure, IsStackable: false);
 
     private static Recipe R(string id, params RecipeInput[] ins) =>
-        new(id, id, ins, () => RecipeOutput.FromStacks(Array.Empty<ItemStack>()), Duration: 3);
+        new(id, id, ins, _ => RecipeOutput.FromStacks(Array.Empty<ItemStack>()), Duration: 3);
 
     // ============================================================
     // Item 1 — recipe switch conserves items (never destroys)

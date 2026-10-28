@@ -102,7 +102,8 @@ public static class ContentLoader
     /// Resolves a RecipeDefinition into a fully-resolved Recipe by looking up item names
     /// in the provided item dictionary. For static-only pipelines, builds an OutputFactory
     /// that produces ItemStacks. For pipelines with generators, executes the pipeline via
-    /// PipelineExecutor to produce outputs (called fresh each invocation for unique instances).
+    /// PipelineExecutor to produce outputs (called fresh each invocation for unique instances, drawing
+    /// from the RNG the factory is handed).
     /// </summary>
     private static Recipe ResolveRecipe(
         RecipeDefinition def,
@@ -117,7 +118,7 @@ public static class ContentLoader
         var allStatic = def.OutputPipeline.All(step => step is StaticItemStep);
         var pipeline = def.OutputPipeline;
 
-        Func<RecipeOutput> outputFactory;
+        Func<Random, RecipeOutput> outputFactory;
 
         if (allStatic)
         {
@@ -126,14 +127,14 @@ public static class ContentLoader
                 .Select(step => new ItemStack(itemsByName[step.ItemName], step.Count))
                 .ToList();
 
-            outputFactory = () => RecipeOutput.FromStacks(outputStacks);
+            outputFactory = _ => RecipeOutput.FromStacks(outputStacks);
         }
         else
         {
-            // Capture pipeline context for deferred execution
-            outputFactory = () =>
+            // Capture pipeline context for deferred execution; generators draw from the caller's RNG.
+            outputFactory = rng =>
             {
-                var result = PipelineExecutor.Execute(pipeline, itemsByName, templates, generators);
+                var result = PipelineExecutor.Execute(pipeline, itemsByName, templates, generators, rng);
                 return result switch
                 {
                     StacksValue sv => RecipeOutput.WithBags(

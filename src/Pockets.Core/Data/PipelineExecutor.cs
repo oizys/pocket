@@ -13,12 +13,14 @@ public static class PipelineExecutor
     /// <summary>
     /// Executes the pipeline and returns the final PipelineValue.
     /// Throws InvalidOperationException if the pipeline is empty (no steps produce a value).
+    /// Generators draw from <paramref name="rng"/>, in step order.
     /// </summary>
     public static PipelineValue Execute(
         IReadOnlyList<PipelineStep> steps,
         ImmutableDictionary<string, ItemType> items,
         ImmutableDictionary<string, object> templates,
-        ImmutableDictionary<string, GeneratorFunc> generators)
+        ImmutableDictionary<string, GeneratorFunc> generators,
+        Random rng)
     {
         PipelineValue? current = null;
 
@@ -28,7 +30,7 @@ public static class PipelineExecutor
             {
                 StaticItemStep s => ExecuteStaticItem(s, items, current),
                 TemplateRefStep t => new TemplateValue(t.TemplateId, templates[t.TemplateId]),
-                GeneratorStep g => ExecuteGenerator(g, templates, generators, current),
+                GeneratorStep g => ExecuteGenerator(g, templates, generators, current, rng),
                 _ => throw new InvalidOperationException($"Unknown step type: {step.GetType().Name}")
             };
         }
@@ -54,12 +56,13 @@ public static class PipelineExecutor
         GeneratorStep step,
         ImmutableDictionary<string, object> templates,
         ImmutableDictionary<string, GeneratorFunc> generators,
-        PipelineValue? current)
+        PipelineValue? current,
+        Random rng)
     {
         var resolvedArgs = step.TemplateArgs
             .Select(argId => templates[argId])
             .ToList<object>();
 
-        return generators[step.GeneratorId](current, resolvedArgs);
+        return generators[step.GeneratorId](current, resolvedArgs, rng);
     }
 }

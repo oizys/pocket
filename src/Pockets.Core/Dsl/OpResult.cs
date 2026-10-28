@@ -21,34 +21,41 @@ public record OpResult(
     public bool IsOk => Errors.Count == 0;
 
     /// <summary>
-    /// Creates the initial OpResult for a new expression.
+    /// The RNG random opcodes draw from (Slice 1.1): the session's SimRng over <c>SimStream.Dsl</c>.
+    /// Null when the program runs without one, in which case random opcodes fail instead of drawing
+    /// from an unseeded source. Carried unchanged through every chain step.
     /// </summary>
-    public static OpResult Initial(GameState state) =>
-        new(state, state, ImmutableList<string>.Empty);
+    public Random? Rng { get; init; }
+
+    /// <summary>
+    /// Creates the initial OpResult for a new expression, optionally carrying the RNG random opcodes use.
+    /// </summary>
+    public static OpResult Initial(GameState state, Random? rng = null) =>
+        new(state, state, ImmutableList<string>.Empty) { Rng = rng };
 
     /// <summary>
     /// Thread state forward: new state, preserve Before and accumulated errors.
     /// </summary>
     public OpResult Chain(GameState newState) =>
-        new(newState, Before, Errors);
+        this with { State = newState, Pushed = default };
 
     /// <summary>
     /// Accumulate an error without changing state.
     /// </summary>
     public OpResult ChainError(string error) =>
-        new(State, Before, Errors.Add(error));
+        this with { Errors = Errors.Add(error), Pushed = default };
 
     /// <summary>
     /// Chain a new state and accumulate an error.
     /// </summary>
     public OpResult Chain(GameState newState, string error) =>
-        new(newState, Before, Errors.Add(error));
+        this with { State = newState, Errors = Errors.Add(error), Pushed = default };
 
     /// <summary>
     /// Clear all errors (used by try on the success path).
     /// </summary>
     public OpResult ClearErrors() =>
-        new(State, Before, ImmutableList<string>.Empty);
+        this with { Errors = ImmutableList<string>.Empty, Pushed = default };
 
     /// <summary>
     /// Returns a new OpResult with a value to push onto the stack after the OpResult itself.

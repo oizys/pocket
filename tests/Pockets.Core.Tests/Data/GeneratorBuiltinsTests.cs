@@ -49,7 +49,7 @@ public class GeneratorBuiltinsTests
             ImmutableArray.Create(new LootTableEntry("Plain Rock", 1.0)), 1.0);
         var items = ImmutableDictionary<string, ItemType>.Empty.Add("Plain Rock", Rock);
 
-        var result = GeneratorBuiltins.Wilderness(null, new object[] { gridT, lootT, items });
+        var result = GeneratorBuiltins.Wilderness(null, new object[] { gridT, lootT, items }, new Random(42));
 
         var bv = Assert.IsType<BagValue>(result);
         Assert.Equal(4, bv.Bag.Grid.Columns);
@@ -69,7 +69,7 @@ public class GeneratorBuiltinsTests
             ImmutableArray.Create(new LootTableEntry("Plain Rock", 1.0)), 0.0);
         var items = ImmutableDictionary<string, ItemType>.Empty.Add("Plain Rock", Rock);
 
-        var result = GeneratorBuiltins.Wilderness(null, new object[] { gridT, lootT, items });
+        var result = GeneratorBuiltins.Wilderness(null, new object[] { gridT, lootT, items }, new Random(42));
 
         var bv = Assert.IsType<BagValue>(result);
         Assert.Equal("Cave", bv.Bag.EnvironmentType);
@@ -109,7 +109,7 @@ public class GeneratorBuiltinsTests
         var bag = new Bag(grid, "Test", "Blue");
         var input = new BagValue(bag);
 
-        var result = GeneratorBuiltins.Shuffle(input, Array.Empty<object>());
+        var result = GeneratorBuiltins.Shuffle(input, Array.Empty<object>(), new Random(42));
 
         var bv = Assert.IsType<BagValue>(result);
         Assert.Equal("Test", bv.Bag.EnvironmentType);

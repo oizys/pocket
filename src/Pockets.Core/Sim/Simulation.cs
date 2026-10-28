@@ -17,13 +17,16 @@ public static class Simulation
     /// events. Every event carries <c>Step = s.TickCount + 1</c> and a step-global <c>Seq</c>.
     /// Per intent:
     /// <list type="bullet">
-    /// <item><see cref="Intent.Tool"/>: a failed tool emits only <see cref="SimEvent.IntentRejected"/>
+    /// <item><see cref="Intent.Tool"/> and <see cref="Intent.AcquireRandom"/>: a failed tool emits only <see cref="SimEvent.IntentRejected"/>
     /// (state unchanged); a no-op success (tool state record-equal to the pre-state) emits nothing and
     /// does not tick; otherwise <see cref="SimEvent.IntentApplied"/>, then, if it advances time, the tick
     /// phase, then the hooks, and <c>TickCount + 1</c>.</item>
     /// <item><see cref="Intent.Tick"/>: tick phase then hooks; if the result is record-equal to the
     /// pre-state it is a no-op (no events, no TickCount change).</item>
     /// </list>
+    /// Every random draw comes from <see cref="SimState.Rng"/> positioned at the step (Slice 1.1): the
+    /// AcquireRandom type from <see cref="SimStream.Acquire"/>, recipe outputs from <see cref="SimStream.Craft"/>.
+    /// The advanced RNG is kept only when the intent changes state, like everything else.
     /// </summary>
     public static StepResult<SimState> Step(SimState s, IReadOnlyList<Intent> intents)
     {
@@ -38,34 +41,52 @@ public static class Simulation
     private static SimState StepOne(SimState s, Intent intent, int step, ImmutableArray<SimEvent>.Builder events)
     {
         var before = s.Game;
+        var rng = s.Rng.AtStep(step);
         GameState newState;
         var pending = new List<Func<int, SimEvent>>();
+
+        // A player action: the tool's result, then (if it advances time) the tick phase.
+        GameState? ApplyTool(ToolResult result, bool advancesTime)
+        {
+            if (!result.Success)
+            {
+                events.Add(new SimEvent.IntentRejected(step, events.Count, intent, result.Error ?? ""));
+                return null;
+            }
+
+            // No-op success: state didn't change, nothing ticks and nothing is recorded.
+            if (result.State == before)
+                return null;
+
+            pending.Add(seq => new SimEvent.IntentApplied(step, seq, intent));
+
+            // In rogue mode, tick facilities and plants after each action. In realtime, ticks are external.
+            return advancesTime
+                ? AdvanceTime(result.State, before, s.Content, step, ref rng, pending)
+                : result.State;
+        }
 
         switch (intent)
         {
             case Intent.Tool tool:
             {
-                var result = tool.Apply(before);
-                if (!result.Success)
-                {
-                    events.Add(new SimEvent.IntentRejected(step, events.Count, intent, result.Error ?? ""));
+                if (ApplyTool(tool.Apply(before), tool.AdvancesTime) is not { } applied)
                     return s;
-                }
-
-                // No-op success: state didn't change, nothing ticks and nothing is recorded.
-                if (result.State == before)
+                newState = applied;
+                break;
+            }
+            case Intent.AcquireRandom acquire:
+            {
+                var random = rng.AsRandom(SimStream.Acquire);
+                var result = before.ToolAcquireRandom(random);
+                rng = random.Rng;
+                if (ApplyTool(result, acquire.AdvancesTime) is not { } applied)
                     return s;
-
-                pending.Add(seq => new SimEvent.IntentApplied(step, seq, intent));
-
-                // In rogue mode, tick facilities and plants after each action. In realtime, ticks are external.
-                newState = tool.AdvancesTime
-                    ? AdvanceTime(result.State, before, s.Content, step, pending)
-                    : result.State;
+                newState = applied;
                 break;
             }
             case Intent.Tick:
-                newState = AdvanceTime(before, before, s.Content, step, pending);
+                newState = AdvanceTime(before, before, s.Content, step, ref rng, pending);
                 break;
             default:
                 throw new InvalidOperationException($"Unhandled intent {intent.GetType().Name}");
@@ -85,21 +106,25 @@ public static class Simulation
         foreach (var make in pending)
             events.Add(make(events.Count));
 
-        return s with { Game = newState, TickCount = s.TickCount + 1 };
+        return s with { Game = newState, TickCount = s.TickCount + 1, Rng = rng };
     }
 
     /// <summary>
     /// The time phase: tick facilities (emitting <see cref="SimEvent.TimeAdvanced"/> and one
     /// <see cref="SimEvent.CraftCompleted"/> per finished craft, in facility order), then plants.
     /// <paramref name="preStep"/> supplies the known-recipe set, exactly as the session read
-    /// <c>Current.KnownRecipes</c> (the pre-action state) while ticking the post-tool state.
+    /// <c>Current.KnownRecipes</c> (the pre-action state) while ticking the post-tool state. Recipe
+    /// outputs draw from <paramref name="rng"/>'s <see cref="SimStream.Craft"/> stream, which is advanced in place.
     /// </summary>
     private static GameState AdvanceTime(
-        GameState state, GameState preStep, SimContent content, int step, List<Func<int, SimEvent>> pending)
+        GameState state, GameState preStep, SimContent content, int step, ref SimRng rng,
+        List<Func<int, SimEvent>> pending)
     {
         pending.Add(seq => new SimEvent.TimeAdvanced(step, seq));
-        state = TickFacilities(state, preStep.KnownRecipes, content, (facilityId, recipeId) =>
+        var craftRandom = rng.AsRandom(SimStream.Craft);
+        state = TickFacilities(state, preStep.KnownRecipes, content, craftRandom, (facilityId, recipeId) =>
             pending.Add(seq => new SimEvent.CraftCompleted(step, seq, facilityId, recipeId)));
+        rng = craftRandom.Rng;
         return PlantLogic.TickPlants(state);
     }
 
@@ -119,10 +144,12 @@ public static class Simulation
     /// Ticks all facility bags found via the BagRegistry.
     /// Updates each facility in-place within the bag tree.
     /// Uses FacilityRecipeMap when available, falls back to RecipeRegistry.
-    /// Reports each craft completion (facility id, recipe id) through <paramref name="completed"/>.
+    /// Reports each craft completion (facility id, recipe id) through <paramref name="completed"/>. Output
+    /// factories draw from <paramref name="random"/> in facility order.
     /// </summary>
     private static GameState TickFacilities(
-        GameState state, ImmutableHashSet<string> knownRecipes, SimContent content, Action<Guid, string> completed)
+        GameState state, ImmutableHashSet<string> knownRecipes, SimContent content, Random random,
+        Action<Guid, string> completed)
     {
         if (content.Recipes.IsDefaultOrEmpty)
             return state;
@@ -141,7 +168,7 @@ public static class Simulation
             int currentProgress = state.Store.GetOwnerStack(facility.Id)?.GetInt("Progress") ?? 0;
 
             var wasCrafting = facility.FacilityState?.RecipeId;
-            var (ticked, newProgress, newBags) = FacilityLogic.Tick(facility, currentProgress, facilityRecipes);
+            var (ticked, newProgress, newBags) = FacilityLogic.Tick(facility, currentProgress, facilityRecipes, random);
             if (ticked == facility && newProgress == currentProgress)
                 continue;
 

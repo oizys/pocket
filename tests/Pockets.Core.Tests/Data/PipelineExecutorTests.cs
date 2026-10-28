@@ -22,7 +22,7 @@ public class PipelineExecutorTests
         var steps = PipelineParser.Parse("1 Stone Axe");
         var result = PipelineExecutor.Execute(steps, Items,
             ImmutableDictionary<string, object>.Empty,
-            ImmutableDictionary<string, GeneratorFunc>.Empty);
+            ImmutableDictionary<string, GeneratorFunc>.Empty, new Random(0));
 
         var stacks = Assert.IsType<StacksValue>(result);
         Assert.Single(stacks.Stacks);
@@ -38,7 +38,7 @@ public class PipelineExecutorTests
         var steps = PipelineParser.Parse("@belt-pouch");
 
         var result = PipelineExecutor.Execute(steps, Items, templates,
-            ImmutableDictionary<string, GeneratorFunc>.Empty);
+            ImmutableDictionary<string, GeneratorFunc>.Empty, new Random(0));
 
         var tv = Assert.IsType<TemplateValue>(result);
         Assert.Equal("belt-pouch", tv.Id);
@@ -51,7 +51,7 @@ public class PipelineExecutorTests
         var template = new GridTemplate("small-bag", 3, 2, "Test", "Blue");
         var templates = ImmutableDictionary<string, object>.Empty.Add("small-bag", template);
 
-        GeneratorFunc bagGen = (input, args) =>
+        GeneratorFunc bagGen = (input, args, _) =>
         {
             var gt = (GridTemplate)(input is TemplateValue tv ? tv.Template : args[0]);
             var bag = new Bag(Grid.Create(gt.Columns, gt.Rows), gt.EnvironmentType, gt.ColorScheme);
@@ -60,7 +60,7 @@ public class PipelineExecutorTests
         var generators = ImmutableDictionary<string, GeneratorFunc>.Empty.Add("bag", bagGen);
 
         var steps = PipelineParser.Parse("@small-bag -> !bag");
-        var result = PipelineExecutor.Execute(steps, Items, templates, generators);
+        var result = PipelineExecutor.Execute(steps, Items, templates, generators, new Random(0));
 
         var bv = Assert.IsType<BagValue>(result);
         Assert.Equal(3, bv.Bag.Grid.Columns);
@@ -78,7 +78,7 @@ public class PipelineExecutorTests
             .Add("forest-6x4", gridT)
             .Add("forest-loot", lootT);
 
-        GeneratorFunc wildGen = (input, args) =>
+        GeneratorFunc wildGen = (input, args, _) =>
         {
             // args should contain the resolved templates
             Assert.Equal(2, args.Count);
@@ -90,7 +90,7 @@ public class PipelineExecutorTests
         var generators = ImmutableDictionary<string, GeneratorFunc>.Empty.Add("wilderness", wildGen);
 
         var steps = PipelineParser.Parse("!wilderness(@forest-6x4, @forest-loot)");
-        var result = PipelineExecutor.Execute(steps, Items, templates, generators);
+        var result = PipelineExecutor.Execute(steps, Items, templates, generators, new Random(0));
 
         var bv = Assert.IsType<BagValue>(result);
         Assert.Equal(6, bv.Bag.Grid.Columns);
@@ -102,7 +102,7 @@ public class PipelineExecutorTests
         var template = new GridTemplate("pouch", 2, 2, "Pouch", "Brown");
         var templates = ImmutableDictionary<string, object>.Empty.Add("pouch", template);
 
-        GeneratorFunc attachBag = (input, args) =>
+        GeneratorFunc attachBag = (input, args, _) =>
         {
             var stacks = ((StacksValue)input!).Stacks;
             var gt = (GridTemplate)args[0];
@@ -113,7 +113,7 @@ public class PipelineExecutorTests
         var generators = ImmutableDictionary<string, GeneratorFunc>.Empty.Add("attach-bag", attachBag);
 
         var steps = PipelineParser.Parse("1 Stone Axe -> !attach-bag(@pouch)");
-        var result = PipelineExecutor.Execute(steps, Items, templates, generators);
+        var result = PipelineExecutor.Execute(steps, Items, templates, generators, new Random(0));
 
         var sv = Assert.IsType<StacksValue>(result);
         Assert.Single(sv.Stacks);
@@ -130,18 +130,18 @@ public class PipelineExecutorTests
         var template = new GridTemplate("t", 2, 2);
         var templates = ImmutableDictionary<string, object>.Empty.Add("t", template);
 
-        GeneratorFunc gen1 = (input, args) =>
+        GeneratorFunc gen1 = (input, args, _) =>
         {
             var gt = (GridTemplate)((TemplateValue)input!).Template;
             return new BagValue(new Bag(Grid.Create(gt.Columns, gt.Rows)));
         };
-        GeneratorFunc gen2 = (input, args) => input!; // passthrough
+        GeneratorFunc gen2 = (input, args, _) => input!; // passthrough
         var generators = ImmutableDictionary<string, GeneratorFunc>.Empty
             .Add("bag", gen1)
             .Add("shuffle", gen2);
 
         var steps = PipelineParser.Parse("@t -> !bag -> !shuffle");
-        var result = PipelineExecutor.Execute(steps, Items, templates, generators);
+        var result = PipelineExecutor.Execute(steps, Items, templates, generators, new Random(0));
 
         Assert.IsType<BagValue>(result);
     }

@@ -108,9 +108,8 @@ public class GameSessionTests
         session = session with { MaxUndoDepth = 3 };
 
         // Do 5 acquire-random actions
-        var rng = new Random(42);
         for (int i = 0; i < 5; i++)
-            session = session.ExecuteAcquireRandom(rng);
+            session = session.ExecuteAcquireRandom();
 
         // Should only have 3 undo levels, not 5
         Assert.Equal(3, session.UndoDepth);

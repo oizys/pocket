@@ -26,6 +26,6 @@ var profile = GameInitializer.CreateDemoProfile(registry, dialogue: dialogue);
 Application.Init();
 var top = Application.Top;
 top.Add(new GameView(profile.State, profile.Recipes, profile.FacilityRecipeMap,
-    tickMode: profile.TickMode, dialogue: profile.Dialogue));
+    tickMode: profile.TickMode, dialogue: profile.Dialogue, worldSeed: profile.WorldSeed));
 Application.Run();
 Application.Shutdown();

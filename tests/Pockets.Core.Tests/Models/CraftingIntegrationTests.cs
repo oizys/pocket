@@ -17,7 +17,7 @@ public class CraftingIntegrationTests
     private static readonly Recipe AxeRecipe = new(
         "workbench_axe", "Stone Axe",
         new[] { new RecipeInput(Rock, 5), new RecipeInput(Wood, 3) },
-        () => RecipeOutput.FromStacks(new[] { new ItemStack(StoneAxe, 1) }),
+        _ => RecipeOutput.FromStacks(new[] { new ItemStack(StoneAxe, 1) }),
         Duration: 3);
 
     private static readonly ImmutableArray<Recipe> Recipes = ImmutableArray.Create(AxeRecipe);

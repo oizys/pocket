@@ -19,7 +19,7 @@ public class SimulationStepTests
     private static readonly Recipe AxeRecipe = new(
         "workbench_axe", "Stone Axe",
         new[] { new RecipeInput(Rock, 5), new RecipeInput(Wood, 3) },
-        () => RecipeOutput.FromStacks(new[] { new ItemStack(StoneAxe, 1) }),
+        _ => RecipeOutput.FromStacks(new[] { new ItemStack(StoneAxe, 1) }),
         Duration: 3);
 
     /// <summary>A root bag holding a Rock stack at cell 0 and a Workbench (inputs optionally pre-loaded) at cell 1.</summary>
@@ -47,7 +47,7 @@ public class SimulationStepTests
     /// <summary>Wraps a game state as a SimState at the given tick count with the axe recipe loaded.</summary>
     private static SimState Sim(GameState game, int tickCount = 0) =>
         new(game, tickCount, TimeSpan.Zero, null, null,
-            new SimContent(ImmutableArray.Create(AxeRecipe), null, DialogueBook.Empty));
+            new SimContent(ImmutableArray.Create(AxeRecipe), null, DialogueBook.Empty), SimRng.Create(0));
 
     [Fact]
     public void Tool_Failed_EmitsOnlyRejected_StateUnchanged()

@@ -27,7 +27,7 @@ public class CraftingTableTests
     private static Recipe CompassRecipe() => new(
         "compass", "Quiet Compass",
         new[] { new RecipeInput(Grass, 3), new RecipeInput(Bone, 2) },
-        () => RecipeOutput.FromStacks(new[] { new ItemStack(Compass, 1) }),
+        _ => RecipeOutput.FromStacks(new[] { new ItemStack(Compass, 1) }),
         Duration: 3);
 
     /// <summary>

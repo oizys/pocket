@@ -101,10 +101,11 @@ public static class FacilityLogic
     /// - Increments Progress if already crafting the same recipe
     /// - On completion: consumes inputs, places output in output slot, resets state
     /// Returns the updated facility bag, new progress value, and any newly created bags
-    /// (produced by recipe OutputFactory, e.g. crafted bag items).
+    /// (produced by recipe OutputFactory, e.g. crafted bag items). <paramref name="rng"/> is handed to the
+    /// output factory on completion (the step's <see cref="Sim.SimStream.Craft"/> stream when run by Step).
     /// </summary>
     public static (Bag Facility, int Progress, IReadOnlyList<Bag> NewBags) Tick(
-        Bag facility, int currentProgress, IReadOnlyList<Recipe> recipes)
+        Bag facility, int currentProgress, IReadOnlyList<Recipe> recipes, Random rng)
     {
         if (facility.FacilityState is null || !facility.FacilityState.IsActive)
             return (facility, currentProgress, Array.Empty<Bag>());
@@ -126,7 +127,7 @@ public static class FacilityLogic
             if (newProgress >= activeRecipe.Duration)
             {
                 // Complete: consume inputs, produce output
-                var (completed, newBags) = CompleteCraft(facility, activeRecipe);
+                var (completed, newBags) = CompleteCraft(facility, activeRecipe, rng);
                 return (completed, 0, newBags);
             }
 
@@ -164,9 +165,10 @@ public static class FacilityLogic
 
     /// <summary>
     /// Completes a craft: consumes input items, places output in output slots, resets state.
-    /// Returns the updated facility and any newly created bags from the output factory.
+    /// Returns the updated facility and any newly created bags from the output factory, which draws from
+    /// <paramref name="rng"/>.
     /// </summary>
-    private static (Bag Facility, IReadOnlyList<Bag> NewBags) CompleteCraft(Bag facility, Recipe recipe)
+    private static (Bag Facility, IReadOnlyList<Bag> NewBags) CompleteCraft(Bag facility, Recipe recipe, Random rng)
     {
         var grid = facility.Grid;
         var newBags = new List<Bag>();
@@ -192,7 +194,7 @@ public static class FacilityLogic
         }
 
         // Produce outputs into output slots
-        var recipeOutput = recipe.OutputFactory();
+        var recipeOutput = recipe.OutputFactory(rng);
         var outputs = recipeOutput.Stacks;
         newBags.AddRange(recipeOutput.NewBags);
 

@@ -104,7 +104,7 @@ dependencies are given in §Order below.
 - **Risk:** low. The only way it goes wrong is over-designing the taxonomy before 1.5.
   Keep the records minimal.
 
-### Slice 1.1 — Determinism groundwork: `SimRng` in state (G2) *(parallel with 1.2)*
+### Slice 1.1 — Determinism groundwork: `SimRng` in state (G2) *(parallel with 1.2)* ✓ landed (see §Addendum — Slice 1.1)
 - Add `SimRng`, a counter-based RNG: `Hash(WorldSeed, Step, Stream, Draw)`, where
   `Stream` is an enum of purposes. It is an integer-only `SplitMix64`/`PCG`-style hash and is
   held in `SimState` (`WorldSeed`, plus a draw counter per stream per step). Add
@@ -521,3 +521,40 @@ mock-godot.
 
 **For 1.1 (SimRng):** `ExecuteAcquireRandom` still draws from its `Random` *before* `Step`, outside the intent. Moving the draw inside Step (`SimRng(Stream.Acquire)`) is the natural point to turn it into a real `Intent.AcquireRandom`. When `SimRng` joins `SimState`, add it to `ToSimState` and `WithSimState`. The seedling's `new Random()` sits in `RecipeRegistry`, reached from `Simulation.TickFacilities` via `FacilityLogic.Tick`, so the `SimRng` has to be threaded from the `SimState` there.
 
+## Addendum — Slice 1.1 as built (2026-10-28)
+
+**Golden-neutral.** The VM checkpoint golden and the 11 TUI buffer goldens are byte-identical, and
+smoke and target-demo diff clean across tui and mock-godot. Neither journey presses AcquireRandom, runs
+DSL, or crafts the seedling (re-verified against both journey files). The only recipe either journey
+completes is the compass, whose factory draws nothing.
+
+| Piece | Where | Notes |
+|---|---|---|
+| `SimRng` | `src/Pockets.Core/Sim/SimRng.cs` | An immutable record of `(WorldSeed, Step, per-stream draw counters)`. A draw is `Hash(WorldSeed, Step, Stream, Draw)`: SplitMix64's finalizer `Mix` folds in the seed, then the step, then `(stream << 32 \| draw)`. It is integer-only. `AtStep(n)` resets the counters when the step changes (and returns the same instance otherwise). Equality is by value. `Mix` is pinned against the SplitMix64 reference output (`0xE220A8397B1DCDAF`). **Golden vectors:** the first 64 draws (seed 20260803, step 1, Acquire) were computed by an independent Python implementation and frozen in `SimRngTests`. |
+| `SimStream` | same file | `Acquire = 1`, `Dsl = 2`, `Craft = 3`. The values are hash input, so they must never be renumbered. |
+| `SimRandom` (the plan's `AsRandom()` bridge) | same file | `rng.AsRandom(stream)` returns a `System.Random` subclass. It overrides every public draw method, so the base class's runtime-specific generator is never used. After use, the caller writes `random.Rng` (the advanced RNG) back into state. `Next(n)` is `draw % n`. `NextDouble` is `(draw >> 11) · 2⁻⁵³`. |
+| `SimState.Rng` | `Sim/SimState.cs` | A new required positional field. `GameSession` stores it as `Rng` (nullable; `WorldRng` falls back to seed 0), projects it in `ToSimState`, and writes it back in `WithSimState`. `GameSession.WithWorldSeed(seed)` sets it. `DemoProfile.WorldSeed` = `seed ?? DemoSeed`. `NewSession()` applies it, and `GameView` takes `worldSeed:` (from `Program.cs` and the TUI driver), so all three drivers share it. It is **not** serialized in the VM. Like `TickCount`, it is carried across undo: the step number keeps rising, so a redo draws fresh values. |
+| `Intent.AcquireRandom(bool AdvancesTime)` | `Sim/Intent.cs`, `Simulation.StepOne` | The first data-only player intent. Step draws the type from `Acquire` at the step, runs `ToolAcquireRandom`, and then follows the same rejected/no-op/applied/tick path as `Tool`; the two now share a local `ApplyTool`. `GameSession.ExecuteAcquireRandom()` takes no argument. Its log line (P1-D6, unchanged text) comes from a **preview**: the shell runs the identical draw (`WorldRng.AtStep(TickCount + 1)`, which is pure) on the pre-step state to name the acquired stack. 1.5's events can replace this. |
+| Craft stream | `Simulation.AdvanceTime` → `TickFacilities` → `FacilityLogic.Tick(…, Random rng)` → `CompleteCraft` → `recipe.OutputFactory(rng)` | One `Craft` cursor per tick phase, drawn in `OrderedFacilities` order, so two pots finishing on the same step get different worlds. Its advance is committed to `SimState.Rng`. |
+| Recipe factory signature | `Models/Recipe.cs` | `Func<RecipeOutput>` → **`Func<Random, RecipeOutput>`**, not `Func<SimRng, …>`. A factory needs a cursor that advances across factory calls in the same tick, and the generators it calls are `Random`-typed. In play, the argument is always a `SimRandom`. Factories that don't draw take `_`. This was the risk-#3 churn: 4 sites in `GameInitializer`, 3 in `RecipeRegistry`, 2 in `ContentLoader`, and ~10 in tests. |
+| Generators | `Data/GeneratorFunc.cs`, `PipelineExecutor.Execute(…, Random rng)`, `GeneratorBuiltins` | `GeneratorFunc` gains a third parameter, `Random rng`. In `Wilderness` and `Shuffle`, `rng` is now required (`rng ??= new Random()` is gone). Content-loaded pipeline factories pass their factory RNG through. |
+| DSL | `OpResult.Rng` (init property carried through `Chain*`), `DslInterpreter.RunProgram(state, program, Random? rng = null)`, `Opcodes.AcquireRandom` | `acquire-random` draws from `OpResult.Rng`. **With no RNG it fails** (`ChainError`) instead of drawing from an unseeded source. `GameSession.Execute(dsl)` passes the next step's `Dsl` stream. |
+| Init-time | `GameInitializer.CreateRandomStage{1,2,3}Game`, `CreateFromRegistry` | `Random random` is now required. The demo's seeded `new Random(seed ?? DemoSeed)` and `new Random(WildernessSeed)` are **kept** (P1-D7). |
+| Frontends | `GameView`, `GameSceneController`, `GameController.HandleKey(GameKey)` | `_rng` was removed from both frontends, and `HandleKey` lost its `Random?` parameter. Godot's no-`/data` fallback now seeds `new Random(GameInitializer.DemoSeed)`. Godot is outside `Pockets.sln`; it was checked by grep and not compiled here (risk #5). |
+
+**Acceptance:**
+1. `grep -rn "new Random()" src/` returns zero hits. This is enforced by `SimRngDeterminismTests.Src_HasNoUnseededRandom`, which scans `src/**/*.cs` (excluding obj/bin) and also bans the target-typed `Random x = new()` (the form the frontends used) and `Random.Shared`.
+2. `SameSeed_AcquireRandomX50_AndSeedlingCraft_ProduceIdenticalWorlds`: a rogue session with a loaded Seedling Pot runs AcquireRandom ×50 (the pot completes at tick 8). The two runs match on a GUID-free world fingerprint, on the action log, and on the RNG. A different seed gives a different world. Further tests cover DSL determinism, DSL-without-RNG failure, Step's draw equalling the pinned hash with the counter committed, the log line naming the type Step drew, and undo moving the RNG forward.
+3. The goldens are unchanged; `make parity-full` is green.
+- `dotnet test`: Core 917 (901 + 16 new: `SimRngTests` 8, `SimRngDeterminismTests` 8), App 53, all green. The spikes still build.
+- Edited tests: the shape pin `…Slice2_DeclaresTickAndTransitionalTool` → `Intent_Phase1Slice1_DeclaresTickToolAndAcquireRandom`. The rest are mechanical signature updates (`() =>` → `_ =>`, an explicit seeded `Random` for `FacilityLogic.Tick` / `PipelineExecutor` / generators, `ExecuteAcquireRandom()`). No behaviour assertion changed.
+
+**Debt recorded (P1-D7, unchanged):**
+- The seeded `System.Random` at init time (`GameInitializer` demo seed and wilderness seed, and the Godot fallback) is still in use.
+- `WildernessTemplate.FillRatio` and the loot weights, and `LootTableTemplate`'s weights in `GeneratorBuiltins.Wilderness`, are still `double`. Via the seedling, that `double` math now runs **in step** on `SimRandom.NextDouble()`. It is deterministic on IEEE-754 hardware but is a G1 violation, to be converted in Phase 3.
+
+**For 1.3 (intents everywhere):**
+- `Intent.AcquireRandom` has no target location yet. `ToolAcquireRandom` acquires into the *active* bag, while the log diff reads the *root* grid. That quirk is unchanged: inside a nested bag the log says "added random item". When adding `LocationId`, keep that text or treat changing it as a decision.
+- `Execute(dsl)` still runs the program *before* Step and rides in as a precomputed `Intent.Tool`. Its `Dsl` draws are taken at the next step's coordinates, but their counter is not written back. This is harmless today: each state-changing step gets a fresh step number, so counters reset. A data-only `Intent.Dsl` should move the run, and the draw, inside Step.
+- `ExecuteAcquireRandom` previews the draw only to build its log line. If 1.3 turns logging into a post-step projection, the preview can go.
+- `HandleKey(GameKey)` no longer takes an RNG. Any new randomness belongs in a `SimStream` (add a member; never renumber) and is drawn inside Step.

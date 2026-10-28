@@ -128,9 +128,10 @@ public class GameController
 
     /// <summary>
     /// Handles a logical key press. Returns a ControllerResult with the updated session,
-    /// a status message, and whether the key was handled.
+    /// a status message, and whether the key was handled. Frontends own no randomness: AcquireRandom
+    /// draws inside the step from the session's SimRng (Slice 1.1).
     /// </summary>
-    public ControllerResult HandleKey(GameKey key, Random? rng = null)
+    public ControllerResult HandleKey(GameKey key)
     {
         // One-shot presentation cues are per-key: clear any un-consumed pulse before handling.
         _feedbackPulse = FeedbackPulse.None;
@@ -287,7 +288,7 @@ public class GameController
             GameKey.Secondary => _session.ExecuteSecondary(_focus),
             GameKey.QuickSplit => _session.ExecuteQuickSplit(_focus),
             GameKey.Sort => _session.ExecuteSort(_focus),
-            GameKey.AcquireRandom => _session.ExecuteAcquireRandom(rng ?? new Random()),
+            GameKey.AcquireRandom => _session.ExecuteAcquireRandom(),
             GameKey.RecipeMenu => _session.OpenRecipeMenu(_focus),
             _ => null
         };

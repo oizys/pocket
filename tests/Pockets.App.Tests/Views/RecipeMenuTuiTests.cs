@@ -20,7 +20,7 @@ public class RecipeMenuTuiTests : IDisposable
 
     private static Recipe R(string id, string name) =>
         new(id, name, new[] { new RecipeInput(Grass, 1) },
-            () => RecipeOutput.FromStacks(Array.Empty<ItemStack>()), Duration: 3);
+            _ => RecipeOutput.FromStacks(Array.Empty<ItemStack>()), Duration: 3);
 
     private static (GameState State, ImmutableArray<Recipe> Recipes) MakeState()
     {

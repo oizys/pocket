@@ -29,7 +29,7 @@ public static class RecipeRegistry
             recipes.Add(new Recipe(
                 "workbench_axe", "Stone Axe",
                 new[] { new RecipeInput(rock, 5), new RecipeInput(wood, 3) },
-                () => RecipeOutput.FromStacks(new[] { new ItemStack(stoneAxe, 1) }),
+                _ => RecipeOutput.FromStacks(new[] { new ItemStack(stoneAxe, 1) }),
                 Duration: 3));
         }
 
@@ -44,7 +44,7 @@ public static class RecipeRegistry
             recipes.Add(new Recipe(
                 "tanner_pouch", "Belt Pouch",
                 new[] { new RecipeInput(leather, 3), new RecipeInput(fiber, 2) },
-                () =>
+                _ =>
                 {
                     var bag = new Bag(Grid.Create(3, 2), "Pouch", "Brown");
                     return RecipeOutput.WithBags(
@@ -70,9 +70,9 @@ public static class RecipeRegistry
             recipes.Add(new Recipe(
                 "seedling_forest", "Forest Bag",
                 new[] { new RecipeInput(seed, 5), new RecipeInput(soil, 3) },
-                () =>
+                // The wilderness is rolled from the step's Craft stream (Slice 1.1): no RNG of its own.
+                rng =>
                 {
-                    var rng = new Random();
                     var bag = WildernessGenerator.Generate(template, rng);
                     return RecipeOutput.WithBags(
                         new[] { new ItemStack(forestBagType, 1, ContainedBagId: bag.Id) },

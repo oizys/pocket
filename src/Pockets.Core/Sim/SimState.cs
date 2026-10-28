@@ -11,7 +11,8 @@ namespace Pockets.Core.Sim;
 /// rather than storing it there, so the session's public shape (and every test written against it)
 /// is unchanged. <see cref="SplitMode"/>, <see cref="RecipeMenu"/> and <see cref="Elapsed"/> ride along
 /// untouched until Slice 1.3 routes their intents through Step. The VM keeps its exact projection:
-/// <c>recipeMenu</c> serialized, <c>SplitMode</c> not. <c>SimRng</c> joins in Slice 1.1.
+/// <c>recipeMenu</c> serialized, <c>SplitMode</c> not. <see cref="Rng"/> (Slice 1.1) is the counter RNG every
+/// in-step draw comes from; it is L1 but not serialized in the VM.
 /// </para>
 /// </summary>
 public sealed record SimState(
@@ -20,7 +21,8 @@ public sealed record SimState(
     TimeSpan Elapsed,
     SplitModeState? SplitMode,
     RecipeMenuState? RecipeMenu,
-    SimContent Content);
+    SimContent Content,
+    SimRng Rng);
 
 /// <summary>
 /// L1 content: definitions loaded at startup that <see cref="Simulation.Step"/> reads and no step ever

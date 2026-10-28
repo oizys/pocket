@@ -54,8 +54,23 @@ public record GameSession(
     SplitModeState? SplitMode = null,
     DialogueBook? Book = null,
     TimeSpan Elapsed = default,
-    RecipeMenuState? RecipeMenu = null)
+    RecipeMenuState? RecipeMenu = null,
+    SimRng? Rng = null)
 {
+    /// <summary>
+    /// The session's counter RNG (Slice 1.1, L1): every in-step random draw comes from it. A session
+    /// created without one uses world seed 0; the demo profile seeds it from its init seed. Like
+    /// <see cref="TickCount"/>, it is carried forward across undo (the step number keeps rising, so
+    /// a re-done action draws fresh values). Not serialized in the VM.
+    /// </summary>
+    public SimRng WorldRng => Rng ?? DefaultRng;
+
+    /// <summary>The RNG of a session created without a world seed.</summary>
+    private static readonly SimRng DefaultRng = SimRng.Create(0);
+
+    /// <summary>A copy of this session whose RNG is keyed on <paramref name="worldSeed"/>.</summary>
+    public GameSession WithWorldSeed(ulong worldSeed) => this with { Rng = SimRng.Create(worldSeed) };
+
     /// <summary>
     /// Accumulated in-game time (Slice 5 clock). Mirrors the injected <see cref="IGameClock"/> via
     /// <see cref="GameController.SyncClock"/>; the parity harness advances it only through scripted
@@ -781,17 +796,20 @@ public record GameSession(
     }
 
     /// <summary>
-    /// Execute AcquireRandom tool on current state.
+    /// Execute the AcquireRandom debug tool as one <see cref="Intent.AcquireRandom"/> step: the item type is
+    /// drawn inside Step from <see cref="WorldRng"/> (Slice 1.1). The log line still names the acquired
+    /// stack as before (P1-D6), so the shell previews the step's exact draw (same RNG, same step: pure)
+    /// on the pre-step state to name it. Slice 1.5's events can replace the preview.
     /// </summary>
-    public GameSession ExecuteAcquireRandom(Random rng)
+    public GameSession ExecuteAcquireRandom()
     {
-        var result = Current.ToolAcquireRandom(rng);
+        var result = Current.ToolAcquireRandom(NextStepRandom(SimStream.Acquire));
         var newItem = result.State.RootBag.Grid.Cells
             .Where(c => !c.IsEmpty)
             .Select(c => c.Stack!)
             .Except(Current.RootBag.Grid.Cells.Where(c => !c.IsEmpty).Select(c => c.Stack!))
             .FirstOrDefault();
-        return ApplyResult(result, () =>
+        return ActIntent(new Intent.AcquireRandom(AdvancesTime: TickMode == TickMode.Rogue), () =>
             newItem != null ? $"Acquire: +1 {newItem.ItemType.Name}" : "Acquire: added random item");
     }
 
@@ -807,7 +825,10 @@ public record GameSession(
         OpResult opResult;
         try
         {
-            opResult = DslInterpreter.RunProgram(Current, dslExpression);
+            // Random opcodes draw from the next step's Dsl stream. The program still runs before Step
+            // (its result rides in as a precomputed Tool intent until 1.3), but the draw is a pure
+            // function of the session, never an unseeded Random.
+            opResult = DslInterpreter.RunProgram(Current, dslExpression, NextStepRandom(SimStream.Dsl));
         }
         catch (InvalidOperationException ex)
         {
@@ -843,7 +864,14 @@ public record GameSession(
     /// Projects the session's L1 fields into the <see cref="SimState"/> <see cref="Simulation.Step"/>
     /// consumes. Slice 1.2 keeps them stored on the session (public shape unchanged) and projects.
     /// </summary>
-    public SimState ToSimState() => new(Current, TickCount, Elapsed, SplitMode, RecipeMenu, Content);
+    public SimState ToSimState() => new(Current, TickCount, Elapsed, SplitMode, RecipeMenu, Content, WorldRng);
+
+    /// <summary>
+    /// A <see cref="System.Random"/> over <paramref name="stream"/> positioned exactly where the next
+    /// <see cref="Simulation.Step"/> will draw (step <c>TickCount + 1</c>). Used by the shell to preview a draw
+    /// Step makes, or to feed a precomputed tool.
+    /// </summary>
+    private SimRandom NextStepRandom(SimStream stream) => WorldRng.AtStep(TickCount + 1).AsRandom(stream);
 
     /// <summary>Writes a stepped <see cref="SimState"/> back onto the session's L1 fields.</summary>
     private GameSession WithSimState(SimState s) => this with
@@ -852,7 +880,8 @@ public record GameSession(
         TickCount = s.TickCount,
         Elapsed = s.Elapsed,
         SplitMode = s.SplitMode,
-        RecipeMenu = s.RecipeMenu
+        RecipeMenu = s.RecipeMenu,
+        Rng = s.Rng
     };
 
     /// <summary>
@@ -882,9 +911,15 @@ public record GameSession(
     /// appends the action-log line exactly as before: <c>FAILED: …</c> on rejection; otherwise the
     /// tool's line followed by any craft-completion lines.
     /// </summary>
-    private GameSession Act(Func<GameState, ToolResult> tool, Func<string> formatLog)
+    private GameSession Act(Func<GameState, ToolResult> tool, Func<string> formatLog) =>
+        ActIntent(new Intent.Tool(tool, AdvancesTime: TickMode == TickMode.Rogue), formatLog);
+
+    /// <summary>
+    /// Runs one player intent as a step and appends its action-log lines (see <see cref="Act"/>).
+    /// </summary>
+    private GameSession ActIntent(Intent intent, Func<string> formatLog)
     {
-        var (next, events) = RunStep(new Intent.Tool(tool, AdvancesTime: TickMode == TickMode.Rogue));
+        var (next, events) = RunStep(intent);
         if (events.IsEmpty)
             return this;
         if (events[0] is SimEvent.IntentRejected rejected)
