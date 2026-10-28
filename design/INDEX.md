@@ -33,5 +33,6 @@
 | -- | Target Demo Journey (30-min unified draft — mirror of vault reading copy) | -- | Reference | [target-demo-journey.md](target-demo-journey.md) |
 | -- | Target Demo Build Plan (worker-sized slices — mirror of vault reading copy) | -- | Reference | [target-demo-build-plan.md](target-demo-build-plan.md) |
 | -- | Parity Drift Report (TUI↔Godot divergences, Slices 0–8 + as-built decisions; parity gate = `make parity`/`parity-full`) | -- | Reference | [parity-drift-report.md](parity-drift-report.md) |
-| 23 | Two-Layer Architecture (L1 Simulation + L2 Realization; Step/events, time classes, hot set, MP guardrails; spikes in `spikes/`) | Early-Mid | Ratified (Phase 0 done) | [two-layer.md](two-layer.md) |
-| -- | Two-Layer Phase 1 Slice Plan (Step contract + event stream; slices 1.0–1.9, decisions P1-D1…D9) | -- | Plan | [two-layer-phase1-plan.md](two-layer-phase1-plan.md) |
+| 23 | Two-Layer Architecture (L1 Simulation + L2 Realization; Step/events, time classes, hot set, MP guardrails; spikes in `spikes/`) | Early-Mid | Ratified (Phase 0–1 done) | [two-layer.md](two-layer.md) |
+| -- | Two-Layer Phase 1 Slice Plan (Step contract + event stream; slices 1.0–1.9, decisions P1-D1…D9) | -- | Done (Phase 1 ✓) | [two-layer-phase1-plan.md](two-layer-phase1-plan.md) |
+| -- | Two-Layer Phase 1 As-Built Drift Note (plan vs build, retention, open follow-ups) | -- | Report | [two-layer-phase1-drift.md](two-layer-phase1-drift.md) |

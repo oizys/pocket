@@ -9,8 +9,8 @@ gate — see [design/parity-drift-report.md](../../design/parity-drift-report.md
 ## One-command entry points
 
 ```bash
-make parity          # FAST gate: tui + mock-godot over journeys/smoke.journey.json, diff the streams
-make parity-full     # FULL gate: BOTH journeys on both drivers + target-demo golden regression
+make parity          # FAST gate: tui + mock-godot over journeys/smoke.journey.json, diff the VM + event streams, replay check
+make parity-full     # FULL gate: BOTH journeys on both drivers + target-demo VM, buffer and events goldens
 make record-goldens  # regenerate journeys/goldens/ after an INTENTIONAL journey/state change
 make parity-godot    # the full journey vs a live Godot build + screenshot set (needs a Godot runtime)
 make test            # the shipping suites (Core + App)
@@ -19,8 +19,9 @@ make test            # the shipping suites (Core + App)
 Two standing gates (build plan sync policy — both pre-push):
 
 - **`make parity`** — the **fast** gate: [`journeys/smoke.journey.json`](../../journeys/smoke.journey.json),
-  the first ~10 minutes (through Slice 4's look-in-vs-enter). Run it constantly. Passes when both
-  drivers finish invariant-green and their checkpoint streams diff clean.
+  the first ~10 minutes (through Slice 4's look-in-vs-enter). Run it constantly. It passes when both
+  drivers finish invariant-green, their checkpoint **and event** streams diff clean, and each driver's
+  `--replay-check` passes.
 - **`make parity-full`** — the **full** demo gate:
   [`journeys/target-demo.journey.json`](../../journeys/target-demo.journey.json), the complete
   30-minute thread. Runs both journeys on both drivers (it depends on `parity`), then
@@ -37,6 +38,10 @@ Committed under [`journeys/goldens/`](../../journeys/goldens/):
   rows** (every chrome materialization moment: dialogue box, grid, description pane, toolbar, look-in
   overlay, breadcrumbs, shrine view, clock readout, action queue, minimap, fullness pips). Captured at
   the checkpoints flagged `"golden": true`.
+- `target-demo.events` (Phase 1 Slice 1.7). This is the canonical **event stream** of the target demo:
+  305 lines, 21 kinds, no GUIDs. It is in the format described below and recorded from tui. `parity-full`
+  compares a fresh run against it (`golden: event stream`). It is LF-pinned by `.gitattributes` like the
+  other goldens.
 
 `make record-goldens` regenerates both after an intentional change (then commit the diff). On Aaron's
 Windows box, `make parity-godot` additionally saves a Godot **screenshot** per ledger row into
@@ -85,7 +90,35 @@ produces it identically; Step/Seq themselves are never renumbered. Streams are d
 
 `--replay-check` records the intent count, view-model text and event lines at every step, then replays
 `GameSession.IntentLog` from `profile.NewSession()` and requires identical view-models and event streams
-at every boundary (and an identical replayed log). Failures are prefixed `replay:`.
+at every boundary (and an identical replayed log). Failures are prefixed `replay:`. This is guardrail G6
+in its Phase 1 form: replay(intents) ≡ state. The replay goes through the shell (`ApplyTraced`), so it
+includes `Undo`. The intent log is the full history, undos included: undo truncates the *event* log, not
+the intent log (ratified 2026-10-28). Undo appears in the stream as one `Rewound toStep=N` line. No
+journey undoes today, so the golden has no `Rewound`. Adding an undo to a journey adds golden lines,
+so treat it as a deliberate change and run `record-goldens`.
+
+Notes:
+- The event lines come from `DriverObservation.Events`:
+  - tui names its `GameView.LastEvents` with its own `EventText`;
+  - mock-godot and live Godot read the `"events"` array of every `DebugCommandHandler` response
+    (one `EventText` per controller).
+- A `state` query adds no lines.
+- On every step and driver, `VerifyEvents` requires an event stream, and requires at least one event
+  whenever the VM changed. A pre-1.6 Godot build sends no `events`, so it fails this check.
+- `godot` has no in-process session, so `--replay-check` is skipped there with a note. The tui leg of
+  `parity-godot` runs the check instead.
+
+### Running `make parity-godot` on Windows (Aaron)
+
+1. `dotnet build src/Pockets.Godot`, then launch the game. **Start a fresh Godot build and send it no
+   input before the run.** The `bag#N` names count from the controller's first event, so a key pressed
+   in the window first shifts every name and the event diffs fail.
+2. `make parity-godot`. This runs:
+   - the tui leg, with `--events-out` and `--replay-check`;
+   - the godot leg over `ws://localhost:9080`, with `--events-out` and the screenshots;
+   - three comparisons: the checkpoints tui vs live-godot, the events tui vs live-godot, and the events
+     golden vs live-godot.
+3. To run it again, restart Godot first (step 1).
 
 ## Drivers
 

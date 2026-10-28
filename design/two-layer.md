@@ -4,7 +4,10 @@
 **Status:** Ratified 2026-10-27 (D1–D11 accepted with amendments A1–A6). Phase 0 done:
 this doc plus spikes A/B/C in [`spikes/`](../spikes/README.md). The vault proposal
 (`~/obsid/paths/projects/pockets/two-layer-architecture.md`) is now a mirror of this file.
-**The repo copy is the source of truth.**
+**The repo copy is the source of truth.** **Phase 1 ✓ (2026-10-28):** the Step contract and
+event stream are built, golden-neutral (slices 1.0–1.9,
+[two-layer-phase1-plan.md](two-layer-phase1-plan.md); drift note:
+[two-layer-phase1-drift.md](two-layer-phase1-drift.md)).
 
 ---
 
@@ -130,6 +133,18 @@ Step(L1State s, IReadOnlyList<Intent> intents) → (L1State s', IReadOnlyList<Si
   floored into whole steps and the fraction carries over (tick-system.md's accumulator).
 - One outer step may run **0, 1 or k sub-steps per bag** (§Time).
 
+**As built in Phase 1.** The function is
+`Simulation.Step(SimState, IReadOnlyList<Intent>) → StepResult<SimState>` in
+`src/Pockets.Core/Sim/`. It is named `Simulation`, not `Sim`, because a type `Sim` would be shadowed by
+the `Pockets.Core.Sim` namespace. `SimState` = `GameState` + `TickCount` + `Elapsed` + `SplitMode` +
+`RecipeMenu` + `Rng`, with `SimContent` (recipes, facility map, dialogue beats, `TickMode`) as read-only
+L1 content. `Intent` has **32 data-only cases**: one per controller path, each naming its target
+`LocationId`, with no delegates and no GUIDs (the transitional `Intent.Tool` closure was deleted in 1.3).
+`GameSession.Apply(Intent)` is the only public mutation. The session is the shell around Step: undo
+stack, action log, intent log, event log. Two Phase 1 limits still apply. The step rate is still 1 Hz
+(`TickLengthMs = 1000`, P1-D4), not 8 Hz. Realtime player intents apply immediately with no time
+advance (P1-D2), so there is no intent queue or prediction yet.
+
 ```
   frame loop (L2b, ~60 Hz)            scheduler (L1 boundary)               Step (L1, pure)
   ───────────────────────            ───────────────────────               ───────────────
@@ -204,7 +219,8 @@ multiplier on top of those numbers, not a prerequisite.
 its event kinds:
 
 ```csharp
-// sketch, Phase 3
+// sketch, Phase 3. As built in Phase 1: IRule { Kind; Time; MaxDelta; EventKinds },
+// ITickRule.Apply(GameState, RuleContext) as one coarse pass, registered in RuleRegistry.TickPhase
 interface IRule { RuleKind Kind { get; } TimeClass Time { get; } }
 interface IFieldRule    : IRule { int Next(in Neighbourhood prev, CellCoord c); }
 interface ITransferRule : IRule { void Propose(in BagView s, ProposalSink sink); }
@@ -246,6 +262,23 @@ Contract rules:
    the *net* events, which L2 plays as a snap or fade, never a 10-minute replay.
 5. Snapshots stay the reconciliation baseline. Parity gains an **event-stream golden**
    next to the view-model golden (Phase 1).
+
+**As built in Phase 1** (`Sim/SimEvent.cs`). The sketch above is the Phase 3+ target. Phase 1 has
+**29 cases**: 28 that Step emits, plus `Rewound(toStep)`, which only the shell emits on undo.
+- Of the 28, `BeltAdvanced(chain, dir, count, head)` is reserved (P1-D3) and nothing emits it yet.
+- The other 27 name today's mechanics:
+  - envelope: `IntentApplied`, `IntentRejected`, `TimeAdvanced`;
+  - cursor and navigation: `CursorMoved`, `Bumped`, `BagEntered`/`Left`, `PanelOpened`/`Closed`;
+  - stacks: `StackMoved`/`Split`/`Merged`/`Removed`, `Acquired`, `BagRearranged`;
+  - crafting: `CraftStarted`/`Progressed`/`Aborted`/`Completed`, `RecipeSelected`;
+  - plants: `PlantGrew`, `Harvested`;
+  - chrome and dialogue: `UiTriggerFired`, `DialogueQueued`/`Advanced`, `RecipeLearned`, `ZoneReached`.
+- Tool events are **derived** (`EventDeriver`) from the pre- and post-tool state plus the intent.
+  Rule events come through `RuleContext.Emit`.
+- `Seq` is step-global (one canonical pass), and `(Step, Seq)` is unique only per Step call, because
+  untimed intents share the next timed step's number.
+- The canonical text is `EventText`: `step seq Kind field=value…`, invariant culture, with bags renamed
+  `bag#N` by first appearance (P1-D8).
 
 ### State representation: immutable model vs. hot working set (A4)
 
@@ -453,6 +486,21 @@ by construction because L1 only ever sees `Move`.
   **no in-flight motion**. Objects in motion reset to the centre of their cell, and
   particles and animations are dropped. This is the explicit acceptance from A3.
 - Rogue: full snapshot undo as today (1000 deep).
+- **Undo and the logs (ratified 2026-10-28, Aaron: "Keep it as built").** Undo truncates the
+  **event** log back to the restored snapshot and emits one `Rewound(toStep)`, so L2 snaps (A3). It
+  does **not** truncate the **intent** log. The intent log is the full replay history, undos included:
+  `Undo` is itself a logged intent, and undo carries `TickCount`, `Elapsed`, the RNG, dialogue and the
+  action log forward. So **replay(intents) ≡ state** (contract rule 1) holds for every session. If a
+  timeline-mirroring history is ever wanted, it becomes a separate *derived* view (intents since the
+  restored snapshot), not a truncation of the replay input.
+- Event-log retention (P1-D9, as built). Events are kept back to the oldest retained snapshot:
+  - rogue: the snapshots are the undo stack;
+  - realtime: a checkpoint every 8 steps, in a ring of 1000;
+  - an 8 MB hard cap drops the oldest chunks and records a `LogTruncated` marker **on the log**
+    (metadata, not a `SimEvent`);
+  - an idle realtime session takes no checkpoints (a no-op tick is not a step) and relies on the cap.
+  - The intent log has no retention yet (≈ 6k entries per 10 min at a 10 Hz clock sync). Phase 7
+    bounds it (save = checkpoint + intents since).
 - Realtime: checkpoint rewind = restore snapshot k, then replay the logged intents up to
   the target step. Whether rewinding past a lint's reply counts as a cheat is a design
   knob, not an architecture question.
@@ -466,13 +514,13 @@ must keep them, and a PR that breaks one must say so.
 
 | # | Guardrail | Status today | Door-closing risk |
 |---|---|---|---|
-| G1 | **No floats in L1/L2a.** Integers and fixed-point only. Floats live in L2b. | Core sim is int. `Cosmology/Glyphs` uses `double`, but that is render geometry (L2b), so it is OK. | Any `float` creeping into a rule (e.g. physics-y belts) |
-| G2 | **Seeded RNG held in state.** Use a counter-based RNG keyed `(worldSeed, step, bag, entity, purpose)`, never a stateful `System.Random` threaded through calls. | ✗ `Random` is *passed in*; `AcquireRandom` / `GameInitializer` fall back to unseeded `new Random()`. `System.Random`'s seeded sequence is not a cross-runtime contract. | High. Fix in Phase 1 (RNG becomes part of `Step` input/state). |
-| G3 | **Stable iteration order.** Never iterate a `Dictionary`/`HashSet`/GUID order in L1. | Partially: `OrderedFacilities` already works around GUID bag ids. | Medium. Phase 1 introduces a stable `ScheduleOrder(bag)`. |
+| G1 | **No floats in L1/L2a.** Integers and fixed-point only. Floats live in L2b. | Core sim is int. `Cosmology/Glyphs` uses `double`, but that is render geometry (L2b), so it is OK. **Open (P1-D7):** `WildernessTemplate.FillRatio`, its loot weights and `LootTableTemplate` weights are still `double`, and through the seedling craft that math runs **in step** on `SimRandom.NextDouble()`. Deterministic on IEEE-754 hardware, but a violation. | Phase 3 converts them to per-mille ints when the rule engine re-homes generation. Any new `float` in a rule (e.g. physics-y belts). |
+| G2 | **Seeded RNG held in state.** Use a counter-based RNG keyed `(worldSeed, step, bag, entity, purpose)`, never a stateful `System.Random` threaded through calls. | ✓ Phase 1 (1.1). `SimRng` = `Hash(WorldSeed, Step, Stream, Draw)` in `SimState`, with golden vectors pinned. Every in-step draw (`Acquire`, `Dsl`, `Craft` streams) comes from it. `new Random()`, `Random x = new()` and `Random.Shared` are banned in `src/` (`Src_HasNoUnseededRandom`). Remaining debt (P1-D7): the seeded **init-time** `System.Random` (demo seed, wilderness seed, the Godot fallback) is outside Step. | Low. The init-time `Random` moves to `SimRng` in Phase 3. |
+| G3 | **Stable iteration order.** Never iterate a `Dictionary`/`HashSet`/GUID order in L1. | Partially: `OrderedFacilities` fixes the rule order, and `EventDeriver.CanonicalOrder` sorts changed bags by world position (root rank, then the cell path), not GUID-hash order. There is no per-bag `ScheduleOrder` yet, because Phase 1 steps every bag in one pass. | Medium. Phase 4 (per-bag scheduling) introduces `ScheduleOrder(bag)`. |
 | G4 | **Culture invariance.** | ✓ already (Windows-portability slice, `InvariantCulture` audit). | Low |
-| G5 | **Intents are the only input.** No wall clock, no frontend state and no L2a read inside `Step`. | ✓ `IGameClock` virtualized. ✗ the controller still calls session methods directly. | Phase 1 routes everything through `Intent`. |
-| G6 | **Replayable event log.** Snapshot + log ⇒ state, checked in CI. | ✗ no event stream yet | Phase 1 |
-| G7 | **Stable identity.** Entity and bag ids are deterministic (counter in state), not `Guid.NewGuid()`. | ✗ bag ids are process-fresh GUIDs | Medium. Phase 1/3. |
+| G5 | **Intents are the only input.** No wall clock, no frontend state and no L2a read inside `Step`. | ✓ Phase 1 (1.3). Every controller and debug path builds `Intent`s, and `GameSession.Apply(Intent)` is the only public mutation (`GameSession_PublicSurface_HasApplyAndNoDirectMutators`, `Frontends_DoNotCallSessionMutatorsDirectly`). The clock enters as `SetElapsed` + `Tick` intents, focus stays out of replay because every intent names its location, and the time flag is L1 content (`TickMode`). | Low. Keep new input paths intent-only. |
+| G6 | **Replayable event log.** Snapshot + log ⇒ state, checked in CI. | ✓ Phase 1 (1.7, in its P1-D1 form). Replaying the intent log from the profile reproduces the VM **and** the event stream at every journey step (`--replay-check` in `make parity`/`parity-full`, `IntentReplayTests`, `ReplayCheckTests`). The coverage check names every changed cell, slot and cursor (`EventJourneyTests`). The events golden is `journeys/goldens/target-demo.events`. | Low. The stronger form (events alone ⇒ state) is Phase 7. |
+| G7 | **Stable identity.** Entity and bag ids are deterministic (counter in state), not `Guid.NewGuid()`. | ✗ Bag ids are still process-fresh GUIDs. Phase 1 works around this (P1-D8): `EventText` renames bags `bag#N` at serialization, and no intent carries a `Guid` (`Intent_Cases_CarryNoClosuresOrBagIds`). | Medium. Phase 3: a deterministic counter in state. |
 | G8 | **Per-bag time is a pure function of (bag, step).** Background/dormant scheduling must not depend on *which* player is observing. | n/a yet | Async MP: each peer may observe different bags. Catch-up exactness (`ClosedForm`/`EventSkippable`) makes "observed by whom" irrelevant. `BoundedCatchUp` beyond maxΔ and `MustSimulate` make it **observer-dependent**; that is acceptable for single-player, and such rules must be flagged before any MP work. |
 
 Decisions that would **close** the door, and must not be made casually: a float in a rule;
@@ -734,7 +782,7 @@ Findings:
 
 ```
  0 ✓ design + spikes
- 1   Step contract + events + scheduler skeleton ──┬─▶ 2 Realization v0 + D2-B free-move experiment
+ 1 ✓ Step contract + events + scheduler skeleton ──┬─▶ 2 Realization v0 + D2-B free-move experiment
                                                    └─▶ 3 Rule engine + time classes ─▶ 4 Off-screen time
                                                                                        │
                           5 Realtime prediction ◀──────────────────────────────────────┘
@@ -743,13 +791,18 @@ Findings:
 ```
 
 0. **Design doc and spikes.** ✓ (this doc, `spikes/`).
-1. **Step contract, events, scheduler skeleton (no behaviour change).** Slice plan:
+1. **Step contract, events, scheduler skeleton (no behaviour change).** ✓ 2026-10-28, golden-neutral
+   (the as-built notes are in the slice plan's addenda). Slice plan:
    [two-layer-phase1-plan.md](two-layer-phase1-plan.md). Refactor
    `ApplyResult`/`TickFacilities`/`Tick` into `Step(state, intents) → (state, events)`. Add
    an `Intent` type for every controller path, a seeded counter RNG in state (G2), a stable
    `ScheduleOrder` (G3), and a per-bag `rate/mode` field that is always `Observed/1` for now.
    The TUI consumes events at n=1. Parity gains an event golden plus a "snapshot + log ⇒
    state" check. The demo journey stays green.
+   *As built:* the per-bag field is `Bag.Clock` (`BagClock`, always Observed/1, read by nothing yet).
+   A stable `ScheduleOrder(bag)` was **not** needed, because one canonical pass plus `OrderedFacilities`
+   and `EventDeriver.CanonicalOrder` already fixes the order, so it moves to Phase 4. All three frontends (TUI, Godot, mock-godot)
+   consume events at n = 1.
 2. **Realization v0 + free-movement experiment (A1, moved up from late).**
    `Pockets.Realization` with engine-neutral `Pose` (A2), timelines (n=16), rogue
    choreography and the snap policy. A W-bag body with D2-A (default) and **D2-B behind a
@@ -777,8 +830,18 @@ Findings:
 
 ## Status
 
-**Ratified; Phase 0 complete.** Phase 1 slice plan written and its decisions P1-D1…D9
-ratified 2026-10-28 (all as recommended); Slice 1.0 (contract types) in progress.
+**Ratified; Phase 0 and Phase 1 complete.** Phase 1's decisions P1-D1…D9 were ratified
+2026-10-28 (all as recommended), and so was the 1.8 intent-log ruling ("Keep it as built", §History &
+undo). Slices 1.0–1.8 landed golden-neutral, and 1.9 closed out the docs.
+
+**Open guardrail debt:**
+- G1: the `double` weights in `WildernessTemplate`;
+- G2: the init-time `Random` (both P1-D7, Phase 3);
+- G3: `ScheduleOrder` (Phase 4);
+- G7: deterministic bag ids (Phase 3).
+
+The Phase 1 follow-ups are listed in [two-layer-phase1-drift.md](two-layer-phase1-drift.md).
+
 Open questions carried forward:
 
 - Lint spawn determinism on observe (entropy Q3) now has an architectural default:

@@ -13,7 +13,10 @@ of that commit: `GameSession` ≈ 1,200 lines with `ApplyResult` / `TickFaciliti
 journey runner with VM and buffer goldens, and `make parity` / `parity-full`.)*
 
 **PLAN.** Decisions are numbered **P1-D1 … P1-D9** at the end. **Ratified 2026-10-28:
-Aaron accepted all nine as recommended.**
+Aaron accepted all nine as recommended.** **Phase 1 ✓ 2026-10-28:** slices 1.0–1.9 have landed and
+each was golden-neutral. The as-built notes are in the addenda below, and the drift note is
+[two-layer-phase1-drift.md](two-layer-phase1-drift.md). *(This plan's text says `Sim.Step`. The class
+as built is `Simulation`; see §Addendum — Slice 1.2.)*
 
 ## Goal
 
@@ -332,6 +335,8 @@ dependencies are given in §Order below.
 - **Undo:** undo restores the snapshot, **truncates** the event and intent logs back to that
   step (the log mirrors the current timeline), and emits a single `Rewound(toStep)` event
   so L2 snaps (lossy L2 history, A3).
+  **Superseded as built and ratified 2026-10-28 ("Keep it as built"):** only the **event** log is
+  truncated. The intent log is the full replay history, undos included. See §Addendum — Slice 1.8.
 - **Acceptance:**
   1. Unit tests for retention, compaction, the cap and undo truncation.
   2. A soak test: 10 minutes of simulated realtime on the demo profile stays under the cap,
@@ -342,7 +347,7 @@ dependencies are given in §Order below.
 - *Depends on: 1.5 (it can run in parallel with 1.6 and 1.7).*
 - **Risk:** low.
 
-### Slice 1.9 — Phase 1 close-out
+### Slice 1.9 — Phase 1 close-out ✓ landed (see §Addendum — Slice 1.9)
 - Update the docs:
   - `two-layer.md`: mark Phase 1 ✓, update the G1–G8 status column (G2, G5 and G6 → ✓;
     G1 shows the remaining `WildernessTemplate` doubles);
@@ -389,7 +394,8 @@ dependencies are given in §Order below.
 ## Decisions for Aaron
 
 **Ratified 2026-10-28: all as recommended** (Aaron: "Go with recs"). P1-D1's amendment is
-applied to contract rule 1 in [two-layer.md](two-layer.md).
+applied to contract rule 1 in [two-layer.md](two-layer.md). P1-D10 was raised by 1.8's build and
+ratified the same day.
 
 | # | Decision | Options | Recommendation | Status |
 |---|---|---|---|---|
@@ -402,6 +408,7 @@ applied to contract rule 1 in [two-layer.md](two-layer.md).
 | **P1-D7** | Init-time seeded `Random` and the `double` weights in `WildernessTemplate` | (a) **keep both in Phase 1** (golden-neutral; they are init-time, or in-step only via the seedling); (b) convert everything to `SimRng` and per-mille ints now (re-records goldens) | **(a)**, recorded as open G1/G2 debt. Convert them in Phase 3, when the rule engine re-homes generation. The cross-runtime risk (`System.Random`'s seeded sequence is not contractual) is accepted for single-player until then. | ✓ Ratified 2026-10-28 |
 | **P1-D8** | How events reference bags (ids are process-fresh GUIDs) | (a) deterministic bag ids now (G7: counter in state; touches every `new Bag`); (b) **canonical renaming at serialization** (`bag#1, bag#2…` in order of first appearance in the stream; in-memory events keep the GUIDs) | **(b)** for Phase 1. It makes the golden and the cross-driver diff deterministic at zero refactor cost. Deterministic ids (G7) stay with Phase 3, where they are needed for multiplayer and save/replay. | ✓ Ratified 2026-10-28 |
 | **P1-D9** | Event-log retention | (a) unbounded; (b) **back to the oldest retained snapshot, 8 MB hard cap, dropped (Phase 7: flushed to the save)** | **(b)**. Spike B: ~23 MB per 10 minutes for one fully churning bag, so unbounded is not an option for realtime. | ✓ Ratified 2026-10-28 |
+| **P1-D10** *(raised in 1.8)* | Does undo truncate the **intent** log as well as the event log? | (a) truncate both (the slice text); (b) **as built: truncate the event log only. The intent log is the full replay history, undos included** | **(b)**. Undo carries `TickCount`, `Elapsed`, the RNG, dialogue and the `Undo:` action-log line forward, so a truncated intent log could not replay to the live session (contract rule 1). If a timeline-mirroring history is ever wanted, it is a separate derived view. | ✓ Ratified 2026-10-28 (Aaron: "Keep it as built") |
 
 ## Worker notes
 
@@ -805,7 +812,8 @@ reaches any stream the gates see; `Rewound` is covered by unit tests (acceptance
 | `Rewound` | `Sim/SimEvent.cs` | A shell event (Step never emits it). `EventText` renders it with no change: `7 0 Rewound toStep=3`. Both frontends receive it: the TUI through `ControllerResult.Events`, and Godot and mock-godot as a line in `DebugCommandHandler`'s `events`. At n = 1 they need no handling, because they snap from the VM. The runner's 1.6 `VerifyEvents` rule (a VM change must come with an event) should now pass on an undo step; before 1.8, undo emitted nothing, so it would have failed (not exercised: no journey undoes). |
 | Append site | `GameSession.RunStepCore` | Each step's events are appended in the same `with` that writes the stepped state back, so there is no extra session copy. |
 
-**⚠ Deviation from the slice text, for Aaron: the intent log is *not* truncated by undo.** The spec says undo "truncates
+**Deviation from the slice text: the intent log is *not* truncated by undo.** **✓ Ratified 2026-10-28
+(Aaron: "Keep it as built"; recorded as P1-D10).** The spec says undo "truncates
 the event **and intent** logs". The event log is truncated. The intent log is left as 1.3–1.7 built it, append-only with
 `Undo` recorded. The reason: undo carries the dialogue, `TickCount`, `Elapsed`, the RNG **and the action log** (which is in
 the VM golden: `Undo: …`) forward. A truncated intent log therefore cannot replay to the live session, because replay
@@ -845,3 +853,24 @@ truncation of the replay input.
   and it relies on the 8 MB cap alone. That is the cap working as designed, but worth a line in the docs.
 - `ReplayCheck` still compares the streamed lines. It could now also check `session.EventLog` against the replayed log
   as well, but that was left out to keep the gate unchanged (not yet checked on the journeys).
+
+## Addendum — Slice 1.9 as built (2026-10-28)
+
+**Docs only.** No code, test or golden changed. `dotnet test` and `make parity-full` are green on the close-out commit.
+
+- **Ruling recorded.** The undo/intent-log ruling ("Keep it as built") is **P1-D10** in §Decisions. It is noted on the 1.8
+  slice text and the 1.8 deviation, and in two-layer.md §History & undo.
+- **`two-layer.md`.** Phase 1 is marked ✓ in the header, the phased build and §Status. The G1–G8 column is updated:
+  - G2, G5 and G6 are ✓;
+  - G1 names the remaining `WildernessTemplate` doubles;
+  - G3 notes that `ScheduleOrder` moves to Phase 4;
+  - G7 notes the `bag#N` workaround.
+
+  The doc also gains as-built notes on the Step contract (`Simulation`, 32 data intents, `Intent.Tool` deleted), the event
+  taxonomy (28 Step kinds plus the shell's `Rewound`), rule registration, and event-log retention.
+- **`CLAUDE.md`.** A new section, "Simulation architecture (two-layer Phase 1)", covers Step, intents, events / `EventText`,
+  the rule registry and `TimeClass`, `IBagView`/`IBagWriter`, `SimRng` streams, the logs and undo, and the bans with the tests
+  that enforce them.
+- **`tools/journey-runner/README.md`.** It now covers the events golden, `--replay-check`, `Rewound`, and the Windows
+  `parity-godot` procedure (start a fresh Godot build first).
+- **Drift note:** [two-layer-phase1-drift.md](two-layer-phase1-drift.md), with the open follow-ups.
