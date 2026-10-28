@@ -14,6 +14,7 @@ public class PolicyTests
         Assert.Equal(125, p.SlideMs);
         Assert.Equal(200, p.SortMs);
         Assert.Equal(160, p.PopMs);
+        Assert.Equal(60, p.CursorGlideMs);
         Assert.Equal(50, p.ReactionOverlapPercent);
         Assert.Equal(EaseKind.Smooth, p.Ease);
     }

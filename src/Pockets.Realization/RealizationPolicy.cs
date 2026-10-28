@@ -17,6 +17,8 @@ public sealed record RealizationPolicy
     public int PopMs { get; init; } = 160;
     /// <summary>How much of the previous track a reaction track may overlap, in percent.</summary>
     public int ReactionOverlapPercent { get; init; } = 50;
+    /// <summary>The inventory cursor glide (linear).</summary>
+    public int CursorGlideMs { get; init; } = 60;
     /// <summary>The easing curve.</summary>
     public EaseKind Ease { get; init; } = EaseKind.Smooth;
 

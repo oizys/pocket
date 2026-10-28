@@ -149,4 +149,16 @@ public class SceneTests
         Assert.NotNull(scene.Find(new EntityKey.Body(LocationId.B)));
         Assert.Null(scene.Find(new EntityKey.Body(LocationId.W)));
     }
+
+    /// <summary>The scene records each shown bag's grid width (for cell-index → (col,row) in timelines).</summary>
+    [Fact]
+    public void Columns_PerShownBag()
+    {
+        var s = Demo();
+        var bag = s.ActiveBagAt(LocationId.B);
+        var scene = Scene.FromState(s, [LocationId.B, LocationId.H]);
+        Assert.Equal(bag.Grid.Columns, scene.Columns[bag.Id]);
+        Assert.Equal(s.HandBag.Grid.Columns, scene.Columns[s.HandBag.Id]);
+        Assert.Equal(2, scene.Columns.Count);
+    }
 }

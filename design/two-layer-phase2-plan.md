@@ -571,3 +571,102 @@ and `make parity-full` is green. The VM, events and 11 buffer goldens are byte-i
   - the hand count and the toolbar slot indices match the VM;
   - every pose is centred, with no height.
   It also asserts that target-demo reaches a body (Quiet 1), so the check is not vacuous.
+
+## Addendum — Slice 2.2 as built (2026-10-28)
+
+Golden-neutral, with no Core, App or Godot edit. `dotnet test` is green (Core 1032, App 54, Realization 76)
+and `make parity-full` is green. The VM, events and 11 buffer goldens are byte-identical. The tests were
+written first and seen failing (compile) before any production code.
+
+### Production (`src/Pockets.Realization/`)
+
+- **`Track(EntityKey Entity, Pose From, Pose To, int StartMs, int DurMs, Curve Curve, Channel Channel)`**,
+  plus `Overlay` (init) and `EndMs`. `Track.ProgressAt(ms)` gives signed fixed-point progress.
+  - `Entity` is the key the sampled pose carries, which is the **departure key** (P2-D2).
+  - `To.Entity` is the rest key the track **lands on**, which is also its group key.
+  - A non-overlay track **substitutes** that rest pose while it is live. An overlay track is drawn as an
+    **extra** pose (merges, cursor glides).
+- **`Curve { Linear = 1, Smooth, PingPong, Shake }`**:
+  - PingPong is out and back, with smooth halves (lunge, pop).
+  - Shake is 3 triangle cycles that start positive.
+  - Walk, slide and sort use `policy.Ease`.
+- **`Channel { Motion = 1, Height, Fade }`**:
+  - Motion writes the cell, sub-offset, facing, entity and bag.
+  - Height writes `Height` only.
+  - Fade never affects sampling. It is the cross-bag hint, carrying `From` (the departure cell, when that bag
+    is shown) and `To` (the arrival rest pose).
+- **`Timeline(Scene Scene, ImmutableArray<Track> Tracks, ImmutableDictionary<LocationId, Facing> Facings)`**:
+  - `Rest(scene)` creates a timeline with no tracks.
+  - `SpanMs` is the latest `EndMs`, or 0.
+  - `Commit(events, next, policy)`:
+    1. **Snap (D7):** it drops every old track. New tracks are relative to the commit's 0 ms.
+    2. It maps the events in order and updates the facings.
+    3. It stores `next` with each body's facing taken from `Facings`. Facings persist across commits and
+       through `Rewound`.
+  - `Sample(ms)` walks the scene poses in order. Each rest pose is substituted by its live Motion track and
+    lifted by its live Height track, and the live overlays landing on that key follow it. Overlays with no
+    rest pose (cursor glides) come last.
+  - Before a track starts, `Sample` gives its `From`. From `EndMs` on, it gives the rest pose.
+- **Coordinates:**
+  - `a = cell·16 + sub` is interpolated as `a + ((b − a)·f ≫ 16)`.
+  - It is then normalized to `cell = ⌊(a + 8)/16⌋`, so sub is in −8…+7.
+  - A walk's exact midpoint is therefore the next cell at sub −8 (the two-layer.md boundary picture).
+- **Chaining:** a track whose departure key equals an earlier track's landing key, on the same channel and
+  overlay flag, plays **after** it: it starts at the earlier track's `EndMs` and inherits its departure key.
+  The earlier track's landing key is retargeted. As a result:
+  - two walks in one commit play back to back;
+  - a stack moved 0→1→2 stays `Stack(0)` and lands on `Stack(2)`.
+  - Sort slides are never chained.
+- **Mapping notes** (beyond the P2-D3 table):
+  - Only bags in the new `Scene.Columns` animate; events about unshown bags add no track.
+  - A body is a `Body(loc)` rest pose whose bag is the event's bag. Any other shown bag gets the
+    **inventory cursor glide**: a new `EntityKey.Cursor(loc)` overlay, linear, using the new
+    `RealizationPolicy.CursorGlideMs = 60`. It is drawn only while live, so the rest scene never holds a cursor.
+  - A **jump** (`|dc| + |dr| > 1`: a wrap or a click teleport) snaps. The facing still turns to the
+    wrap-normalized direction.
+  - A walk's `To` is the event's `to` cell at sub 0, not `next`'s body pose, so that chained walks land
+    correctly. **For 2.6:** when the rest body pose carries L2a `(Px, Py)`, the last hop should land on it.
+  - `Bumped(Unnavigable)` with `Dir = null` adds no track. FailedPeek shakes the stack at `At`, if there
+    is one.
+  - A same-bag slide whose landing cell has no rest pose (an intermediate hop) lands on a synthesized
+    centred `Stack(to)`.
+  - `Harvested` pops its cell plus each **shown** yield cell, each once.
+  - `Rewound` also drops the tracks built earlier in the same commit.
+- **`Scene.Columns`** (`ImmutableDictionary<Guid, int>`) holds each shown bag's grid width.
+  `Scene.FromState` fills it.
+
+### P2-D2 pins (the risky cases)
+
+- `StackSplit_SameBag_MovingPartKeepsDepartureKey`: in the middle of a slide, **two poses share
+  `Stack(from)`**: the remainder at rest and the moving part. At the end they are `Stack(from)` and
+  `Stack(to)`.
+- `StackMerged_SameBag_SlidesOverTheTarget`: the target stays drawn at rest, and the moving part is an
+  extra `Stack(from)` pose.
+- `BagRearranged_SlidesInParallel`: in-flight keys are the old indices, which are unique because the
+  permutation's entries are.
+
+### Tests (`tests/Pockets.Realization.Tests/`)
+
+- **`TimelineTests`** (26 tests) has one trace per P2-D3 row, at u = 0, ¼, ½, ¾, 1:
+  - zoomed-ASCII centre bands for the walk, the two-walk chain and the lunge;
+  - pose fields for the rest.
+  It also covers:
+  - snap (step 2 committed at 40 ms; its 0 ms sample is step 1's end pose);
+  - reset (`Rewound` mid-walk puts the body at its cell centre);
+  - PoseText determinism;
+  - unshown bags, chaining, out-of-range sample times, and the policy durations.
+- **`TimelineJourneyTests`** runs both journeys and commits every controller result. After every commit:
+  - `Sample(SpanMs)` equals `Scene.FromState` of the new state, so **n = 1 ≡ VM** holds at u = 1;
+  - intermediate samples stay in shown bags, with |sub| ≤ 8.
+  It asserts that target-demo walks the body, and that two runs give an identical PoseText stream at the
+  quarter points.
+
+### Notes for 2.3
+
+- Every track starts at 0 ms, or chains. 2.3's phase layout should set `StartMs` per phase, and chaining
+  already sequences same-entity tracks.
+- The P2-D13 realtime `Tick` must **not** snap. That needs a commit variant that keeps live tracks,
+  rebased by the elapsed ms (for example `Commit(events, next, policy, atMs, snap: false)`), because today
+  every `Commit` snaps and every time is relative to the latest commit.
+- `Sample` regroups the tracks on every call. That is fine at today's sizes; precompute the groups if
+  Godot's per-frame sampling (2.5) shows up in profiles.

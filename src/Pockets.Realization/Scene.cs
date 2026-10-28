@@ -51,8 +51,16 @@ public sealed record Scene(ImmutableArray<Pose> Poses)
                 return body.Concat(stacks);
             })
             .ToImmutableArray();
-        return new Scene(poses);
+        var columns = shown
+            .Where(loc => state.Locations.TryGet(loc) is not null)
+            .Select(loc => state.ActiveBagAt(loc))
+            .GroupBy(bag => bag.Id)
+            .ToImmutableDictionary(g => g.Key, g => g.First().Grid.Columns);
+        return new Scene(poses) { Columns = columns };
     }
+
+    /// <summary>The grid column count of every shown bag, keyed by bag id.</summary>
+    public ImmutableDictionary<Guid, int> Columns { get; init; } = ImmutableDictionary<Guid, int>.Empty;
 
     /// <summary>
     /// True when the bag is a world bag, which carries a body (the plan defines the body by world bag). The

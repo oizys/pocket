@@ -41,6 +41,7 @@ public sealed class PoseText
     private string Entity(EntityKey key) => key switch
     {
         EntityKey.Body b => $"Body({b.Loc})",
+        EntityKey.Cursor c => $"Cursor({c.Loc})",
         EntityKey.Stack s => $"Stack({_names.Name(s.At.Bag)}[{Int(s.At.Index)}])",
         _ => "-"
     };

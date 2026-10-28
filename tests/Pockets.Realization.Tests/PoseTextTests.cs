@@ -26,6 +26,14 @@ public class PoseTextTests
         Assert.Equal("entity=Stack(bag#1[4]) bag=bag#1 col=4 row=0 subX=0 subY=0 height=16 facing=-", new PoseText().Line(p));
     }
 
+    /// <summary>A cursor glide pose is written <c>Cursor(B)</c>.</summary>
+    [Fact]
+    public void Line_Cursor()
+    {
+        var p = new Pose(new EntityKey.Cursor(LocationId.B), BagA, 1, 2, -8, 0, null, null);
+        Assert.Equal("entity=Cursor(B) bag=bag#1 col=1 row=2 subX=-8 subY=0 height=- facing=-", new PoseText().Line(p));
+    }
+
     /// <summary>One BagNames shared with an EventText keeps a bag's name stable across both.</summary>
     [Fact]
     public void SharedNames_WithEventText()
