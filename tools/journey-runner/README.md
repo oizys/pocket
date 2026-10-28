@@ -14,7 +14,7 @@ make parity-full     # FULL gate: all three journeys on both drivers + goldens +
 make record-goldens  # regenerate journeys/goldens/ after an INTENTIONAL journey/state change
 make parity-godot    # the full journey vs a live Godot build + screenshot set (needs a Godot runtime)
 make parity-godot-free-move  # the free-move journey vs a live Godot build (restart Godot fresh first)
-make test            # the shipping suites (Core + App)
+make test            # the shipping suites (Core + App + Realization)
 ```
 
 Two standing gates (build plan sync policy — both pre-push):
@@ -213,22 +213,55 @@ unfuzzed run's. `parity-full` checks that with `--compare` on smoke and the targ
 
 `parity-full` runs it on both drivers with `--replay-check` and diffs it cross-driver and against its goldens.
 
-### Running `make parity-godot` on Windows (Aaron)
+### Windows check for Aaron (Phase 2 close-out)
 
-1. `dotnet build src/Pockets.Godot`, then launch the game. **Start a fresh Godot build and send it no
-   input before the run.** The `bag#N` names count from the controller's first event, so a key pressed
-   in the window first shifts every name and the event diffs fail.
-2. `make parity-godot`. This runs:
-   - the tui leg, with `--events-out` and `--replay-check`;
-   - the godot leg over `ws://localhost:9080`, with `--events-out` and the screenshots;
-   - five comparisons: the checkpoints tui vs live-godot, the events and the poses tui vs live-godot, and the
-     events and poses goldens vs live-godot. A pre-2.4 Godot build sends no `poses`; rebuild it (it now references
-     `Pockets.Realization`).
-3. To run it again, restart Godot first (step 1).
-4. **Free-move (Slice 2.8):** restart Godot fresh, send no input, then `make parity-godot-free-move`. It runs the tui leg
-   and the godot leg of the free-move journey and makes five comparisons: checkpoints, events and poses tui vs
-   live-godot, and the events and poses goldens vs live-godot. Disconnected, the scene drives fine ticks from its frame
-   loop; under the runner a client is connected, so every fine tick comes from the journey's `advanceTime` steps.
+One pass covers Slices 2.5 (Godot animates from Realization) and 2.7/2.8 (D2-B free movement), plus Phase 1's
+still-pending real-Godot events diff. It is also what the **D2-B verdict** waits on
+([drift note](../../design/two-layer-phase2-drift.md#the-d2-b-verdict-pending-aarons-windows-pass)). Everything here
+uses plain `dotnet`/`make` lines, so it runs under cmd-make, Git Bash or PowerShell.
+
+1. **Build.** Pull `main`. Open `src/Pockets.Godot/project.godot` in Godot 4.6.1 (.NET) and Build, or run
+   `dotnet build src/Pockets.Godot/Pockets.Godot.csproj`. Expect 0 errors. A build from before 2.4 sends no `poses`
+   and fails the pose compares; rebuild (it references `Pockets.Realization`).
+2. **`make parity-godot`.** Launch the scene **fresh and send it no input** (the `bag#N` names count from the
+   controller's first event, so a key pressed in the window first shifts every name and the event diffs fail). Then run
+   `make parity-godot`. It runs the target-demo tui leg (with `--replay-check`) and the godot leg over
+   `ws://localhost:9080` (with the ledger-row screenshots into `artifacts/godot-screenshots/`), then **five compares**,
+   all of which should say OK: checkpoints, events and poses tui vs live-godot, and the events and poses goldens vs
+   live-godot. target-demo's poses have no `fine` lines.
+3. **Restart Godot fresh.** `parity-godot-free-move` needs the start state and fresh naming, so it can't follow step 2
+   on the same instance. Close the game, relaunch, send no input.
+4. **`make parity-godot-free-move`.** Five compares, all OK: checkpoints, events and poses tui vs live-godot, and the
+   free-move events and poses goldens vs live-godot. While the runner is connected the scene drives no frame-loop fine
+   ticks (`HasPeers`), so every tick comes from the journey's `advanceTime` steps. If only `fine` lines diverge while
+   the events match, suspect frame ticks leaking past `HasPeers`.
+5. **Hand-play, grid-locked (2.5).** Restart and play by hand:
+   - the body **walks** between cells in Quiet 1 instead of jumping, and the yellow highlight rides with it;
+   - pressing into a tree gives a short **lunge** and back;
+   - in an inventory bag the highlight **glides** between cells (60 ms);
+   - Sort (4) **slides** the stacks to their new cells; a grab and drop inside one bag slides the stack;
+   - Acquire Random (5) or a harvest makes the stack **pop** (lift and settle);
+   - holding or mashing the arrow keys gives no lag and no queued animation (each press snaps, D7);
+   - Ctrl-Z mid-walk leaves the body at its cell centre (A3);
+   - the rest frame looks as it did before 2.5 (stack tiles fill their cells). One known change: the 3 px cursor
+     border is always grey now (it used to take a framed cell's colour). Say if that matters.
+6. **Hand-play, D2-B (2.7).** Disconnect every socket client (the scene sends fine ticks from its frame loop only
+   while none is connected). Play into Quiet 1, then send `{"action":"setMovement","loc":"B","model":"Free"}` from a
+   one-shot client (for example a tiny `websocat` call) and close it. Then:
+   - an arrow press no longer jumps one cell;
+   - a **held arrow glides** at about 2 cells/s, crossing into the next cell about every half second, and the
+     highlight follows the sub-cell position;
+   - **diagonals** (two arrows, or the stick at 45°) glide diagonally; a diagonal crossing steps X then Y in one tick;
+   - gliding into a **tree** stops just short of its cell, the "✕ A tree" cue fires **once**, and holding longer gives
+     no repeated bumps or lunge;
+   - at the **outer grid edge** the body stops, with no wrap;
+   - on **release** it settles to its cell centre within about a quarter second;
+   - walking through a **stack nudges** it a little (up to 6/16 of a cell) in the walk direction; harvesting or moving
+     it re-centres it.
+7. **Feel notes, for the verdict.** Does 8 Hz motion look smooth without an interpolation track, or does it stutter?
+   Does the constant 2 cells/s need acceleration? How do the 125 ms walk (grid-locked) and the 2 cells/s glide feel?
+   Then the verdict: keep D2-B as an option, make it the realtime default, or delete it. Speed, settle and timing
+   values are policy, so tuning them re-records pose goldens only.
 
 ## Drivers
 
@@ -253,6 +286,9 @@ drivers run the full census.
     { "tick": 1 },                                         // advance N facility ticks (wait)
     { "back": true },                                     // leave-bag / back button
     { "click": { "row": 0, "col": 2, "button": "Primary" } },
+    { "advanceTime": 125 },                               // advance the clock N ms (deterministic; 125 = one fine tick)
+    { "setMovement": { "loc": "B", "model": "Free" } },   // D2-B flag (Slice 2.7; shell intent SetMovement)
+    { "steer": "E", "advanceTime": 125 },                 // hold a direction ("none" releases; or {"loc","dir"}), then tick
     { "checkpoint": "pickup",                              // labels this step's checkpoint
       "key": "Primary",
       "assertViewModel": { "handEmpty": false },          // recursive subset match on the VM
@@ -264,8 +300,10 @@ drivers run the full census.
 }
 ```
 
-- Each step performs at most one action (`key` / `tick` / `back` / `click`) then evaluates
-  its assertions and emits a checkpoint (`{step, label, vm}` — one compact JSON line).
+- Each step usually performs one action (`key` / `tick` / `back` / `click` / `advanceTime`), then evaluates
+  its assertions and emits a checkpoint (`{step, label, vm}` — one compact JSON line). The D2-B steps combine: within
+  a step the runner applies `setMovement`, then `steer`, then the other actions, so `{ "steer": "E", "advanceTime": 125 }`
+  holds E for one fine tick.
 - `assertViewModel` is a **subset** match: every field you list must appear with an equal
   value; objects recurse, arrays match by prefix.
 - `assertRender` is asserted only on drivers that expose a render probe (tui); elsewhere it

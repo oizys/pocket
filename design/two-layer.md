@@ -7,7 +7,10 @@ this doc plus spikes A/B/C in [`spikes/`](../spikes/README.md). The vault propos
 **The repo copy is the source of truth.** **Phase 1 ✓ (2026-10-28):** the Step contract and
 event stream are built, golden-neutral (slices 1.0–1.9,
 [two-layer-phase1-plan.md](two-layer-phase1-plan.md); drift note:
-[two-layer-phase1-drift.md](two-layer-phase1-drift.md)).
+[two-layer-phase1-drift.md](two-layer-phase1-drift.md)). **Phase 2 ✓ (2026-10-28):** Realization v0, L2a fine
+state and the D2-B free-movement experiment are built; L1 goldens untouched (slices 2.0–2.9,
+[two-layer-phase2-plan.md](two-layer-phase2-plan.md); drift note:
+[two-layer-phase2-drift.md](two-layer-phase2-drift.md)). The D2-B verdict waits on Aaron's Windows pass.
 
 ---
 
@@ -457,6 +460,22 @@ in model (B) this means a snapshot-backed scratch copy). Motion starts this fram
 misprediction is possible only if something else changes in the same step. L2 reconciles
 by snapping or bending the animation into a bump (`IntentRejected` / `Blocked`).
 
+**As built (Phase 2).** `src/Pockets.Realization` (references Core only; no float, no `Math.`, scanned):
+- `Pose` is `(EntityKey Entity, Guid Bag, int CellCol, int CellRow, int SubX, int SubY, int? Height, Facing? Facing)`.
+  There are no entity ids yet (G7), so `EntityKey` is realization-local: `Body(loc)`, `Stack(cell)` or `Cursor(loc)`
+  (the inventory glide). A stack in flight keeps its **departure** key until its track ends (P2-D2).
+- Sampling is integer (P2-D1): ms times, a pinned 65-entry smoothstep table (`Ease`), 1/16-cell positions.
+  `RealizationPolicy` holds the durations (walk 125, bump 120, shake 150, slide 125, sort 200, pop 160, cursor glide
+  60 ms; reactions overlap at 50%).
+- `Scene.FromState` builds rest poses; `Timeline.Commit(events, next, policy, atMs, fineTick)` snaps (D7) and lays out
+  the turn in three phases (`Choreography`: player, reactions at 50%, ambient), classified by event kind and position.
+  **Snap rule (P2-D13):** input snaps everything; a clock commit (`Tick`/`SetElapsed`/`TimeAdvanced`, or a driven
+  body's derived Moves) and a fine tick keep in-flight tracks. `Rewound` resets to rest (A3).
+- The TUI stays n = 1. Godot is the first animated consumer (`PosePlayer`, `FrameClock`, `PoseProjection`).
+  mock-godot and the runner get the same lines through `PoseDebugCommandHandler`, so `target-demo.poses` is goldened
+  without Godot. The two-layer boundary picture above is `ZoomAscii`'s test fixture.
+- Realtime prediction (below) is still Phase 5.
+
 **L2 → L1 adjudication:** L2 may run any hit detection or physics, but it only *proposes*
 (`Intent.Attack(target, evidence)`). L1 checks reach, line of sight and liveness against
 the **step that was on screen** (lag compensation within a bounded window, using the
@@ -478,6 +497,33 @@ Both are the **same `Move` intent into L1**. B only adds an L2a integrator in fr
 so B can be switched on per bag (a W-bag flag) without touching rogue mode, and can be
 deleted without touching L1. The invariant **"fuzz L2a ⇒ identical L1 checkpoints"** holds
 by construction because L1 only ever sees `Move`.
+
+**As built (Phase 2).**
+- **The body** is the cursor of any location whose active bag is a **world bag**: `IsWildernessType(env)` **or**
+  `EnterOnly` (the second clause is a 2.1 widening: the demo's Quiet 1 is enter-only, not a wilderness-type name). Its
+  walk is `CursorMoved` and its refusal is `Bumped`. No new L1 entity or event (P2-D6).
+- **L2a fine state** is `GameSession.Fine` (`Pockets.Core.Fine.FineState`): per-body `(Px, Py, Vx, Vy, Held)` and
+  per-cell stack offsets (|offset| ≤ 6), all in 1/16ths, sparse, ints only. It is not in `GameState`, `SimState` or
+  the VM. Undo restores it from `FineMarks` (a stack parallel to the undo stack), realtime checkpoints carry it
+  (`FineCheckpoints`), and replay rebuilds it from the intent log. `FineLogic.Reconcile` runs after every Step: an L1
+  move of a stack clears its offset, and a non-integrator `CursorMoved`/`BagEntered`/`BagLeft` re-anchors the body.
+- **D2-B** is `Bag.Movement` (`GridLocked` default, `Free`), honoured only in realtime world bags and set by the
+  shell intent `SetMovement` (debug/journey; P2-D12). Steering is `Steer(At, Direction8?)`, a held direction logged on
+  change (P2-D8), not a velocity. `FineTick` (8 Hz, P2-D7; L1 stays at 1 Hz) runs `Fine/Integrator.cs`: orthogonal
+  4/16 per tick (2 cells/s), diagonal 3/16; a crossing becomes an ordinary `Move` through `RunStep` (not separately
+  logged); a refusal clamps to ±7 and bumps **once**; the outer edge clamps with no `Move` and no wrap (P2-D10); release
+  settles to centre; a moving body nudges stacks it overlaps (P2-D11). `Steer`, `FineTick`, `SetMovement` and the
+  test-only `SetFineOffset` are **shell-handled** like `Undo`; `Simulation.Step` throws on them and was never edited.
+- The TUI has no key-up, so it keeps sending `Move` in a free bag (P2-D14). Godot maps arrows and the stick to `Steer`.
+  A free body has no tracks: its pose is its fine position, so the pose golden pins the glide with `fine` lines on
+  driven commits (`<journeyStep>:<k> fine <PoseText>`, body first, then nudged stacks). No interpolation track yet.
+- **The fuzz gate** is the invariant above, in CI: `parity-full` overwrites L2a with seeded noise after every step of
+  smoke and target-demo (`--fuzz-fine`) and requires identical VM and event streams. The L1-projection test replays a
+  free-move run's derived Moves on a plain D2-A session and gets identical L1; a property test fuzzes random L1 streams.
+  The free-move journey (`journeys/free-move.journey.json`, goldens `free-move.{checkpoints,events,poses}`) drives D2-B
+  on both drivers with `--replay-check`.
+- **Deletable (principle 7):** deleting D2-B touches no L1 file. The file list and the verdict options are in the
+  [drift note](two-layer-phase2-drift.md#the-d2-b-verdict-pending-aarons-windows-pass).
 
 ### History & undo (D9, A3)
 
@@ -782,7 +828,7 @@ Findings:
 
 ```
  0 ✓ design + spikes
- 1 ✓ Step contract + events + scheduler skeleton ──┬─▶ 2 Realization v0 + D2-B free-move experiment
+ 1 ✓ Step contract + events + scheduler skeleton ──┬─▶ 2 ✓ Realization v0 + D2-B free-move experiment
                                                    └─▶ 3 Rule engine + time classes ─▶ 4 Off-screen time
                                                                                        │
                           5 Realtime prediction ◀──────────────────────────────────────┘
@@ -811,6 +857,11 @@ Findings:
    per-bag flag** (L2a fixed-point integrator → `Move` intents), plus the "fuzz L2a ⇒
    identical L1" invariant in CI. L2a fine state (the vase offset) lands here too, because
    the integrator needs it.
+   ✓ 2026-10-28, golden-neutral for L1. *As built:* see §L2 Realization and §Movement (the "As built" notes), the
+   plan's addenda and [two-layer-phase2-drift.md](two-layer-phase2-drift.md). Added goldens: `target-demo.poses` and
+   `free-move.*`. The body definition was widened to enter-only bags; there are four shell-handled intents (`Steer`,
+   `FineTick`, `SetMovement`, `SetFineOffset`; 36 intent cases), and there is no interpolation track for free bodies.
+   **The D2-B verdict (keep / default / delete) is pending Aaron's Windows pass.**
 3. **Rule engine + time classes.** Field rules (double-buffered, active set) and transfer
    rules (propose/resolve/commit, chain resolve from spike A). **Every rule declares
    `TimeClass`** from day one. First rules: plaque accumulator, plaque spread, a belt, each
@@ -832,12 +883,15 @@ Findings:
 
 ## Status
 
-**Ratified; Phase 0 and Phase 1 complete.** Phase 1's decisions P1-D1…D9 were ratified
+**Ratified; Phases 0, 1 and 2 complete.** Phase 1's decisions P1-D1…D9 were ratified
 2026-10-28 (all as recommended), and so was the 1.8 intent-log ruling ("Keep it as built", §History &
 undo). Slices 1.0–1.8 landed golden-neutral, and 1.9 closed out the docs.
 
-**Phase 2 in progress.** Its slice plan's decisions P2-D1…D14 were ratified 2026-10-28 (all as
-recommended). Slice 2.0 (the `Pockets.Realization` scaffold and contract types) landed golden-neutral.
+**Phase 2 ✓ (2026-10-28).** Its slice plan's decisions P2-D1…D14 were ratified 2026-10-28 (all as
+recommended). Slices 2.0–2.8 landed with the VM, events and buffer goldens byte-identical; the phase added
+`target-demo.poses` (2.4) and `free-move.*` (2.8), and 2.9 closed out the docs. The drift and the open items
+(the D2-B verdict and Aaron's Windows pass, a pre-existing focus-after-Undo crash, possible 8 Hz stutter,
+intent-log growth) are in [two-layer-phase2-drift.md](two-layer-phase2-drift.md).
 
 **Open guardrail debt:**
 - G1: the `double` weights in `WildernessTemplate`;
@@ -845,7 +899,8 @@ recommended). Slice 2.0 (the `Pockets.Realization` scaffold and contract types) 
 - G3: `ScheduleOrder` (Phase 4);
 - G7: deterministic bag ids (Phase 3).
 
-The Phase 1 follow-ups are listed in [two-layer-phase1-drift.md](two-layer-phase1-drift.md).
+The Phase 1 follow-ups are listed in [two-layer-phase1-drift.md](two-layer-phase1-drift.md), and the Phase 2 ones
+in [two-layer-phase2-drift.md](two-layer-phase2-drift.md).
 
 Open questions carried forward:
 

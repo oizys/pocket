@@ -80,7 +80,7 @@ no journey undoes or aborts a craft). Shared code only (`GameSession.RunStepCore
 
 | # | Item | Pinned by / where | Why it is open |
 |---|---|---|---|
-| c | **The real-Godot `make parity-godot` run with the events diffs** is still pending on Windows. | `tools/journey-runner/README.md` § Running `make parity-godot` on Windows | Godot cannot run in WSL. mock-godot shares `DebugCommandHandler`, and the Godot project compiles in WSL. Start a fresh build first (`bag#N` naming). |
+| c | **The real-Godot `make parity-godot` run with the events diffs** is still pending on Windows. | `tools/journey-runner/README.md` § Windows check for Aaron (Phase 2 close-out; folded into Phase 2 follow-up (b)) | Godot cannot run in WSL. mock-godot shares `DebugCommandHandler`, and the Godot project compiles in WSL. Start a fresh build first (`bag#N` naming). |
 | d | **P1-D7 debt:** the init-time seeded `System.Random` (demo and wilderness seeds, the Godot fallback) and the `double` fill ratio and loot weights in `WildernessTemplate`/`LootTableTemplate`, which run in step via the seedling. | two-layer.md G1/G2 | Converting them re-records goldens. Phase 3, when generation moves into the rule engine. |
 | e | **Deterministic bag ids (G7).** Bags are still `Guid.NewGuid()`; events are renamed `bag#N` at serialization (P1-D8). | two-layer.md G7 | Phase 3 (needed for multiplayer and save/replay). |
 | f | *(optional)* `ReplayCheck` could also compare `session.EventLog` with the replayed log, alongside the streamed lines. | 1.8 addendum | Left out to keep the gate unchanged. Not yet checked on the journeys. |

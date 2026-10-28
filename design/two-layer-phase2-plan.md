@@ -37,24 +37,29 @@ The game starts to **move between the states it already has**. L1 does not chang
 
 ### Exit criteria
 
-- [ ] `Pockets.Realization` is in `Pockets.sln`. It references `Pockets.Core` only, and architecture
+- [x] `Pockets.Realization` is in `Pockets.sln`. It references `Pockets.Core` only, and architecture
       tests forbid any Godot or Terminal.Gui reference and any `float`/`double` in pose sampling.
-- [ ] Zoomed-ASCII timeline tests (1 cell → 4×4) cover each animated mechanic, the D7 snap and the A3
+- [x] Zoomed-ASCII timeline tests (1 cell → 4×4) cover each animated mechanic, the D7 snap and the A3
       undo reset.
-- [ ] A **pose golden**, `journeys/goldens/target-demo.poses`, is diffed cross-driver (tui against
+- [x] A **pose golden**, `journeys/goldens/target-demo.poses`, is diffed cross-driver (tui against
       mock-godot) in `make parity` and checked in `make parity-full`.
 - [ ] Godot animates body walks, bumps, same-bag stack moves and the sort permutation from Realization,
       and builds in WSL. Aaron has done the eyeball pass on Windows (§What Aaron runs).
-- [ ] A D2-B bag works end to end:
+      *(2.9: built, and builds in WSL with 0 warnings; **the eyeball pass is pending** — the one open criterion.)*
+- [x] A D2-B bag works end to end:
       - a held direction moves the body smoothly;
       - a cell crossing becomes `Move`;
       - a tree refuses and the body clamps and bumps;
       - rogue mode ignores the flag.
-- [ ] The fuzz invariant runs in `parity-full` on every journey (`--fuzz-fine`). The L1-projection test
+      *(Proved in tests and the free-move goldens. Whether it **looks** smooth in Godot is part of the pending pass.)*
+- [x] The fuzz invariant runs in `parity-full` on every journey (`--fuzz-fine`). The L1-projection test
       also passes: the Moves a D2-B run derives, replayed on a plain session, give an identical L1.
-- [ ] A new `free-move` journey with its goldens drives D2-B on tui and mock-godot.
-- [ ] **The existing VM checkpoint golden, the 11 TUI buffer goldens and `target-demo.events` are
+      *(Full fuzz on smoke and target-demo; offsets-only on free-move, by design: drift row 20.)*
+- [x] A new `free-move` journey with its goldens drives D2-B on tui and mock-godot.
+- [x] **The existing VM checkpoint golden, the 11 TUI buffer goldens and `target-demo.events` are
       byte-identical at the end of the phase.**
+
+*(Checked at close-out, 2.9, 2026-10-28; see the 2.9 addendum.)*
 
 ## Principles (carried over, plus three new ones)
 
@@ -1482,3 +1487,29 @@ in the controller's focus-follow after Undo (`FollowFocus`). It is a small, gold
 - The full fuzz stays on smoke and target-demo. If 2.9 wants a full fuzz on free-move, fuzz only bodies with
   `Held == null`, or skip a step while `NeedsFineTick` (2.7's options). Neither is needed for the exit criterion as
   written.
+
+## Addendum — Slice 2.9 as built (2026-10-28)
+
+Docs only: no code and no golden changed. `dotnet test` is green (Core 1167, App 54, Realization 169) and
+`make parity-full` is green (`PARITY-FULL OK`).
+
+- **[two-layer-phase2-drift.md](two-layer-phase2-drift.md)** (new): how Phase 2 is enforced, 23 drift rows (the 2.1 body
+  widening, the 2.4 poses handler in Realization behind a Core seam, 2.6's `FineMarks` beside undo and 32 → 33
+  intents, 2.7's third shell intent `SetMovement` (→ 36), the once-per-press bump, ticks pausing during dialogue and
+  no interpolation track, 2.8's nudged stacks in `fine` lines and the fuzz writers bypassing `Apply`, …), the D2-B
+  verdict options with their costs, and the open / follow-up list.
+- **[two-layer.md](two-layer.md):** Phase 2 ✓ in the header, §Phased build and §Status; "As built" notes under §L2
+  Realization (Pose, keys, integer sampling, snap rules, consumers) and §Movement (the body definition with the
+  enter-only widening, fine state, D2-B, the fuzz gate, the `fine` line format, the free-move journey).
+- **`CLAUDE.md`:** a "Realization and fine state (Phase 2)" section (the library, poses, timelines and snap rules,
+  `GameSession.Fine`, the shell intents, the L1 wall and the tests that enforce it). The Phase 1 section's intent
+  count notes the four Phase 2 additions.
+- **`tools/journey-runner/README.md`:** reviewed the `--poses-out`, `--fuzz-fine`, free-move and Godot sections
+  against the runner and Makefile. Fixed: `make test` also runs Realization; the script format now lists
+  `advanceTime`, `setMovement` and `steer` and says the D2-B steps combine with an action in one step. The two Windows
+  lists (2.5/2.7 and 2.8) are merged into one **§ Windows check for Aaron (Phase 2 close-out)**, which the drift note
+  references. Phase 1's drift note now points there for its pending real-Godot item.
+- Exit criteria above: all checked except Aaron's eyeball pass.
+
+**The D2-B verdict is not recorded yet: it is pending Aaron's Windows pass** (keep as an option / make it the
+realtime default / delete). The drift note lists what each choice costs.
