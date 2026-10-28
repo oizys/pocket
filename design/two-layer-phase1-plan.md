@@ -138,7 +138,7 @@ dependencies are given in §Order below.
 - Also recorded for later, not done here: `WildernessTemplate` uses `double` fill ratio and
   loot weights (a G1 violation inside a step path, via the seedling). See P1-D7.
 
-### Slice 1.2 — `Sim.Step` skeleton: ApplyResult / Tick on top of Step *(no new behaviour)*
+### Slice 1.2 — `Sim.Step` skeleton: ApplyResult / Tick on top of Step *(no new behaviour)* ✓ landed (see §Addendum — Slice 1.2)
 - `Sim.Step(SimState, intents)` is extracted from `ApplyResult` + `TickFacilities` +
   `PlantLogic.TickPlants` + `RunTransitionHooks`, keeping the **exact existing order**:
   1. apply the intent's tool;
@@ -478,3 +478,46 @@ controller only; must never influence an outcome.
 written by `Step`. Moving `SplitMode`/`RecipeMenu` must change no VM field: the VM serializes
 `recipeMenu` from the session today and does **not** serialize `SplitMode` at all, so the move is
 golden-neutral only if the serializer keeps exactly that projection.
+
+## Addendum — Slice 1.2 as built (2026-10-28)
+
+**Golden-neutral, done in one slice; no 1.2a/1.2b split was needed.** The VM checkpoint golden and
+the 11 TUI buffer goldens are byte-identical, and smoke and target-demo diff clean across tui and
+mock-godot.
+
+| Piece | Where | Notes |
+|---|---|---|
+| `Simulation.Step(SimState, IReadOnlyList<Intent>) → StepResult<SimState>` | `src/Pockets.Core/Sim/Simulation.cs` | This is the plan's `Sim.Step`. The class is named `Simulation` because a type named `Sim` inside `Pockets.Core.Sim` is shadowed by the namespace when it is called from `Pockets.Core.Models`. The code was **moved** from `GameSession` and not rewritten: `TickFacilities`, `OrderedFacilities` (now public, and `ActiveCrafts` reads it), `RunTransitionHooks`, and every hook helper. |
+| `SimState(Game, TickCount, Elapsed, SplitMode, RecipeMenu, Content)` | `Sim/SimState.cs` | It is **projected** from the session (`GameSession.ToSimState()`) and written back after a state-changing step. It is not stored on the session, so the public shape of `GameSession` (and every test) is unchanged. `Step` does not touch `Elapsed`, `SplitMode` or `RecipeMenu` yet. The VM projection is untouched: `recipeMenu` is serialized and `SplitMode` is not. |
+| `SimContent(Recipes, FacilityRecipeMap, Beats)` | `Sim/SimState.cs` | L1 content. `RecipesForFacility(env, knownRecipes)` is the old `GetRecipesForFacility`, with the known-recipe set made an explicit parameter (see the subtlety below). |
+| `Intent.Tool(Func<GameState, ToolResult> Apply, bool AdvancesTime)` | `Sim/Intent.cs` | **Transitional.** The 1.2 vehicle for every tool action. It carries a closure, so it is not replayable, and it compares by delegate reference. `AdvancesTime = (TickMode == Rogue)` is the explicit P1-D2 flag. 1.3 deletes it in favour of data-only per-path intents. |
+| Shell | `GameSession.RunStep` / `Act` / `ApplyResult` / `Tick` | The shell runs Step, and on a state change it bumps `DebugStepCount`, pushes the pre-step state for undo, and writes back. Action-log lines are built **as before** (P1-D6): `FAILED: {log} — {reason}` for a rejection; otherwise the tool line followed by `✦ {env} crafted: {name}` per `CraftCompleted`; and for a tick, the completion lines or `Tick #N`. Eleven `Execute*` methods now build one `Intent.Tool` around their tool (`g => g.ToolGrab()` and so on). `ExecuteAcquireRandom`, `ExecutePickupToToolbar`, `Execute(dsl)` and `ApplyToolResult` still precompute the result and pass `_ => result`, because their log lines need it. |
+
+**Ordering preserved, with the subtleties written down:**
+1. A **tool no-op** is detected by record equality on the *post-tool* state, *before* any tick. In rogue mode, a no-op does not tick. A **tick no-op** is detected *after* facilities, plants and hooks. These are two different checks, and both are kept.
+2. `GetRecipesForFacility` read `Current.KnownRecipes`, the **pre-action** state, even while ticking the post-tool state. Inside `Step` the tick phase is passed the pre-intent known set, and the shell resolves completion-log names the same way. A recipe card learned in the same action therefore does not enable a craft until the next step, exactly as before.
+3. Event order per state-changing intent: `IntentApplied`, then `TimeAdvanced` and `CraftCompleted*` in `OrderedFacilities` order (rogue and tick only), then `UiTriggerFired*`. The tick path has no `IntentApplied`. All events carry `Step = TickCount + 1` and a step-global `Seq`. `UiTriggerFired` is emitted only when `UiLedger.Fire` actually grew the ledger.
+4. A rejected tool emits only `IntentRejected(reason = ToolResult.Error ?? "")`, and the shell neither logs a completion nor pushes undo.
+5. `TickCount` is incremented **in `Step`**, because it is L1, rather than in the shell as the plan text says. The effect is the same: +1 per state-changing intent.
+
+**Acceptance:**
+- `dotnet test`: Core 901 (892 + 9 new), App 53, all green.
+- `make parity-full` is green with goldens byte-identical.
+- One test was edited: the 1.0 shape-pin `Intent_Phase1Slice0_DeclaresOnlyTick` became `…Slice2_DeclaresTickAndTransitionalTool`, because adding any case breaks it by design. No behaviour test was touched.
+- New tests:
+  - `Sim/SimulationStepTests` (8): rejected, no-op, realtime versus rogue time flag, Seq order, `FirstPickup` fires once, a tick no-op, `CraftCompleted`, and completion-log ordering through the session.
+  - `Sim/StepOnlyPathJourneyTests` (1): this drives `smoke.journey.json` in-process through `DebugCommandHandler` and asserts, on every step, that ΔTickCount = Δ`GameSession.DebugStepCount` (thread-static) and that a step with no Step call leaves the `BagStore` instance, `KnownRecipes` and `ZonesReached` untouched.
+
+**Still outside Step in 1.2 (all 1.3 scope):**
+- cursor moves, tree bumps and cursor-rest triggers;
+- dialogue advance, failed-peek and peek-while-carrying beats;
+- the split modal (`Begin`/`Adjust`/`Cancel`);
+- the recipe menu (`Open`/`Move`/`Close`), plus `SetRecipeOn` and `ApplyRecipeSwitch`, which push undo directly with no tick and no hooks;
+- `Undo` (which still carries dialogue forward);
+- `WithElapsed`;
+- the `Execute(dsl)` parse-failure log and the `ExecuteCycleRecipe` failure logs.
+
+1.3 must keep each one's semantics exactly: no `TickCount` bump and no hooks where there are none today.
+
+**For 1.1 (SimRng):** `ExecuteAcquireRandom` still draws from its `Random` *before* `Step`, outside the intent. Moving the draw inside Step (`SimRng(Stream.Acquire)`) is the natural point to turn it into a real `Intent.AcquireRandom`. When `SimRng` joins `SimState`, add it to `ToSimState` and `WithSimState`. The seedling's `new Random()` sits in `RecipeRegistry`, reached from `Simulation.TickFacilities` via `FacilityLogic.Tick`, so the `SimRng` has to be threaded from the `SimState` there.
+

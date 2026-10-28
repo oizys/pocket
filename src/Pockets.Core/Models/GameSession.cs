@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Pockets.Core.Data;
 using Pockets.Core.Dsl;
+using Pockets.Core.Sim;
 
 namespace Pockets.Core.Models;
 
@@ -382,8 +383,7 @@ public record GameSession(
     {
         var cell = Current.CurrentCell;
         var handFull = Current.HasItemsInHand;
-        var result = Current.ToolPrimary();
-        return ApplyResult(result, () =>
+        return Act(g => g.ToolPrimary(), () =>
         {
             if (cell.HasBag)
                 return $"Enter: {cell.Stack?.ItemType.Name ?? "bag"}";
@@ -408,7 +408,7 @@ public record GameSession(
     /// pickup lands <i>inside</i> a non-full toolbar bag (the carrying-capacity mechanic). The hand is
     /// untouched (it stays the in-flight cut buffer). Undoable; a full toolbar fails with the item left
     /// in place. The <see cref="UiTrigger.FirstPickup"/> that materializes the toolbar fires
-    /// structurally in <see cref="ApplyUiTriggers"/> when the toolbar gains its first item.
+    /// structurally in <see cref="Simulation"/>'s transition hooks when the toolbar gains its first item.
     /// </summary>
     public GameSession ExecutePickupToToolbar()
     {
@@ -452,8 +452,7 @@ public record GameSession(
     {
         var cell = Current.CurrentCell;
         var handFull = Current.HasItemsInHand;
-        var result = Current.ToolSecondary();
-        return ApplyResult(result, () =>
+        return Act(g => g.ToolSecondary(), () =>
         {
             if (!handFull && !cell.IsEmpty)
                 return $"Grab half: {cell.Stack!.ItemType.Name}";
@@ -469,8 +468,7 @@ public record GameSession(
     public GameSession ExecuteInteract()
     {
         var cell = Current.CurrentCell;
-        var result = Current.Interact();
-        return ApplyResult(result, () =>
+        return Act(g => g.Interact(), () =>
         {
             if (cell.HasBag)
                 return $"Enter: {cell.Stack?.ItemType.Name ?? "bag"}";
@@ -485,9 +483,8 @@ public record GameSession(
     /// </summary>
     public GameSession ExecuteEnterBag()
     {
-        var result = Current.EnterBag();
         var bagName = Current.CurrentCell.Stack?.ItemType.Name ?? "bag";
-        return ApplyResult(result, () => $"Enter: {bagName}");
+        return Act(g => g.EnterBag(), () => $"Enter: {bagName}");
     }
 
     /// <summary>
@@ -495,8 +492,7 @@ public record GameSession(
     /// </summary>
     public GameSession ExecuteLeaveBag()
     {
-        var result = Current.LeaveBag();
-        return ApplyResult(result, () => "Back: returned to parent bag");
+        return Act(g => g.LeaveBag(), () => "Back: returned to parent bag");
     }
 
     /// <summary>
@@ -505,8 +501,7 @@ public record GameSession(
     public GameSession ExecuteGrab()
     {
         var cursorItem = Current.CurrentCell.Stack;
-        var result = Current.ToolGrab();
-        return ApplyResult(result, () => FormatGrabLog(cursorItem, Current.Cursor.Position));
+        return Act(g => g.ToolGrab(), () => FormatGrabLog(cursorItem, Current.Cursor.Position));
     }
 
     /// <summary>
@@ -515,8 +510,7 @@ public record GameSession(
     public GameSession ExecuteDrop()
     {
         var handItems = Current.HandItems;
-        var result = Current.ToolDrop();
-        return ApplyResult(result, () => FormatDropLog(handItems, Current.Cursor.Position));
+        return Act(g => g.ToolDrop(), () => FormatDropLog(handItems, Current.Cursor.Position));
     }
 
     /// <summary>
@@ -530,8 +524,7 @@ public record GameSession(
     public GameSession ExecuteQuickSplit()
     {
         var cursorItem = Current.CurrentCell.Stack;
-        var result = Current.ToolQuickSplit();
-        return ApplyResult(result, () => FormatSplitLog(cursorItem));
+        return Act(g => g.ToolQuickSplit(), () => FormatSplitLog(cursorItem));
     }
 
     /// <summary>
@@ -540,8 +533,7 @@ public record GameSession(
     public GameSession ExecuteModalSplit(int leftCount)
     {
         var cursorItem = Current.CurrentCell.Stack;
-        var result = Current.ToolModalSplit(leftCount);
-        return ApplyResult(result, () => FormatModalSplitLog(cursorItem, leftCount));
+        return Act(g => g.ToolModalSplit(leftCount), () => FormatModalSplitLog(cursorItem, leftCount));
     }
 
     /// <summary>
@@ -620,8 +612,7 @@ public record GameSession(
     /// </summary>
     public GameSession ExecuteSort()
     {
-        var result = Current.ToolSort();
-        return ApplyResult(result, () => "Sort: reorganized bag");
+        return Act(g => g.ToolSort(), () => "Sort: reorganized bag");
     }
 
     /// <summary>
@@ -631,8 +622,7 @@ public record GameSession(
     public GameSession ExecuteHarvest()
     {
         var cursorItem = Current.CurrentCell.Stack;
-        var result = Current.ToolHarvest();
-        return ApplyResult(result, () =>
+        return Act(g => g.ToolHarvest(), () =>
             cursorItem != null ? $"Harvest: {cursorItem.Count} {cursorItem.ItemType.Name}" : "Harvest: empty cell");
     }
 
@@ -838,118 +828,90 @@ public record GameSession(
     // --- Private helpers ---
 
     /// <summary>
-    /// Applies a ToolResult: if successful and state changed, push to undo stack and log.
-    /// If failed, log the error. If no-op success (state unchanged), don't push or log.
+    /// Debug counter (thread-static): how many state-changing <see cref="Simulation.Step"/> results this
+    /// thread's sessions have applied. Lets tests assert Step is the only path that advances
+    /// <see cref="TickCount"/> / changes the world (Slice 1.2 acceptance). Not part of session state.
     /// </summary>
-    private GameSession ApplyResult(ToolResult result, Func<string> formatLog)
+    public static int DebugStepCount => t_debugStepCount;
+
+    [ThreadStatic] private static int t_debugStepCount;
+
+    /// <summary>The read-only L1 content <see cref="Simulation.Step"/> reads (recipes, facility map, beats).</summary>
+    public SimContent Content => new(Recipes, FacilityRecipeMap, Beats);
+
+    /// <summary>
+    /// Projects the session's L1 fields into the <see cref="SimState"/> <see cref="Simulation.Step"/>
+    /// consumes. Slice 1.2 keeps them stored on the session (public shape unchanged) and projects.
+    /// </summary>
+    public SimState ToSimState() => new(Current, TickCount, Elapsed, SplitMode, RecipeMenu, Content);
+
+    /// <summary>Writes a stepped <see cref="SimState"/> back onto the session's L1 fields.</summary>
+    private GameSession WithSimState(SimState s) => this with
     {
-        if (!result.Success)
-        {
-            var errorLog = $"FAILED: {formatLog()} — {result.Error}";
-            return this with { ActionLog = ActionLog.Add(errorLog) };
-        }
+        Current = s.Game,
+        TickCount = s.TickCount,
+        Elapsed = s.Elapsed,
+        SplitMode = s.SplitMode,
+        RecipeMenu = s.RecipeMenu
+    };
 
-        // No-op success: state didn't change, don't push undo
-        if (result.State == Current)
-            return this;
+    /// <summary>
+    /// Shell around one <see cref="Simulation.Step"/>: runs the intent, and when the step changed state
+    /// counts it, pushes the pre-step state on the undo stack and writes the new L1 state back. Returns
+    /// the step's events (empty for a no-op) so callers can append their action-log lines.
+    /// </summary>
+    private (GameSession Session, ImmutableArray<SimEvent> Events) RunStep(Intent intent)
+    {
+        var result = Simulation.Step(ToSimState(), new[] { intent });
+        if (result.Events.IsEmpty || result.Events[0] is SimEvent.IntentRejected)
+            return (this, result.Events);
 
-        // In rogue mode, tick facilities and plants after each action. In realtime, ticks are external.
-        GameState newState;
-        ImmutableList<string> completionLogs;
-        if (TickMode == TickMode.Rogue)
-        {
-            (newState, completionLogs) = TickFacilities(result.State);
-            newState = PlantLogic.TickPlants(newState);
-        }
-        else
-        {
-            (newState, completionLogs) = (result.State, ImmutableList<string>.Empty);
-        }
-
-        // Chrome-as-state + structural beats + known-recipes + minimap zones: the shared transition
-        // hooks. Centralized here because every state mutation (tool actions, panel open/close,
-        // enter/leave) flows through ApplyResult, so no per-tool wiring is needed and the demo
-        // profile's chrome grows identically on every frontend/driver. The same hooks run after a
-        // scripted facility tick (see Tick) so a timed craft's completion fires identically.
-        newState = RunTransitionHooks(Current, newState);
-
-        var newStack = PushWithLimit(UndoStack, Current);
-        var newLog = ActionLog.Add(formatLog());
-        foreach (var log in completionLogs)
-            newLog = newLog.Add(log);
-
-        return this with
-        {
-            Current = newState,
-            UndoStack = newStack,
-            ActionLog = newLog,
-            TickCount = TickCount + 1
-        };
+        t_debugStepCount++;
+        return (WithSimState(result.State) with { UndoStack = PushWithLimit(UndoStack, Current) }, result.Events);
     }
 
     /// <summary>
-    /// Reveals chrome for the gameplay transitions between two states. Structural (not per-tool):
-    ///   • hand OR toolbar gained an item ⇒ FirstPickup   (Toolbar)
-    ///   • breadcrumb depth increased     ⇒ FirstEnter    (Breadcrumbs)
-    ///   • a C/W look-in panel opened     ⇒ FirstPeek     (LookInOverlay)
-    /// Each Fire is idempotent, so this runs on every successful action and only the FIRST
-    /// occurrence flips a flag. The toolbar arm makes the demo's pickup-to-toolbar routing
-    /// (Slice 3) light the toolbar the same way a classic grab-into-hand does. Triggers for
-    /// unbuilt mechanics (Shrine, compass, cores) have plumbing + tests but no detector here yet.
+    /// Applies a ToolResult through <see cref="Simulation.Step"/>: if successful and state changed, push to
+    /// undo stack and log. If failed, log the error. If no-op success (state unchanged), don't push or log.
     /// </summary>
-    private static GameState ApplyUiTriggers(GameState before, GameState after)
+    private GameSession ApplyResult(ToolResult result, Func<string> formatLog) =>
+        Act(_ => result, formatLog);
+
+    /// <summary>
+    /// Runs a tool as one <see cref="Intent.Tool"/> step (time advances in rogue mode only, P1-D2) and
+    /// appends the action-log line exactly as before: <c>FAILED: …</c> on rejection; otherwise the
+    /// tool's line followed by any craft-completion lines.
+    /// </summary>
+    private GameSession Act(Func<GameState, ToolResult> tool, Func<string> formatLog)
     {
-        var ui = after.Ui;
+        var (next, events) = RunStep(new Intent.Tool(tool, AdvancesTime: TickMode == TickMode.Rogue));
+        if (events.IsEmpty)
+            return this;
+        if (events[0] is SimEvent.IntentRejected rejected)
+            return this with { ActionLog = ActionLog.Add($"FAILED: {formatLog()} — {rejected.Reason}") };
 
-        if ((!before.HasItemsInHand && after.HasItemsInHand)
-            || ToolbarItemCount(after) > ToolbarItemCount(before))
-            ui = ui.Fire(UiTrigger.FirstPickup);
-
-        if (after.BreadcrumbStack.Count() > before.BreadcrumbStack.Count())
-            ui = ui.Fire(UiTrigger.FirstEnter);
-
-        if (PanelNewlyOpen(before, after, LocationId.C) || PanelNewlyOpen(before, after, LocationId.W))
-            ui = ui.Fire(UiTrigger.FirstPeek);
-
-        // Crossing into the Shrine bag materializes the Shrine slots view (journey 12:00).
-        if (JustEnteredShrine(before, after))
-            ui = ui.Fire(UiTrigger.EnterShrine);
-
-        // A newly-locked feature slot = a core was just slotted: game-wide fullness pips turn on
-        // (journey 28:00 — the first unlock that rewires rendering everywhere).
-        if (LockedFeatureSlotCount(after) > LockedFeatureSlotCount(before))
-            ui = ui.Fire(UiTrigger.CoreSlotted);
-
-        // A Crafting Table just began crafting (RecipeId null→set) ⇒ FirstTimedAction (journey 24:00):
-        // the action-queue panel materializes to show the timed work. Scoped to the Crafting Table
-        // because that is the demo's designated first *shown* timed craft (the earlier Slice-3 Workshop
-        // craft teaches toolbar-sourced grab-for-move, not the queue). Detected structurally so it fires
-        // the same way whether the craft starts during a scripted tick (advanceTime) or any other path.
-        if (CraftingTableActiveCount(after) > CraftingTableActiveCount(before))
-            ui = ui.Fire(UiTrigger.FirstTimedAction);
-
-        // A Quiet Compass just appeared in the world (craft complete) ⇒ CompassCrafted (journey 26:00):
-        // the minimap/radar materializes. Counting the item is robust to where the compass lands.
-        if (CompassCount(after) > CompassCount(before))
-            ui = ui.Fire(UiTrigger.CompassCrafted);
-
-        return ReferenceEquals(ui, after.Ui) ? after : after with { Ui = ui };
+        var newLog = ActionLog.Add(formatLog());
+        foreach (var log in CompletionLogs(events, next.Current))
+            newLog = newLog.Add(log);
+        return next with { ActionLog = newLog };
     }
+
+    /// <summary>
+    /// The craft-completion log lines (<c>✦ {facility} crafted: {recipe name}</c>) for a step's
+    /// <see cref="SimEvent.CraftCompleted"/> events, in emission (facility) order. The recipe name is
+    /// resolved against the facility's recipe set under the <i>pre-step</i> known recipes, as the tick
+    /// loop itself does, falling back to the recipe id.
+    /// </summary>
+    private IEnumerable<string> CompletionLogs(ImmutableArray<SimEvent> events, GameState after) =>
+        events.OfType<SimEvent.CraftCompleted>().Select(e =>
+        {
+            var environment = (after.Store.GetById(e.FacilityBagId) ?? Current.Store.GetById(e.FacilityBagId))!.EnvironmentType;
+            var recipe = GetRecipesForFacility(environment).FirstOrDefault(r => r.Id == e.RecipeId);
+            return $"✦ {environment} crafted: {recipe?.Name ?? e.RecipeId}";
+        });
 
     /// <summary>A facility currently mid-craft, projected for the action-queue chrome (Slice 7).</summary>
     public record ActiveCraft(string Facility, string RecipeId, string? Name, int Progress, int Duration);
-
-    /// <summary>
-    /// All facilities in a deterministic, GUID-free order: env → active recipe → owning cell index (all
-    /// pure functions of state). The single source of facility ordering for both the tick loop and the
-    /// action-queue projection, so the completion log and the queue panel never disagree — bag ids are
-    /// process-fresh GUIDs, so the store's dictionary order would otherwise diverge across drivers.
-    /// </summary>
-    private static IEnumerable<Bag> OrderedFacilities(GameState state) =>
-        state.Store.Facilities
-            .OrderBy(f => f.EnvironmentType, StringComparer.Ordinal)
-            .ThenBy(f => f.FacilityState?.ActiveRecipeId ?? f.FacilityState?.RecipeId ?? "", StringComparer.Ordinal)
-            .ThenBy(f => state.Store.GetOwnerOf(f.Id)?.CellIndex ?? 0);
 
     /// <summary>
     /// The action-queue rows (Slice 7): every facility mid-craft, in canonical order, each with its
@@ -964,7 +926,7 @@ public record GameSession(
             : Recipes.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
 
         var rows = new List<ActiveCraft>();
-        foreach (var f in OrderedFacilities(Current))
+        foreach (var f in Simulation.OrderedFacilities(Current))
         {
             if (f.FacilityState?.RecipeId is not { } recipeId) continue;
             var progress = Current.Store.GetOwnerStack(f.Id)?.GetInt("Progress") ?? 0;
@@ -974,245 +936,33 @@ public record GameSession(
         return rows;
     }
 
-    /// <summary>Number of Crafting Table facilities currently mid-craft (a non-null active RecipeId).</summary>
-    private static int CraftingTableActiveCount(GameState state) =>
-        state.Store.All.Count(b =>
-            b.EnvironmentType == GameState.CraftingTableEnvironment && b.FacilityState?.RecipeId is not null);
-
-    /// <summary>Total count of Quiet Compass items anywhere in the store (the CompassCrafted signal).</summary>
-    private static int CompassCount(GameState state) =>
-        state.Store.All.Sum(b => b.Grid.Cells
-            .Where(c => c.Stack?.ItemType.Name == GameState.QuietCompassItem)
-            .Sum(c => c.Stack!.Count));
-
     /// <summary>
-    /// Lights a minimap wedge when the player crosses the threshold INTO a wilderness (an
-    /// <see cref="Bag.EnterOnly"/> bag) they have not entered before. Keyed to a breadcrumb-depth
-    /// increase (a real enter, not a look-in), so peeking a ruin or entering the plain Shrine/pouch
-    /// never lights a wedge. Distinct + monotonic (a re-entry never double-counts). Returns the same
-    /// state when nothing new is reached.
-    /// </summary>
-    private static GameState RegisterZoneEntry(GameState before, GameState after)
-    {
-        if (after.BreadcrumbStack.Count() <= before.BreadcrumbStack.Count())
-            return after;
-        if (!after.ActiveBag.EnterOnly)
-            return after;
-        var id = after.ActiveBagId;
-        if (after.ZonesReached.Contains(id))
-            return after;
-        return after with { ZonesReached = after.ZonesReached.Add(id) };
-    }
-
-    /// <summary>
-    /// Runs the shared state→state transition hooks after any successful mutation, whether from a
-    /// player action (<see cref="ApplyResult"/>) or a scripted facility tick (<see cref="Tick"/>):
-    /// chrome triggers, structural dialogue beats, known-recipe learning, and minimap zone entry.
-    /// Centralizing them here means a craft that completes DURING a tick fires CompassCrafted/minimap
-    /// exactly like a player-driven transition would.
-    /// </summary>
-    private GameState RunTransitionHooks(GameState before, GameState after)
-    {
-        after = ApplyUiTriggers(before, after);
-        after = FireStructuralDialogue(before, after);
-        after = RegisterKnownRecipes(after);
-        after = RegisterZoneEntry(before, after);
-        return after;
-    }
-
-    /// <summary>Enqueues the slotting-resolution beat when a feature slot is newly locked (core slotted).</summary>
-    private GameState FireStructuralDialogue(GameState before, GameState after)
-    {
-        if (LockedFeatureSlotCount(after) <= LockedFeatureSlotCount(before))
-            return after;
-
-        var dialogue = after.Dialogue;
-        foreach (var beat in Beats.WithTrigger(DialogueTriggerKind.CoreSlotted))
-            dialogue = dialogue.Enqueue(beat.Id);
-        return dialogue == after.Dialogue ? after : after with { Dialogue = dialogue };
-    }
-
-    /// <summary>
-    /// Learns — and then <b>consumes</b> — every recipe-as-item the player is holding in a fixed inventory
-    /// (the hand, the toolbar, and one level into a toolbar carrying bag). Learning a card adds its id to
-    /// <see cref="GameState.KnownRecipes"/> (permanent, monotonic) and removes the card from its cell:
-    /// <b>poof on learn</b> (playtest fix, 2026-08-04). A recipe item is any <see cref="ItemStack"/>
-    /// carrying a <see cref="GameState.RecipeItemProperty"/>. This is a <i>sanctioned</i> census removal —
-    /// the journey's conservation checks account for the exact card(s) that vanished (see the runner's
-    /// <c>expectDelta</c>). Returns the same state when nothing new is learned.
-    /// </summary>
-    private static GameState RegisterKnownRecipes(GameState state)
-    {
-        var known = state.KnownRecipes;
-        var store = state.Store;
-
-        // Clear-and-learn one grid: any cell holding a recipe card learns its id and empties.
-        (Bag, bool) LearnAndClear(Bag bag)
-        {
-            var changed = false;
-            var builder = bag.Grid.Cells.ToBuilder();
-            for (var i = 0; i < builder.Count; i++)
-            {
-                if (builder[i].Stack?.GetString(GameState.RecipeItemProperty) is not { } recipeId) continue;
-                known = known.Add(recipeId);
-                builder[i] = builder[i] with { Stack = null };
-                changed = true;
-            }
-            return changed ? (bag with { Grid = bag.Grid with { Cells = builder.MoveToImmutable() } }, true) : (bag, false);
-        }
-
-        // Hand.
-        var (newHand, handChanged) = LearnAndClear(state.HandBag);
-        if (handChanged) store = store.Set(state.HandBagId, newHand);
-
-        // Toolbar + one level into each toolbar carrying bag (matches the acquire/serializer nesting depth).
-        if (state.ToolbarBagId is { } toolbarId && store.GetById(toolbarId) is { } toolbar)
-        {
-            foreach (var cell in toolbar.Grid.Cells)
-                if (cell.Stack?.ContainedBagId is { } nestedId && store.GetById(nestedId) is { } nested)
-                {
-                    var (newNested, nestedChanged) = LearnAndClear(nested);
-                    if (nestedChanged) store = store.Set(nestedId, newNested);
-                }
-            var (newToolbar, toolbarChanged) = LearnAndClear(store.GetById(toolbarId)!);
-            if (toolbarChanged) store = store.Set(toolbarId, newToolbar);
-        }
-
-        if (ReferenceEquals(known, state.KnownRecipes) && ReferenceEquals(store, state.Store))
-            return state;
-        return state with { KnownRecipes = known, Store = store };
-    }
-
-    /// <summary>True when the active bag just became the Shrine (a fresh entry, not a re-render).</summary>
-    private static bool JustEnteredShrine(GameState before, GameState after) =>
-        after.ActiveBagId != before.ActiveBagId
-        && after.ActiveBag.EnvironmentType == GameState.ShrineEnvironment;
-
-    /// <summary>Total number of locked feature slots across every bag (Slice 5 slotting detector).</summary>
-    private static int LockedFeatureSlotCount(GameState state) =>
-        state.Store.All.Sum(b => b.Grid.Cells.Count(c => c.Frame is FeatureSlotFrame { IsLocked: true }));
-
-    /// <summary>True when <paramref name="panel"/> is absent in <paramref name="before"/> and present in <paramref name="after"/>.</summary>
-    private static bool PanelNewlyOpen(GameState before, GameState after, LocationId panel) =>
-        !before.Locations.Has(panel) && after.Locations.Has(panel);
-
-    /// <summary>Number of occupied top-level toolbar slots (0 when there is no toolbar).</summary>
-    private static int ToolbarItemCount(GameState state) =>
-        state.ToolbarBagId is { } id && state.Store.GetById(id) is { } bag
-            ? bag.Grid.Cells.Count(c => !c.IsEmpty)
-            : 0;
-
-    /// <summary>
-    /// Ticks all facility bags found via the BagRegistry.
-    /// Updates each facility in-place within the bag tree.
-    /// Uses FacilityRecipeMap when available, falls back to RecipeRegistry.
-    /// Returns the updated state and any craft completion log messages.
-    /// </summary>
-    private (GameState State, ImmutableList<string> CompletionLogs) TickFacilities(GameState state)
-    {
-        var logs = ImmutableList<string>.Empty;
-
-        if (Recipes.IsDefaultOrEmpty)
-            return (state, logs);
-
-        var facilities = OrderedFacilities(state).ToList();
-        if (facilities.Count == 0)
-            return (state, logs);
-
-        foreach (var facility in facilities)
-        {
-            var facilityRecipes = GetRecipesForFacility(facility.EnvironmentType);
-            if (facilityRecipes.Count == 0)
-                continue;
-
-            // Read current progress from the owning ItemStack's properties (shared owner lookup).
-            int currentProgress = state.Store.GetOwnerStack(facility.Id)?.GetInt("Progress") ?? 0;
-
-            var wasCrafting = facility.FacilityState?.RecipeId;
-            var (ticked, newProgress, newBags) = FacilityLogic.Tick(facility, currentProgress, facilityRecipes);
-            if (ticked == facility && newProgress == currentProgress)
-                continue;
-
-            // Detect craft completion: was crafting, now reset to null
-            if (wasCrafting is not null && ticked.FacilityState?.RecipeId is null)
-            {
-                var recipe = facilityRecipes.FirstOrDefault(r => r.Id == wasCrafting);
-                var recipeName = recipe?.Name ?? wasCrafting;
-                logs = logs.Add($"✦ {facility.EnvironmentType} crafted: {recipeName}");
-            }
-
-            // Register any newly created bags from the output factory
-            if (newBags.Count > 0)
-                state = state with { Store = state.Store.AddRange(newBags) };
-
-            // Update both the facility bag and the owning stack's progress property
-            var progressValue = newProgress;
-            state = state.ReplaceBagById(facility.Id, ticked,
-                stack => stack.WithProperty("Progress", new IntValue(progressValue)));
-        }
-
-        return (state, logs);
-    }
-
-    /// <summary>
-    /// Public tick method for realtime mode. Advances all facilities by one tick.
-    /// Returns the updated session with new state and incremented tick count.
+    /// Public tick method for realtime mode: one <see cref="Intent.Tick"/> step (facilities → plants →
+    /// hooks). Logs the completion lines, or <c>Tick #N</c> when nothing completed. Returns the same
+    /// session when the tick changed nothing.
     /// </summary>
     public GameSession Tick()
     {
-        var tickedState = Current;
-        var completionLogs = ImmutableList<string>.Empty;
-        if (!Recipes.IsDefaultOrEmpty)
-            (tickedState, completionLogs) = TickFacilities(Current);
-        tickedState = PlantLogic.TickPlants(tickedState);
-        // A craft that starts/completes during this tick must reveal chrome (FirstTimedAction →
-        // ActionQueue, CompassCrafted → Minimap) exactly as a player action would.
-        tickedState = RunTransitionHooks(Current, tickedState);
-        if (tickedState == Current)
+        var (next, events) = RunStep(new Intent.Tick());
+        if (events.IsEmpty)
             return this;
 
-        var newStack = PushWithLimit(UndoStack, Current);
+        var completionLogs = CompletionLogs(events, next.Current).ToList();
         var newLog = ActionLog;
         foreach (var log in completionLogs)
             newLog = newLog.Add(log);
         if (completionLogs.Count == 0)
             newLog = newLog.Add($"Tick #{TickCount + 1}");
 
-        return this with
-        {
-            Current = tickedState,
-            UndoStack = newStack,
-            ActionLog = newLog,
-            TickCount = TickCount + 1
-        };
+        return next with { ActionLog = newLog };
     }
 
     /// <summary>
-    /// Returns recipes applicable to a facility by environment type.
-    /// Uses FacilityRecipeMap when available, falls back to RecipeRegistry.
+    /// Returns recipes applicable to a facility by environment type, under the current known recipes.
+    /// Delegates to <see cref="SimContent.RecipesForFacility"/> (the logic moved into the Sim content).
     /// </summary>
-    private IReadOnlyList<Recipe> GetRecipesForFacility(string environmentType)
-    {
-        // The Crafting Table (Slice 7) is a generic assembler: its craftable set is exactly the
-        // recipes the player KNOWS (KnownRecipes ∩ the loaded recipe set) — the Slice-6 deferred
-        // wiring. Learn a recipe and the table can build it the moment its inputs match; an unknown
-        // recipe (or a known one with no table inputs, e.g. the Iron-Ore-gated demo axe) never crafts.
-        if (environmentType == GameState.CraftingTableEnvironment)
-            return Recipes.Where(r => Current.KnownRecipes.Contains(r.Id)).ToList();
-
-        if (FacilityRecipeMap is not null &&
-            FacilityRecipeMap.TryGetValue(environmentType, out var recipeIds))
-        {
-            var recipesById = Recipes.ToDictionary(r => r.Id);
-            return recipeIds
-                .Where(id => recipesById.ContainsKey(id))
-                .Select(id => recipesById[id])
-                .ToList();
-        }
-
-        // Legacy fallback
-        return Data.RecipeRegistry.GetRecipesForFacility(environmentType, Recipes);
-    }
+    private IReadOnlyList<Recipe> GetRecipesForFacility(string environmentType) =>
+        Content.RecipesForFacility(environmentType, Current.KnownRecipes);
 
     /// <summary>
     /// Pushes a state onto the undo stack, trimming oldest entries if over max depth.

@@ -158,11 +158,12 @@ public class SimContractTests
     }
 
     [Fact]
-    public void Intent_Phase1Slice0_DeclaresOnlyTick()
+    public void Intent_Phase1Slice2_DeclaresTickAndTransitionalTool()
     {
         var cases = typeof(Intent).GetNestedTypes().Where(t => typeof(Intent).IsAssignableFrom(t));
 
-        Assert.Equal(new[] { nameof(Intent.Tick) }, cases.Select(t => t.Name).ToArray());
+        // Slice 1.2 adds the transitional closure-carrying Tool case; 1.3 replaces it with data intents.
+        Assert.Equal(new[] { nameof(Intent.Tick), nameof(Intent.Tool) }, cases.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray());
         Assert.Equal(new Intent.Tick(), new Intent.Tick());
     }
 
