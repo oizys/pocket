@@ -92,9 +92,10 @@ public class SimRngDeterminismTests
     public void Step_AcquireRandom_DrawsThePinnedHash_AndKeepsTheAdvancedRng()
     {
         var s = NewSession(99).ToSimState() with { TickCount = 4 };
+        s = s with { Content = s.Content with { TickMode = TickMode.Realtime } }; // no time advance
         var expected = Types[(int)(SimRng.Hash(99, 5, SimStream.Acquire, 0) % (ulong)Types.Length)];
 
-        var r = Simulation.Step(s, new[] { new Intent.AcquireRandom(AdvancesTime: false) });
+        var r = Simulation.Step(s, new[] { new Intent.AcquireRandom(LocationId.B) });
 
         Assert.IsType<SimEvent.IntentApplied>(r.Events[0]);
         Assert.Contains(r.State.Game.RootBag.Grid.Cells, c => c.Stack?.ItemType == expected && c.Stack.Count == 1);

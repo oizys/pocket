@@ -1,3 +1,4 @@
+using Pockets.Core.Sim;
 using System.Collections.Immutable;
 using Pockets.Core.Models;
 
@@ -147,8 +148,8 @@ public class UiLedgerTests
         var session = GameSession.New(state);
         Assert.False(session.Current.Ui.Has(ChromeElement.LookInOverlay));
 
-        var opened = state.OpenAsContainer(inner.Id);
-        var after = session.ApplyToolResult(opened, () => "open container");
+        // Peek at the chest under the cursor opens it as the C look-in panel.
+        var after = session.Apply(new Intent.Peek(LocationId.B));
 
         Assert.True(after.Current.Ui.Has(ChromeElement.LookInOverlay));
     }

@@ -7,7 +7,8 @@ namespace Pockets.Core.Tests.Sim;
 
 /// <summary>
 /// Slice 1.2: <see cref="Simulation.Step"/> semantics, namely the no-op / rejected / applied split, the
-/// explicit time flag (P1-D2), coarse events in (Step, Seq) emission order, and craft completion.
+/// time flag (P1-D2; since Slice 1.3 read from <see cref="SimContent.TickMode"/>, not the intent), coarse
+/// events in (Step, Seq) emission order, and craft completion.
 /// </summary>
 public class SimulationStepTests
 {
@@ -45,27 +46,29 @@ public class SimulationStepTests
     }
 
     /// <summary>Wraps a game state as a SimState at the given tick count with the axe recipe loaded.</summary>
-    private static SimState Sim(GameState game, int tickCount = 0) =>
+    private static SimState Sim(GameState game, int tickCount = 0, TickMode mode = TickMode.Rogue) =>
         new(game, tickCount, TimeSpan.Zero, null, null,
-            new SimContent(ImmutableArray.Create(AxeRecipe), null, DialogueBook.Empty), SimRng.Create(0));
+            new SimContent(ImmutableArray.Create(AxeRecipe), null, DialogueBook.Empty, mode), SimRng.Create(0));
 
     [Fact]
     public void Tool_Failed_EmitsOnlyRejected_StateUnchanged()
     {
         var s = Sim(CreateState(), tickCount: 4);
-        var intent = new Intent.Tool(g => ToolResult.Fail(g, "nope"), AdvancesTime: true);
+        var intent = new Intent.CycleRecipe(LocationId.B); // the root bag is not a facility
 
         var r = Simulation.Step(s, new[] { intent });
 
         Assert.Same(s, r.State);
-        Assert.Equal(new SimEvent[] { new SimEvent.IntentRejected(5, 0, intent, "nope") }, r.Events.ToArray());
+        Assert.Equal(new SimEvent[] { new SimEvent.IntentRejected(5, 0, intent, "not in a facility") }, r.Events.ToArray());
     }
 
     [Fact]
     public void Tool_NoOpSuccess_NoEvents_NoTick_EvenWhenTimeAdvances()
     {
-        var s = Sim(CreateState(loadWorkbench: true));
-        var r = Simulation.Step(s, new[] { new Intent.Tool(g => ToolResult.Ok(g), AdvancesTime: true) });
+        // Cursor on an empty cell with an empty hand: the contextual primary tool succeeds as a no-op.
+        var s = Simulation.Step(Sim(CreateState(loadWorkbench: true)),
+            new[] { new Intent.SetCursor(LocationId.B, new Position(0, 5)) }).State;
+        var r = Simulation.Step(s, new[] { new Intent.ToolPrimary(LocationId.B) });
 
         Assert.Same(s, r.State);
         Assert.Empty(r.Events);
@@ -74,8 +77,8 @@ public class SimulationStepTests
     [Fact]
     public void Tool_Realtime_AppliesWithoutTimeAdvance()
     {
-        var s = Sim(CreateState(loadWorkbench: true), tickCount: 2);
-        var intent = new Intent.Tool(g => g.ToolGrab(), AdvancesTime: false);
+        var s = Sim(CreateState(loadWorkbench: true), tickCount: 2, mode: TickMode.Realtime);
+        var intent = new Intent.Grab(LocationId.B);
 
         var r = Simulation.Step(s, new[] { intent });
 
@@ -89,7 +92,7 @@ public class SimulationStepTests
     public void Tool_Rogue_AppliesThenAdvancesTime_InSeqOrder()
     {
         var s = Sim(CreateState(loadWorkbench: true));
-        var intent = new Intent.Tool(g => g.ToolGrab(), AdvancesTime: true);
+        var intent = new Intent.Grab(LocationId.B);
 
         var r = Simulation.Step(s, new[] { intent });
 
@@ -104,7 +107,7 @@ public class SimulationStepTests
     public void Tool_GrabIntoEmptyLedger_FiresFirstPickupOnce()
     {
         var game = CreateState() with { Ui = UiLedger.Empty };
-        var r = Simulation.Step(Sim(game), new[] { new Intent.Tool(g => g.ToolGrab(), AdvancesTime: false) });
+        var r = Simulation.Step(Sim(game, mode: TickMode.Realtime), new[] { new Intent.Grab(LocationId.B) });
 
         Assert.Single(r.Events.OfType<SimEvent.UiTriggerFired>(), e => e.Trigger == UiTrigger.FirstPickup);
         Assert.True(r.State.Game.Ui.Has(ChromeElement.Toolbar));

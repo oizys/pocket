@@ -9,8 +9,8 @@ namespace Pockets.Core.Sim;
 /// <para>
 /// Slice 1.2 <i>projects</i> this from <see cref="GameSession"/> (<see cref="GameSession.ToSimState"/>)
 /// rather than storing it there, so the session's public shape (and every test written against it)
-/// is unchanged. <see cref="SplitMode"/>, <see cref="RecipeMenu"/> and <see cref="Elapsed"/> ride along
-/// untouched until Slice 1.3 routes their intents through Step. The VM keeps its exact projection:
+/// is unchanged. Since Slice 1.3, <see cref="SplitMode"/>, <see cref="RecipeMenu"/> and <see cref="Elapsed"/>
+/// change only through their intents (P1-D5). The VM keeps its exact projection:
 /// <c>recipeMenu</c> serialized, <c>SplitMode</c> not. <see cref="Rng"/> (Slice 1.1) is the counter RNG every
 /// in-step draw comes from; it is L1 but not serialized in the VM.
 /// </para>
@@ -26,12 +26,15 @@ public sealed record SimState(
 
 /// <summary>
 /// L1 content: definitions loaded at startup that <see cref="Simulation.Step"/> reads and no step ever
-/// changes: the recipe set, the facility→recipe map and the dialogue beat book.
+/// changes: the recipe set, the facility→recipe map, the dialogue beat book, and the session's
+/// <see cref="Models.TickMode"/> (Slice 1.3: it decides whether a player action advances time — rogue
+/// yes, realtime no, P1-D2 — so intents no longer carry that flag).
 /// </summary>
 public sealed record SimContent(
     ImmutableArray<Recipe> Recipes,
     ImmutableDictionary<string, ImmutableArray<string>>? FacilityRecipeMap,
-    DialogueBook Beats)
+    DialogueBook Beats,
+    TickMode TickMode)
 {
     /// <summary>
     /// The recipes a facility of <paramref name="environmentType"/> can build, given the recipes the

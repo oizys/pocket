@@ -1,3 +1,4 @@
+using Pockets.Core.Sim;
 using System.Collections.Immutable;
 using Pockets.Core;
 using Pockets.Core.Data;
@@ -235,19 +236,20 @@ public class PeekTests
         Assert.Equal("Quiet Pocket", c.Session.Current.ActiveBag.EnvironmentType);
     }
 
-    // ==================== GameSession.FireFailedPeek (unit) ====================
+    // ==================== Refused peek intent (unit) ====================
 
     [Fact]
     public void FireFailedPeek_IsIdempotentAcrossCalls_AndDoesNotChangeCensus()
     {
         var c = MakeController();
+        c.HandleKey(GameKey.Right); // (0,1) — the enter-only pocket
         var session = c.Session;
         var censusBefore = InvariantChecker.Census(session.Current);
 
-        var once = session.FireFailedPeek();
+        var once = session.Apply(new Intent.Peek(LocationId.B));
         Assert.True(once.Current.Dialogue.IsActive);
 
-        var twice = once.FireFailedPeek();
+        var twice = once.Apply(new Intent.Peek(LocationId.B));
         // Already queued/fired → same instance, no second copy in the queue.
         Assert.Same(once, twice);
         Assert.Equal(censusBefore, InvariantChecker.Census(twice.Current));

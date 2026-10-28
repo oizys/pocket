@@ -158,17 +158,44 @@ public class SimContractTests
     }
 
     [Fact]
-    public void Intent_Phase1Slice1_DeclaresTickToolAndAcquireRandom()
+    public void Intent_Phase1Slice3_DeclaresOneDataCasePerControllerPath()
     {
         var cases = typeof(Intent).GetNestedTypes().Where(t => typeof(Intent).IsAssignableFrom(t));
 
-        // Slice 1.2 adds the transitional closure-carrying Tool case; 1.3 replaces it with data intents.
-        // Slice 1.1 adds AcquireRandom, the first data-only player intent (its draw happens inside Step).
+        // Slice 1.3 deletes the transitional closure-carrying Tool case (1.2) and declares one data-only
+        // case per controller path, each naming its target location where it acts on a panel (P1-D5).
         Assert.Equal(
-            new[] { nameof(Intent.AcquireRandom), nameof(Intent.Tick), nameof(Intent.Tool) },
+            new[]
+            {
+                "AcquireRandom", "AdjustSplit", "AdvanceDialogue", "BeginSplit", "CancelSplit", "Click",
+                "CloseRecipeMenu", "CommitSplit", "ConfirmRecipeMenu", "CycleRecipe", "Drop", "Dsl", "EnterBag",
+                "Grab", "Harvest", "Interact", "Leave", "LeaveBag", "ModalSplit", "Move", "MoveRecipeMenu",
+                "OpenRecipeMenu", "Peek", "Primary", "QuickSplit", "Secondary", "SetCursor", "SetElapsed",
+                "Sort", "Tick", "ToolPrimary", "Undo"
+            },
             cases.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray());
         Assert.Equal(new Intent.Tick(), new Intent.Tick());
-        Assert.Equal(new Intent.AcquireRandom(true), new Intent.AcquireRandom(true));
+        Assert.Equal(new Intent.AcquireRandom(LocationId.B), new Intent.AcquireRandom(LocationId.B));
+        Assert.Equal(new Intent.Click(LocationId.C, new Position(1, 2), ClickType.Primary),
+            new Intent.Click(LocationId.C, new Position(1, 2), ClickType.Primary));
+    }
+
+    /// <summary>
+    /// Every intent is plain data: no delegate-typed and no Guid-typed property on any case, so an intent
+    /// log replays in a fresh session (whose bag ids differ) and compares by value.
+    /// </summary>
+    [Fact]
+    public void Intent_Cases_CarryNoClosuresOrBagIds()
+    {
+        var props = typeof(Intent).GetNestedTypes()
+            .Where(t => typeof(Intent).IsAssignableFrom(t))
+            .SelectMany(t => t.GetProperties().Where(p => p.DeclaringType == t).Select(p => (t.Name, p)))
+            .ToList();
+        Assert.All(props, x =>
+        {
+            Assert.False(typeof(Delegate).IsAssignableFrom(x.p.PropertyType), $"{x.Name}.{x.p.Name} is a delegate");
+            Assert.False(x.p.PropertyType == typeof(Guid) || x.p.PropertyType == typeof(Guid?), $"{x.Name}.{x.p.Name} is a Guid");
+        });
     }
 
     // ── Rule declaration enums ────────────────────────────────────────────────

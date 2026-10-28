@@ -10,4 +10,11 @@
     <Using Include="System.Collections.Immutable" />
   </ItemGroup>
 
+  <!-- Slice 1.3: the session's per-tool methods are internal (frontends and tools go through intents);
+       the test projects keep calling them directly. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Pockets.Core.Tests" />
+    <InternalsVisibleTo Include="Pockets.App.Tests" />
+  </ItemGroup>
+
 </Project>

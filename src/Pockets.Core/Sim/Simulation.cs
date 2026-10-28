@@ -8,105 +8,175 @@ namespace Pockets.Core.Sim;
 /// Slice 1.2: extracted by <i>moving</i> <c>GameSession.ApplyResult</c> / <c>TickFacilities</c> /
 /// <c>PlantLogic.TickPlants</c> / <c>RunTransitionHooks</c>, keeping their exact order:
 /// apply the tool → (if time advances) tick facilities → tick plants → run the transition hooks.
-/// The session is now the shell around it: undo, action log, debug counter.
+/// Slice 1.3: every controller path is a data <see cref="Intent"/> dispatched here (see
+/// <c>Simulation.Intents.cs</c>); the session is the shell around it: undo, action log, intent log.
 /// </summary>
-public static class Simulation
+public static partial class Simulation
 {
     /// <summary>
     /// Applies <paramref name="intents"/> in order and returns the next state plus the step's coarse
     /// events. Every event carries <c>Step = s.TickCount + 1</c> and a step-global <c>Seq</c>.
     /// Per intent:
     /// <list type="bullet">
-    /// <item><see cref="Intent.Tool"/> and <see cref="Intent.AcquireRandom"/>: a failed tool emits only <see cref="SimEvent.IntentRejected"/>
-    /// (state unchanged); a no-op success (tool state record-equal to the pre-state) emits nothing and
-    /// does not tick; otherwise <see cref="SimEvent.IntentApplied"/>, then, if it advances time, the tick
-    /// phase, then the hooks, and <c>TickCount + 1</c>.</item>
+    /// <item>Tool-style intents (the tools, the routed panel verbs, <see cref="Intent.Dsl"/>): a failed tool
+    /// emits only <see cref="SimEvent.IntentRejected"/> (state unchanged); a no-op success (tool state
+    /// record-equal to the pre-state) emits nothing and does not tick; otherwise
+    /// <see cref="SimEvent.IntentApplied"/>, then, in rogue mode, the tick phase, then the hooks, and
+    /// <c>TickCount + 1</c>.</item>
     /// <item><see cref="Intent.Tick"/>: tick phase then hooks; if the result is record-equal to the
     /// pre-state it is a no-op (no events, no TickCount change).</item>
+    /// <item>Cursor, dialogue, split, recipe-menu and clock intents: they change their L1 field directly and
+    /// emit <see cref="SimEvent.IntentApplied"/> when anything changed. No tick, no hooks, no TickCount bump
+    /// (exactly as before they were intents).</item>
     /// </list>
     /// Every random draw comes from <see cref="SimState.Rng"/> positioned at the step (Slice 1.1): the
-    /// AcquireRandom type from <see cref="SimStream.Acquire"/>, recipe outputs from <see cref="SimStream.Craft"/>.
-    /// The advanced RNG is kept only when the intent changes state, like everything else.
+    /// AcquireRandom type from <see cref="SimStream.Acquire"/>, DSL draws from <see cref="SimStream.Dsl"/>,
+    /// recipe outputs from <see cref="SimStream.Craft"/>. The advanced RNG is kept only when the intent changes
+    /// state. <see cref="Intent.Undo"/> is the session shell's (it owns the snapshots) and throws here.
     /// </summary>
-    public static StepResult<SimState> Step(SimState s, IReadOnlyList<Intent> intents)
+    public static StepResult<SimState> Step(SimState s, IReadOnlyList<Intent> intents) =>
+        StepTraced(s, intents, null);
+
+    /// <summary>
+    /// <see cref="Step"/>, also reporting how each intent resolved (one <see cref="StepTrace"/> per
+    /// non-composite intent, in order) for the session shell's log lines and the controller's focus.
+    /// </summary>
+    internal static StepResult<SimState> StepTraced(SimState s, IReadOnlyList<Intent> intents, List<StepTrace>? traces)
     {
         var step = s.TickCount + 1;
         var events = ImmutableArray.CreateBuilder<SimEvent>();
         foreach (var intent in intents)
-            s = StepOne(s, intent, step, events);
+            s = StepOne(s, intent, step, events, traces);
         return new StepResult<SimState>(s, events.ToImmutable());
     }
 
-    /// <summary>Applies one intent, appending its events to <paramref name="events"/>.</summary>
-    private static SimState StepOne(SimState s, Intent intent, int step, ImmutableArray<SimEvent>.Builder events)
+    /// <summary>
+    /// Applies one tool's result as a player action: a failure emits only
+    /// <see cref="SimEvent.IntentRejected"/>; a no-op success emits nothing; otherwise
+    /// <see cref="SimEvent.IntentApplied"/>, the tick phase in rogue mode (P1-D2), the transition hooks,
+    /// then <paramref name="after"/> on the hooked state, and <c>TickCount + 1</c>. <paramref name="rng"/> is
+    /// the step's RNG (already advanced by any draw the tool made); it is committed with the state.
+    /// </summary>
+    private static SimState ApplyToolResult(
+        SimState s, Intent intent, ToolResult result, SimRng rng, int step,
+        ImmutableArray<SimEvent>.Builder events, Func<GameState, GameState>? after = null)
     {
         var before = s.Game;
-        var rng = s.Rng.AtStep(step);
-        GameState newState;
-        var pending = new List<Func<int, SimEvent>>();
-
-        // A player action: the tool's result, then (if it advances time) the tick phase.
-        GameState? ApplyTool(ToolResult result, bool advancesTime)
+        if (!result.Success)
         {
-            if (!result.Success)
-            {
-                events.Add(new SimEvent.IntentRejected(step, events.Count, intent, result.Error ?? ""));
-                return null;
-            }
-
-            // No-op success: state didn't change, nothing ticks and nothing is recorded.
-            if (result.State == before)
-                return null;
-
-            pending.Add(seq => new SimEvent.IntentApplied(step, seq, intent));
-
-            // In rogue mode, tick facilities and plants after each action. In realtime, ticks are external.
-            return advancesTime
-                ? AdvanceTime(result.State, before, s.Content, step, ref rng, pending)
-                : result.State;
+            events.Add(new SimEvent.IntentRejected(step, events.Count, intent, result.Error ?? ""));
+            return s;
         }
 
-        switch (intent)
-        {
-            case Intent.Tool tool:
-            {
-                if (ApplyTool(tool.Apply(before), tool.AdvancesTime) is not { } applied)
-                    return s;
-                newState = applied;
-                break;
-            }
-            case Intent.AcquireRandom acquire:
-            {
-                var random = rng.AsRandom(SimStream.Acquire);
-                var result = before.ToolAcquireRandom(random);
-                rng = random.Rng;
-                if (ApplyTool(result, acquire.AdvancesTime) is not { } applied)
-                    return s;
-                newState = applied;
-                break;
-            }
-            case Intent.Tick:
-                newState = AdvanceTime(before, before, s.Content, step, ref rng, pending);
-                break;
-            default:
-                throw new InvalidOperationException($"Unhandled intent {intent.GetType().Name}");
-        }
+        // No-op success: state didn't change, nothing ticks and nothing is recorded.
+        if (result.State == before)
+            return s;
+
+        var pending = new List<Func<int, SimEvent>> { seq => new SimEvent.IntentApplied(step, seq, intent) };
+
+        // In rogue mode, tick facilities and plants after each action. In realtime, ticks are external.
+        var newState = s.Content.TickMode == TickMode.Rogue
+            ? AdvanceTime(result.State, before, s.Content, step, ref rng, pending)
+            : result.State;
 
         // Chrome-as-state + structural beats + known-recipes + minimap zones: the shared transition
-        // hooks. They run after every state-changing intent (tool actions, panel open/close,
+        // hooks. They run after every state-changing action (tool actions, panel open/close,
         // enter/leave, clock ticks), so the demo profile's chrome grows identically on every
         // frontend/driver and a craft completing during a tick fires exactly like a player action.
         newState = RunTransitionHooks(before, newState, s.Content, trigger =>
             pending.Add(seq => new SimEvent.UiTriggerFired(step, seq, trigger)));
 
-        // A clock tick that changed nothing is a no-op (checked after the hooks, as Tick() always did).
-        if (intent is Intent.Tick && newState == before)
-            return s;
+        if (after is not null)
+            newState = after(newState);
 
         foreach (var make in pending)
             events.Add(make(events.Count));
 
         return s with { Game = newState, TickCount = s.TickCount + 1, Rng = rng };
+    }
+
+    /// <summary>
+    /// Runs <paramref name="tool"/> at location <paramref name="at"/>: the tools are written against B, so
+    /// the location's info is swapped into B (<see cref="SwapIn"/>), the whole tool step (tool, tick, hooks)
+    /// runs in that frame, and B is restored afterwards (<see cref="SwapOut"/>) — moved verbatim from
+    /// <c>GameSession.RunAt</c>. The tool receives the step's RNG and returns it, advanced if it drew.
+    /// </summary>
+    private static SimState ApplyToolAt(
+        SimState s, Intent intent, LocationId at, Func<GameState, SimRng, (ToolResult Result, SimRng Rng)> tool,
+        int step, ImmutableArray<SimEvent>.Builder events)
+    {
+        var swapped = s with { Game = SwapIn(s.Game, at) };
+        var (result, rng) = tool(swapped.Game, s.Rng.AtStep(step));
+        var applied = ApplyToolResult(swapped, intent, result, rng, step, events);
+        return ReferenceEquals(applied, swapped) ? s : applied with { Game = SwapOut(applied.Game, s.Game, at) };
+    }
+
+    /// <summary><see cref="ApplyToolAt(SimState, Intent, LocationId, Func{GameState, SimRng, ValueTuple{ToolResult, SimRng}}, int, ImmutableArray{SimEvent}.Builder)"/> for a tool that draws nothing.</summary>
+    private static SimState ApplyToolAt(
+        SimState s, Intent intent, LocationId at, Func<GameState, ToolResult> tool,
+        int step, ImmutableArray<SimEvent>.Builder events) =>
+        ApplyToolAt(s, intent, at, (g, rng) => (tool(g), rng), step, events);
+
+    /// <summary>
+    /// The state the B-written tools see when run at <paramref name="at"/>: <paramref name="at"/>'s location
+    /// info installed as B. Identity for B. The shell also uses it to name a tool's log line and to take the
+    /// undo snapshot exactly as <c>RunAt</c> did (it pushed the swapped state).
+    /// </summary>
+    internal static GameState SwapIn(GameState g, LocationId at) =>
+        at == LocationId.B ? g : g with { Locations = g.Locations.Set(LocationId.B, g.Locations.Get(at)) };
+
+    /// <summary>
+    /// Undoes <see cref="SwapIn"/> after a tool ran: B gets back <paramref name="pre"/>'s B info and
+    /// <paramref name="at"/> takes whatever B became. Identity for B.
+    /// </summary>
+    private static GameState SwapOut(GameState after, GameState pre, LocationId at) =>
+        at == LocationId.B
+            ? after
+            : after with
+            {
+                Locations = after.Locations
+                    .Set(LocationId.B, pre.Locations.Get(LocationId.B))
+                    .Set(at, after.Locations.Get(LocationId.B))
+            };
+
+    /// <summary>
+    /// A clock tick: the tick phase then the hooks. A tick that changed nothing is a no-op (checked after
+    /// the hooks, as <c>Tick()</c> always did): no events, no TickCount change.
+    /// </summary>
+    private static SimState ApplyTick(SimState s, Intent intent, int step, ImmutableArray<SimEvent>.Builder events)
+    {
+        var before = s.Game;
+        var rng = s.Rng.AtStep(step);
+        var pending = new List<Func<int, SimEvent>>();
+        var newState = AdvanceTime(before, before, s.Content, step, ref rng, pending);
+        newState = RunTransitionHooks(before, newState, s.Content, trigger =>
+            pending.Add(seq => new SimEvent.UiTriggerFired(step, seq, trigger)));
+        if (newState == before)
+            return s;
+
+        foreach (var make in pending)
+            events.Add(make(events.Count));
+        return s with { Game = newState, TickCount = s.TickCount + 1, Rng = rng };
+    }
+
+    /// <summary>
+    /// A direct L1 change that is not a timed action (cursor, dialogue, modal state, clock readout, recipe
+    /// switch): emits <see cref="SimEvent.IntentApplied"/> when <paramref name="next"/> differs from
+    /// <paramref name="s"/>; no tick, no hooks, no TickCount bump.
+    /// </summary>
+    private static SimState Changed(SimState s, SimState next, Intent intent, int step, ImmutableArray<SimEvent>.Builder events)
+    {
+        if (next == s)
+            return s;
+        events.Add(new SimEvent.IntentApplied(step, events.Count, intent));
+        return next;
+    }
+
+    /// <summary>A refusal that changes nothing: emits only <see cref="SimEvent.IntentRejected"/>.</summary>
+    private static SimState Rejected(SimState s, Intent intent, string reason, int step, ImmutableArray<SimEvent>.Builder events)
+    {
+        events.Add(new SimEvent.IntentRejected(step, events.Count, intent, reason));
+        return s;
     }
 
     /// <summary>

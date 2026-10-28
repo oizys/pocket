@@ -176,7 +176,7 @@ dependencies are given in §Order below.
   have the parity goldens catch any ordering slip. If the worker cannot keep it
   golden-neutral, split it into 1.2a (`Tick` path) and 1.2b (`ApplyResult` path).
 
-### Slice 1.3 — Intents everywhere: route every controller path through `Step`
+### Slice 1.3 — Intents everywhere: route every controller path through `Step` ✓ landed (see §Addendum — Slice 1.3)
 - `GameController` maps every input to `Intent`s:
   - `HandleKey` → one intent per `GameKey`;
   - `HandleGridClick` → `Intent.Click(panel, pos, type)`;
@@ -558,3 +558,56 @@ completes is the compass, whose factory draws nothing.
 - `Execute(dsl)` still runs the program *before* Step and rides in as a precomputed `Intent.Tool`. Its `Dsl` draws are taken at the next step's coordinates, but their counter is not written back. This is harmless today: each state-changing step gets a fresh step number, so counters reset. A data-only `Intent.Dsl` should move the run, and the draw, inside Step.
 - `ExecuteAcquireRandom` previews the draw only to build its log line. If 1.3 turns logging into a post-step projection, the preview can go.
 - `HandleKey(GameKey)` no longer takes an RNG. Any new randomness belongs in a `SimStream` (add a member; never renumber) and is drawn inside Step.
+
+## Addendum — Slice 1.3 as built (2026-10-28)
+
+**Golden-neutral.** The VM checkpoint golden and the 11 TUI buffer goldens are byte-identical. The
+smoke and target-demo checkpoint streams, on both tui and mock-godot, are byte-identical to the
+pre-slice streams (diffed against a baseline captured at `7d6f43c`, not just against each other). No
+action-log text changed (P1-D6). No golden was re-recorded.
+
+| Piece | Where | Notes |
+|---|---|---|
+| `Intent`: 32 data-only cases | `Sim/Intent.cs` | **`Intent.Tool` is deleted.** There is one case per controller path, and every panel verb names its `LocationId`. Clock: `Tick`, `SetElapsed(Elapsed)`. Cursor: `Move(At, Dir)`, `SetCursor(At, Pos)`, `Click(At, Pos, Type)`. Routed verbs: `Primary(At)`, `Peek(At)`, `Leave(At)`. Tools: `ToolPrimary`, `Secondary`, `QuickSplit`, `ModalSplit(At, LeftCount)`, `Sort`, `AcquireRandom(At)`, `Grab`, `Drop`, `Interact`, `EnterBag`, `LeaveBag`, `Harvest`, `CycleRecipe`, `Dsl(Expression)`. Modals: `AdvanceDialogue`, `Begin/Adjust/Commit/CancelSplit`, `Open/Move/Confirm/CloseRecipeMenu`. Shell: `Undo`. A test pins that no case has a delegate- or `Guid`-typed property, so an intent log replays in a fresh session whose bag ids differ. The plan's `Intent.Back` is `Leave(At)`: the Q key and the back button were the same verb with different status text, and the status text stays in the controller. |
+| `AdvancesTime` left the intents | `SimContent.TickMode` | The time flag (P1-D2) is now read from L1 content (the inventory already classed `TickMode` as content), so an intent means the same thing in any replay of the same profile. `SimContent` gained a 4th positional field. |
+| Dispatcher | `Sim/Simulation.Intents.cs` (`Simulation` is now `partial`) | `StepOne` switches on every case. The branching that lived in the controller (`ExecuteFocusedPrimary`, `ExecutePeek`, the Q/back close-or-leave) and in the session (`RunAt`, pickup-to-toolbar, cursor and tree-bump and cursor-rest, the failed-peek and peek-while-carrying beats, dialogue advance, split modal, recipe menu, `SetRecipeOn`, `ApplyRecipeSwitch`) was **moved** into it, with `_focus` replaced by the intent's `At`. The `RunAt` swap is now `SwapIn`/`SwapOut` on `GameState`. A tool at a panel still runs its whole step (tool, rogue tick, hooks) in the swapped frame, exactly as before. |
+| Non-timed intents | `Simulation.Changed` | Cursor, dialogue, split, recipe-menu and `SetElapsed` intents change their L1 field and emit `IntentApplied`. They do **not** tick, run hooks or bump `TickCount`, which keeps 1.2's list of bypass semantics intact. `ConfirmRecipeMenu` (SetRecipe) and `CycleRecipe` (recipe switch) also don't tick, but the shell pushes undo for them, as before. |
+| Composites | `Simulation.Expand` | `Click` = `SetCursor`, then `Primary`/`Secondary`. `CommitSplit` = `ModalSplit`, then `CancelSplit`. The shell runs each sub-intent as its own step, so the undo snapshot of a click is the state after the cursor moved, as before. The intent log records the composite once. |
+| `StepTrace` / `Route` (internal) | `Simulation.Intents.cs` | `Simulation.StepTraced` reports how each intent resolved: the route (e.g. `OpenContainer`, `PeekRefused`, `Bumped`), the tool intent it ran, and a detail (bag environment, pickup count, DSL error suffix, dismissed beat). The shell writes the old log lines from it plus the pre-step state. The controller moves focus, picks its status message and sets the `FeedbackPulse` from it. It is internal plumbing, not contract: 1.5's semantic events replace most of it, and 1.6 replaces the pulse with `Bumped`. |
+| Shell | `GameSession.Apply(Intent)` / `ApplyTraced` / `RunStep` | `Apply` is the one public mutation entry. It handles `Undo` in the shell, which owns the snapshots, so undo never reaches Step. It expands composites, runs one `Simulation.Step` per intent, writes back, pushes undo per route, and builds the log lines with the **same** formatting as the old lambdas. The `Execute*`, modal, menu, cursor, `Undo`, `Tick` and `WithElapsed` methods are now `internal` one-line wrappers that build an intent. `InternalsVisibleTo` is set for the two test projects only. `ApplyToolResult`, `ExecutePickupToToolbar`, `FireFailedPeek`, `FirePeekWhileCarrying` and `TryMoveCursorAt` are gone; their logic is in the dispatcher. |
+| Intent log | `GameSession.IntentLog : ImmutableList<(int Step, Intent)>` | An init-only property (the session's positional shape is unchanged). It is append-only and records each intent that changed the session, at `TickCount + 1`. **No-op intents are left out**: they change no L1 state and no shell output, so replay can't tell. This keeps `GameController.Tick()`'s `session != before` change check exact, and keeps idle realtime polling out of the log. There is no undo truncation yet (1.8). |
+| DSL | `Intent.Dsl` | The program runs **inside** Step. `Dsl`-stream draws are taken at the step and the counter is committed with the state (1.1's open item). A parse failure is `IntentRejected(ex.Message)`, logged as `FAILED: {expr} — {msg}` (unchanged text). Op errors still apply the state, and the log suffix rides in the trace, so the program runs once. |
+| AcquireRandom | `Intent.AcquireRandom(At)` | It is run at `At` via the swap (the controller always sends `B`). **Quirk kept:** the log line still previews the draw and diffs the *root* grid, so inside a nested bag it still says "added random item". The preview stays until logs come from events. |
+| Controller | `GameController` | `HandleKey`, `HandleGridClick`, `HandleBackClick`, `HandleDsl`, `SyncClock` (`SetElapsed` + k × `Tick`, TickLengthMs = 1000, P1-D4) and `Tick` only build intents, via `Send`. Focus cycling is the only key with no intent: focus stays controller-only (P1-D5). `DebugCommandHandler` (Godot, mock-godot, the TUI driver) goes through the controller, so the journey's `keys`, `click`, `back`, `tick` and `advanceTime` steps are intent streams on every driver. **No Godot file changed** (it calls only `GameController` and public session getters), so no Windows build check is needed for this slice. |
+
+**Acceptance:**
+1. Goldens identical; `make parity-full` is green.
+2. **Replay:** `Sim/IntentReplayTests` (a Theory over smoke and target-demo) drives each journey through `DebugCommandHandler`. It then replays the recorded intent log on an independently loaded profile and asserts the canonical VM after every journey step, including the initial one, plus a pairwise-identical replayed intent log.
+3. **Architecture:** `Sim/IntentArchitectureTests` has two parts. A text scan of `src/Pockets.App`, `src/Pockets.Godot` and `tools/` finds no `Execute*`, modal, menu, cursor or `WithElapsed` session calls. A reflection check finds no public `Execute*`, `Undo`, `Tick` or similar on `GameSession`, and requires a public `Apply(Intent)`.
+- `dotnet test`: Core 929 (922 + 7 new in `Sim/IntentStepTests`), App 53, spikes 109. All green.
+- Edited tests:
+  - The shape pin became `Intent_Phase1Slice3_DeclaresOneDataCasePerControllerPath`, and a no-closure/no-Guid pin was added.
+  - `SimulationStepTests`: the `Intent.Tool` closures became data intents, and the time flag moved from the intent to content.
+  - `SimRngDeterminismTests`: `AcquireRandom(LocationId.B)`, realtime content.
+  - `PeekTests` and `UiLedgerTests`: `FireFailedPeek()` and `ApplyToolResult(...)` became `Apply(new Intent.Peek(B))`.
+  - `StepOnlyPathJourneyTests` was **tightened**. ΔTickCount ≤ ΔStepCount, because non-timed intents step without a tick. A journey step with no Step result must leave the same `GameState` instance, modal state and clock, with no exemptions now. Every state-changing step must grow the intent log.
+  - No behaviour assertion changed.
+
+**Found while moving code, kept as is (behaviour-neutral, flagged for the PM):** a tool run at a non-B panel
+pushes the **swapped** frame (B = that panel's location) onto the undo stack. This is because `RunAt`
+wrapped the whole `Act`. Undoing such an action would restore a state whose B location is the panel's.
+Neither journey undoes, and no test covers it. The shell reproduces it exactly
+(`Simulation.SwapIn(Current, at)` as the snapshot). Fixing it is a one-line behaviour change and a
+decision for later.
+
+**For 1.4 (rules / TimeClass / IBagView / SetItem ban):**
+- The tick phase is unchanged and still reached from two places: `ApplyToolResult` (rogue) and `ApplyTick`.
+  Both call `AdvanceTime` → `TickFacilities` + `PlantLogic.TickPlants`, which is the seam for the rule
+  registry. The order is still `OrderedFacilities` order, then plants.
+- The ban scan should cover `Sim/**`. The new dispatcher has two loop-free single-cell `SetCell`s
+  (pickup-to-toolbar's source clear), and `RegisterKnownRecipes` already uses a builder. The recipe switch
+  writes through `ReplaceBagById`/`Store.Set`. These are player-tool single writes, not rule-phase loops.
+  Decide whether the scan exempts `Simulation.Intents.cs` or 1.4 routes the pickup through `IBagWriter`.
+- `SimContent` is now 4 fields (with `TickMode`). A `BagClock` per bag can sit beside it without touching intents.
+- `Route`/`StepTrace` is internal and small. Don't build on it; 1.5's events should replace it, after
+  which the shell's log lines (P1-D6) and the controller's focus can read events instead.
