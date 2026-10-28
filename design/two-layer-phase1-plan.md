@@ -80,7 +80,7 @@ Each slice is one worker session. It lands Core + TUI + `DebugCommandHandler` (G
 mock) where relevant, plus tests, and is gated as in principle 2. The order and
 dependencies are given in §Order below.
 
-### Slice 1.0 — Contract types *(the keystone, pure additions)*
+### Slice 1.0 — Contract types *(the keystone, pure additions)* ✓ landed (see §Addendum)
 - Add the new namespace `Pockets.Core.Sim`, containing:
   - `Intent` (sealed record hierarchy, empty except for `Intent.Tick`);
   - `SimEvent` (a sealed record hierarchy with `Step` and `Seq` on every event);
@@ -414,3 +414,67 @@ applied to contract rule 1 in [two-layer.md](two-layer.md).
   re-implemented under TDD in Core, in the spike's a1 style.
 - Every slice brief should quote its row from §Decisions, so the worker knows which
   recommendation it is building on.
+
+## Addendum — Slice 1.0 as built (2026-10-28)
+
+### Contract types (`src/Pockets.Core/Sim/`)
+
+| Type | Shape | Notes for later slices |
+|---|---|---|
+| `Intent` | abstract record, private ctor, sealed nested cases; only `Intent.Tick` | 1.3 adds one case per controller path, each with its target `LocationId` (P1-D5). |
+| `SimEvent` | abstract record, private ctor, `Step` + `Seq` on every case; `SimEvent.Order` compares `(Step, Seq)` only | Declared cases: `IntentApplied(intent)`, `IntentRejected(intent, reason)`, `TimeAdvanced`, `CraftCompleted(facilityBagId, recipeId)`, `UiTriggerFired(trigger)` (the coarse 1.2 set) and reserved `BeltAdvanced(ChainId, Dir, Count, HeadCell)` (P1-D3; `Dir` is `Models.Direction`, `HeadCell` a row-major cell index). 1.5 adds the semantic events. |
+| `StepResult<TState>` | `(State, ImmutableArray<SimEvent> Events)`, element-wise event equality, `Unchanged(s)` | Generic so 1.2 picks the concrete `SimState` (inventory below). |
+| `RuleKind` | `Field = 1, Transfer = 2` | No zero member. |
+| `TimeClass` | `ClosedForm = 1, EventSkippable, BoundedCatchUp, MustSimulate` | No zero member, so 1.4's reflection test can reject undeclared values. |
+| `IRule` | `Kind`, `Time`, `MaxDelta` (default 0), `EventKinds` (`ImmutableArray<Type>` of `SimEvent` cases) | `BoundedCatchUp` rules must override `MaxDelta > 0` (1.4 asserts it). |
+
+**`Seq` is step-global in Phase 1.** Contract rule 2 orders by `(Step, ScheduleOrder(bag), Seq)`.
+Phase 1 steps every bag in one canonical pass, so the step's emission order already encodes
+`ScheduleOrder`, and `Seq` is simply the event's index in the step's list. When per-bag scheduling
+arrives (Phase 4), either keep `Seq` global or add `BagId` to the key; nothing in 1.0 forecloses it.
+
+The hierarchies are closed by private constructors. The one non-private constructor is the
+compiler's protected record copy constructor (C# forbids making it private on a non-sealed
+record); it can only clone an existing case, and a test pins that every case is a sealed nested type.
+
+### SimState boundary inventory
+
+Every field of `GameSession` and `GameState` (plus the controller and frontend fields that hold
+state), classified per P1-D5 (ratified). **L1** = must be in `SimState` and change only through
+`Sim.Step`. **L1 content** = read-only inputs to `Step` that no step changes (definitions loaded at
+startup). **Shell** = `GameSession` bookkeeping around `Step`. **Ephemeral** = frontend or
+controller only; must never influence an outcome.
+
+| Owner | Field | Class | Reason |
+|---|---|---|---|
+| `GameState` | `Store` (all bags, grids, cells, stacks, facility state, nested bags) | **L1** | The world. VM-serialized. |
+| `GameState` | `Locations` (H, T, B, W, C: bag id, cursor, breadcrumbs) | **L1** | Cursor, hand, toolbar, open panels (W, C). VM-serialized; tools resolve against it. |
+| `GameState` | `ItemTypes` | L1 content | Static definitions; no step changes them. |
+| `GameState` | `Ui` (UiLedger) | **L1** | Changed by triggers in the transition hooks; VM-serialized. |
+| `GameState` | `Dialogue` (DialogueState) | **L1** | Dialogue cursor/queue changes outcomes and is in the VM (P1-D5). Note: undo carries it forward (monotonic); 1.8 must keep that. |
+| `GameState` | `ToolbarPickup` | L1 content | Profile flag set at init; read by tools. Never changed by a step. |
+| `GameState` | `KnownRecipes` | **L1** | Grows on pickup; decides the recipe menu; VM-serialized. |
+| `GameState` | `ZonesReached` | **L1** | Grows on entering wilderness; VM projects count + wedges. |
+| `GameSession` | `Current` | **L1** | Becomes the `GameState` part of `SimState`. |
+| `GameSession` | `TickCount` | **L1** | The step number; VM-serialized. Carried forward across undo. |
+| `GameSession` | `Elapsed` | **L1** | Clock readout; VM-serialized; monotonic across undo. |
+| `GameSession` | `SplitMode` (SplitModeState) | **L1** | Decides the split amount (P1-D5). Not in the VM. Today it lives on the session, not in `GameState`; 1.2/1.3 move it into `SimState`. |
+| `GameSession` | `RecipeMenu` (RecipeMenuState) | **L1** | Decides which recipe Enter selects; VM-serialized (P1-D5). Same move as `SplitMode`. |
+| `GameSession` | `Recipes`, `FacilityRecipeMap`, `Book` (DialogueBook) | L1 content | Definitions loaded from `/data`; `Step` reads them. |
+| `GameSession` | `TickMode` | L1 content | Fixed per session; decides `advancesTime` (P1-D2). |
+| `GameSession` | `UndoStack` | Shell | Snapshot history; 1.8 retention baseline. |
+| `GameSession` | `ActionLog` | Shell | Strings produced as today (P1-D6); VM-serialized, but written only by the shell. |
+| `GameSession` | `MaxUndoDepth` | Shell | Config for the undo stack. |
+| `GameSession` | intent log, event log *(to come, 1.3 / 1.8)* | Shell | Append-only; mirror the current timeline. |
+| `GameController` | `_session` | Shell holder | The controller owns the session reference. |
+| `GameController` | `_focus` | Ephemeral | Input routing only. Every intent carries its target location (P1-D5), so replay never reads focus. |
+| `GameController` | `_feedbackPulse` | Ephemeral | Consume-on-read cue; becomes `SimEvent.Bumped` in 1.5/1.6 and is deleted. |
+| `GameController` | `_clock` (IGameClock) | Ephemeral | Wall/virtual time source; the scheduler turns it into `Intent.Tick`s (P1-D4). Not an input to `Step`. |
+| `GameView` / `GameSceneController` | `_rng` | **Removed in 1.1** | Frontends stop owning randomness; draws come from `SimRng` in `SimState`. |
+| `GameSceneController` / `GridDrawControl` | widget refs, `_hoveredCell`, `_cursorPos` mirror | Ephemeral | Presentation only. |
+
+**Consequence for 1.2:** `SimState` ≈ `GameState` + `TickCount` + `Elapsed` + `SplitMode` +
+`RecipeMenu` (+ `SimRng` from 1.1), with the L1-content fields reachable from it but never
+written by `Step`. Moving `SplitMode`/`RecipeMenu` must change no VM field: the VM serializes
+`recipeMenu` from the session today and does **not** serialize `SplitMode` at all, so the move is
+golden-neutral only if the serializer keeps exactly that projection.
