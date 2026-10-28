@@ -37,6 +37,12 @@ public partial class DebugWebSocketServer : Node
     /// </summary>
     public Core.Models.GameController? Controller { get; set; }
 
+    /// <summary>
+    /// Slice 2.5: called on the main thread for every commit a socket command makes (its result and clock delta), so
+    /// the scene commits it to its own drawing timeline. Set by GameSceneController.
+    /// </summary>
+    public System.Action<ControllerResult, int>? OnCommit { get; set; }
+
     public override void _Ready()
     {
         var err = _tcpServer.Listen((ushort)Port);
@@ -106,7 +112,7 @@ public partial class DebugWebSocketServer : Node
             if (cmd is not null && cmd["action"]?.GetValue<string>() == "screenshot")
                 return HandleScreenshot(cmd);
 
-            var response = Realization.PoseDebugCommandHandler.Handle(Controller, json, out var mutated);
+            var response = Realization.PoseDebugCommandHandler.Handle(Controller, json, out var mutated, OnCommit);
             if (mutated)
                 CallDeferred(nameof(DeferredRefreshUI));
             return response;

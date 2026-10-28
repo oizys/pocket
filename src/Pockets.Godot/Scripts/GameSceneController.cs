@@ -4,6 +4,7 @@ using Pockets.Core;
 using Pockets.Core.Data;
 using Pockets.Core.Models;
 using Pockets.Core.Rendering;
+using Pockets.Realization;
 
 namespace Pockets.Godot.Scripts;
 
@@ -11,10 +12,25 @@ namespace Pockets.Godot.Scripts;
 /// Main Godot scene controller. Builds the full UI layout in code (no .tscn),
 /// maps Godot input events to GameKey/ClickType, and delegates to Core.GameController.
 /// Root is a Control so it participates in the Godot layout system and fills the viewport.
+///
+/// Slice 2.5 (first animated consumer): the scene owns its own <see cref="PosePlayer"/> and commits every
+/// ControllerResult's events to it — window input (keys, clicks, back) and socket commands (via the debug server's
+/// commit hook, which carries tick/advanceTime clock commits with their deterministic clock delta). It never draws from
+/// the debug handler's pose stream. <see cref="_Process"/> accumulates integer ms for sampling only. D7 snap and the A3
+/// undo reset (Rewound) both happen inside the commit, so input handling does nothing extra.
+///
+/// Clock: this scene injects no SystemGameClock (it never has), so the controller keeps the VirtualGameClock and game
+/// time moves only through socket tick/advanceTime. No clock commit can happen outside the socket, which is why
+/// parity-godot's "tui vs live-godot poses" cannot diverge at clock commits. If a live clock is ever added, route its
+/// syncs through the debug handler (so the handler's stream sees them) or keep it paused while the debug server is driven.
 /// </summary>
 public partial class GameSceneController : Control
 {
     private Core.Models.GameController _controller = null!;
+
+    // Slice 2.5: this scene's own drawing timeline and its integer frame clock (sampling only, never the L1 clock).
+    private PosePlayer _poses = null!;
+    private readonly FrameClock _frameClock = new();
 
     // UI references
     private GridDrawControl _gridPanel = null!;
@@ -38,6 +54,7 @@ public partial class GameSceneController : Control
     public override void _Ready()
     {
         InitializeGame();
+        _poses = new PosePlayer(_controller.Session.Current, FineView.Of(_controller.Session.Fine));
         BuildUI();
         RefreshUI();
         StartDebugServer();
@@ -47,6 +64,7 @@ public partial class GameSceneController : Control
     {
         var server = new DebugWebSocketServer();
         server.Controller = _controller;
+        server.OnCommit = CommitPoses;
         AddChild(server);
     }
 
@@ -54,6 +72,34 @@ public partial class GameSceneController : Control
     /// Called by DebugWebSocketServer (via CallDeferred) to refresh UI after a remote command.
     /// </summary>
     public void RequestRefreshUI() => RefreshUI();
+
+    /// <summary>
+    /// Commits one ControllerResult's events to the drawing timeline at clock delta <paramref name="atMs"/> (0 for
+    /// input; the debug handler's AtMs for socket commands), with the session's fine view as the TUI driver does, then
+    /// refreshes the UI so grid and poses change together.
+    /// </summary>
+    public void CommitPoses(ControllerResult result, int atMs)
+    {
+        var session = _controller.Session;
+        _poses.Commit(result.Events, session.Current, atMs, FineView.Of(session.Fine));
+        RefreshUI();
+    }
+
+    /// <summary>Advances the drawing timeline by this frame's integer ms and redraws while it is animating.</summary>
+    public override void _Process(double delta)
+    {
+        if (_poses.Advance(_frameClock.Tick((long)Time.GetTicksMsec())))
+            PushPoses();
+    }
+
+    /// <summary>Hands the current sample to the grid (active bag, cursor of B) and hand panels.</summary>
+    private void PushPoses()
+    {
+        var state = _controller.Session.Current;
+        var drawn = _poses.Poses;
+        _gridPanel.SetPoses(drawn, state.ActiveBag.Id, LocationId.B);
+        _handPanel.SetPoses(drawn, state.HandBag.Id, null);
+    }
 
     private void InitializeGame()
     {
@@ -320,9 +366,9 @@ public partial class GameSceneController : Control
         if (gameKey is null) return;
 
         var result = _controller.HandleKey(gameKey.Value);
+        CommitPoses(result, 0); // every mapped key is input: it commits (and so snaps, D7) even when unhandled
         if (result.Handled)
         {
-            RefreshUI();
             // Thin equivalent of the TUI shake/flash, from the key's Bumped event (Slice 1.6): on a refused
             // enter-only peek, surface the cue on the status line for this frame (the next RefreshUI
             // overwrites it). The fire-once FirstFailedPeek beat renders in the shared dialogue box; this
@@ -446,20 +492,20 @@ public partial class GameSceneController : Control
         // Action log (last 8 entries)
         var logEntries = _controller.Session.ActionLog.TakeLast(8);
         _statusLabel.Text = string.Join("\n", logEntries);
+
+        PushPoses();
     }
 
     private void OnBackButtonPressed()
     {
-        _controller.HandleBackClick();
-        RefreshUI();
+        CommitPoses(_controller.HandleBackClick(), 0);
     }
 
     private void OnGridCellClicked(int index, int button)
     {
         var pos = Pockets.Core.Models.Position.FromIndex(index, _controller.Session.Current.ActiveBag.Grid.Columns);
         var clickType = button == (int)MouseButton.Left ? ClickType.Primary : ClickType.Secondary;
-        _controller.HandleGridClick(pos, clickType);
-        RefreshUI();
+        CommitPoses(_controller.HandleGridClick(pos, clickType), 0);
     }
 
     private void OnGridCellHovered(int index)

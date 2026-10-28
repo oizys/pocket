@@ -995,3 +995,134 @@ production code.
   snapshots, so undo in a free bag jumps the body back to the pre-snapshot sub-position.
 - `FineText` exists for the 2.8 fuzz and for `--fuzz-fine` diagnostics. The runner does not yet compare fine state at
   replay boundaries; the pose replay covers it indirectly.
+
+## Addendum — Slice 2.5 as built (2026-10-28)
+
+Godot is the first animated consumer. **No golden was added or changed:** the VM checkpoint stream, `target-demo.events`,
+the 11 buffer goldens and `target-demo.poses` are byte-identical (`git status` showed no golden touched). `dotnet test`
+is green (Core 1085, App 54, Realization 136, up from 114). `make parity-full` is green. `dotnet build
+src/Pockets.Godot/Pockets.Godot.csproj --no-incremental` gives 0 warnings and 0 errors in WSL. The tests were written
+first and seen failing (compile: `DrawnPose`, `PosePlayer`, `FrameClock` and `PoseProjection` did not exist) before any
+production code. Godot itself was not run: it can't run in WSL.
+
+### What goes in plain C# (and so is tested in WSL)
+
+Everything except the Godot calls lives in `Pockets.Realization`. It is integer-only, so `Source_HasNoFloatingPoint`
+covers it too:
+
+- **`DrawnPose(Pose Pose, EntityKey Rest)`** and **`Timeline.SampleDrawn(ms)`** (an edit to `Timeline.cs`).
+  - `Sample(ms)` is now `SampleDrawn(ms).Select(d => d.Pose)`. Its poses and their order are unchanged, and the pose
+    golden is the tripwire for that.
+  - The rest key exists because an in-flight stack pose carries its *departure* key (2.2). A frontend has to find the
+    stack's content in the new grid at the cell it *lands* in, which is the rest key (`r.Entity` for a motion track,
+    `o.Entity` for an overlay).
+- **`PosePlayer`** is the frame-loop side of a timeline.
+  - `Commit(events, next, atMs, fine)` builds the scene exactly as `PoseStream` does: `Shown`, the fine view, and the
+    timeline's facings. It then commits and resets `ElapsedMs` to 0. The D7 snap and the A3 `Rewound` reset happen inside
+    `Timeline.Commit`, so a commit is all a caller has to do.
+  - `Advance(deltaMs)` accumulates **integer** ms and clamps at `SpanMs`. It returns whether the drawn frame may have
+    changed, which is false at rest and for a delta ≤ 0, so the scene redraws only while something is animating.
+  - `Poses` is `SampleDrawn(ElapsedMs)`.
+- **`FrameClock.Tick(nowMs)`** turns Godot's `Time.GetTicksMsec()` (an integer) into per-frame deltas.
+  - The first reading gives 0, a reading that goes backwards gives 0, and a delta is clamped to `int.MaxValue`.
+  - No `double delta` is used anywhere. The frame clock feeds sampling only and never the L1 clock.
+- **`PoseProjection`** is the 2D projection of A2, in integer pixels.
+  - `TileOrigin(pose, cellW, cellH) = (col·w + SubX·w/16, row·h + SubY·h/16 − Height·h/16)`.
+  - `ForPanel(poses, bag, columns)` keeps one bag's poses, stationary ones first and moving ones on top.
+  - `ContentCell(drawn)` is the rest key's cell index.
+  - `CursorOf(poses, loc, bag)` gives the body pose in a world bag, else a live `Cursor(loc)` glide, else null (meaning
+    draw the grid cursor).
+  - `Rest(grid, bag)` gives the pre-commit fallback.
+- **`PoseDebugCommandHandler.Handle(controller, json, out mutated, Action<ControllerResult, int>? onCommit)`.**
+  - The hook fires once per commit the handler makes, after its own stream commits, with the command's result and
+    `AtMs(cmd)`. It never fires for `state`, `fine`, `poses` or an error.
+  - The response is byte-identical to the hookless overload's, and the old 3-argument `Handle` delegates to it.
+
+Tests: `PosePlayerTests` (14) and `PoseProjectionTests` (8).
+- They cover frame-clock deltas and clamps, ms accumulation sampling the timeline, the clamp at span, D7 snap mid-walk,
+  the A3 `Rewound` reset, and `PosePlayer` matching `PoseStream`'s timeline on a demo run.
+- `SampleDrawn` is checked to equal `Sample` at every ms of a span and on a demo run, and the rest key is checked to be
+  the landing cell for an in-flight stack.
+- The hook is checked to fire only on commits, with the right `atMs`, and to leave the response unchanged.
+- The pixel mapping is checked with both signs and with height, and so are panel filtering and order, content cells,
+  cursor follow and the rest fallback.
+
+### Godot files changed (exactly these three)
+
+- **`src/Pockets.Godot/Scripts/GameSceneController.cs`**
+  - Holds **its own** `PosePlayer _poses`, created from the initial state with `FineView.Of(session.Fine)`, and a
+    `FrameClock`.
+  - `CommitPoses(result, atMs)` commits `result.Events` with `FineView.Of(session.Fine)` and then calls `RefreshUI`, so
+    the grid and the poses change together.
+    - It is called for every mapped key (atMs 0), and it commits even when the key is unhandled, because input snaps
+      (D7).
+    - It is also called for grid clicks and the back button (atMs 0).
+    - For socket commands it is called through the debug server's hook, with the handler's `AtMs`.
+  - `_Process` runs `_poses.Advance(_frameClock.Tick(Time.GetTicksMsec()))` and pushes poses only while animating.
+  - `PushPoses` (also run at the end of `RefreshUI`) gives the grid panel the active bag's poses with cursor location B,
+    and gives the hand panel the hand bag's poses with no cursor location.
+  - `_UnhandledInput` does nothing extra for the snap. The Bumped status-line cues are unchanged.
+- **`src/Pockets.Godot/Scripts/GridDrawControl.cs`**
+  - Gains `SetPoses(poses, bag, cursorLoc)`. `_Draw` is a pure function of (grid, poses):
+    - each cell draws an empty background, its border, its frame marker and the hover;
+    - each stack pose draws a category-coloured tile with its name, count and pip, read from the grid at
+      `ContentCell` and placed at `TileOrigin`;
+    - the cursor highlight is drawn last, at `CursorOf`'s pose or else at the grid cursor.
+  - Before the first `SetPoses` it draws `PoseProjection.Rest(grid)`. At rest this looks the same as before, apart from
+    one thing: the 3 px cursor border is now always grey instead of taking the frame colour of a framed cell.
+- **`src/Pockets.Godot/Scripts/DebugWebSocketServer.cs`**
+  - Gains `OnCommit` (an `Action<ControllerResult, int>`, set by the scene) and passes it to
+    `PoseDebugCommandHandler.Handle`.
+  - The local screenshot response already carried `"poses": []` from 2.4. It is unchanged, and so is the deferred
+    refresh.
+- `Pockets.Godot.csproj` was not changed. It has referenced Realization since 2.4.
+
+### The clock decision (from the 2.4 handoff)
+
+**Neither option was needed, because the scene has no clock of its own to route.** `GameSceneController` has never
+injected a `SystemGameClock` (only the TUI's live `GameView` does), so the Godot controller keeps the `VirtualGameClock`.
+Game time moves only through socket `tick`/`advanceTime`. Every clock commit therefore passes through
+`PoseDebugCommandHandler`, so the handler's stream (what `parity-godot` diffs) sees it, and the hook gives the scene's
+own player the same commit with the same deterministic `atMs`.
+- `tui vs live-godot poses` cannot diverge at clock commits, as long as no window input is sent ("start Godot fresh, send
+  no input" still applies).
+- This is the "paused under the debug server" option, made permanent by not adding a live clock. Adding one would be a
+  realtime-mode behaviour change for Godot that this slice does not need.
+- The rule, written in the controller's doc comment: if a live clock is ever added, route its syncs through the debug
+  handler or keep it paused while the server is driven.
+
+### Windows check for Aaron (after 2.7; one pass covers 2.5 + 2.7)
+
+1. **Build:** pull `main`, open `src/Pockets.Godot/project.godot` in Godot 4.6.1 (.NET), and Build (or run
+   `dotnet build src/Pockets.Godot/Pockets.Godot.csproj`). Expect 0 errors.
+2. **Gate:** start the Godot scene fresh with no input, then run `make parity-godot`. All five compares should be OK, in
+   particular `tui vs live-godot poses` and `golden: pose stream (live-godot)`.
+3. **Eyeball (play by hand afterwards):**
+   - the body **walks** between cells in Quiet 1 instead of jumping, and the yellow highlight rides with it;
+   - pressing into a tree gives a short **lunge** and back;
+   - in an inventory bag the highlight **glides** between cells (60 ms);
+   - Sort (4) **slides** the stacks to their new cells;
+   - a grab and drop inside one bag slides the stack;
+   - Acquire Random (5) or a harvest makes the stack **pop** (lift and settle);
+   - holding or mashing the arrow keys gives no lag and no queued animation, because each press snaps (D7);
+   - Ctrl-Z mid-walk leaves the body at its cell centre (A3).
+   - Also check that the rest frame looks as it did before 2.5 (stack tiles fill their cells).
+
+### Notes for 2.7 (D2-B)
+
+- **Steering input goes into `GameSceneController`, which is where 2.5's commit path lives.**
+  - Commit the result of every `Steer`/`FineTick` through `CommitPoses`. A `FineTick` with no derived `Move` emits no
+    event and leaves the scene identical except for the body's fine `Px`/`Py`. That still has to be committed, so that
+    `FineView.Of(session.Fine)` moves the body.
+  - Check how `Timeline.Commit` classifies such an empty commit: `Choreography.IsClock` of an empty list makes it a
+    player commit, so it snaps. That is fine for a moving body but would cut short a concurrent harvest pop. Decide
+    whether fine ticks should be a non-snapping kind of commit.
+- **Frame-driven `FineTick` in Godot is a new source of commits that happens outside the socket**, unlike today's clock.
+  Under `parity-godot` the free-move journey drives fine ticks over the socket. Do not also drive them from `_Process`
+  while the debug server is in use, or the handler's stream will miss them. This is the same rule as the clock rule
+  above.
+- **`PosePlayer.Advance` stops at `SpanMs`.** A D2-B glide has no tracks: the motion is the fine offset itself, re-read
+  on every commit. So the per-frame smoothness comes from the `FineTick` rate, not from `Advance`. If ticks are slower
+  than frames, 2.7 may want a short interpolation track for fine moves, which is a policy and golden question.
+- `GridDrawControl` already draws a body's fine `SubX`/`SubY` through `TileOrigin`, because rest poses carry
+  `BodyOffset`. No Godot draw change should be needed for D2-B.

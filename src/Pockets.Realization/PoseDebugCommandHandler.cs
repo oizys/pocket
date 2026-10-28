@@ -19,7 +19,17 @@ public static class PoseDebugCommandHandler
     /// Handles one JSON command: a <c>poses</c> query is answered here; everything else goes through the Core handler
     /// with a callback that appends the poses. <paramref name="mutated"/> is as the Core handler's.
     /// </summary>
-    public static string Handle(GameController controller, string json, out bool mutated)
+    public static string Handle(GameController controller, string json, out bool mutated) =>
+        Handle(controller, json, out mutated, null);
+
+    /// <summary>
+    /// As <see cref="Handle(GameController, string, out bool)"/>, and <paramref name="onCommit"/> sees every commit
+    /// this handler makes: the command's result and its clock delta (<see cref="AtMs"/>), after the stream commits. It
+    /// never fires for a query (<c>state</c>, <c>fine</c>, <c>poses</c>) or an error. Slice 2.5: Godot's scene commits
+    /// socket commands to its own drawing <see cref="PosePlayer"/> through it. The response is unchanged.
+    /// </summary>
+    public static string Handle(GameController controller, string json, out bool mutated,
+        Action<ControllerResult, int>? onCommit)
     {
         mutated = false;
         JsonNode? cmd;
@@ -40,9 +50,16 @@ public static class PoseDebugCommandHandler
             }.ToJsonString();
 
         return DebugCommandHandler.Handle(controller, json, out mutated, (c, result, response) =>
-            response["poses"] = c["action"]?.GetValue<string>() is "state" or "fine"
-                ? new JsonArray()
-                : Strings(stream.Commit(result.Events, controller.Session.Current, AtMs(c), FineView.Of(controller.Session.Fine))));
+        {
+            if (c["action"]?.GetValue<string>() is "state" or "fine")
+            {
+                response["poses"] = new JsonArray();
+                return;
+            }
+            var atMs = AtMs(c);
+            response["poses"] = Strings(stream.Commit(result.Events, controller.Session.Current, atMs, FineView.Of(controller.Session.Fine)));
+            onCommit?.Invoke(result, atMs);
+        });
     }
 
     /// <summary>Convenience overload without the <c>mutated</c> flag.</summary>

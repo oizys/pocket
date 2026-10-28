@@ -1,12 +1,17 @@
+using System.Collections.Immutable;
 using Godot;
 using Pockets.Core.Models;
 using Pockets.Core.Rendering;
+using Pockets.Realization;
 
 namespace Pockets.Godot.Scripts;
 
 /// <summary>
 /// Custom-drawn Control for the inventory grid. Renders all cells in a single _Draw() call
 /// with colored backgrounds, borders, cursor highlight, and abbreviated item text.
+/// Slice 2.5: the drawing is a pure function of (grid, poses). Cells draw their frame and border; each stack draws as
+/// a tile at its pose (PoseProjection: cell + Sub/16 · cellSize, Height as −y), its content read from the grid at the
+/// pose's rest cell. The cursor highlight follows the body pose in world bags and a live cursor glide in inventory bags.
 /// </summary>
 public partial class GridDrawControl : Control
 {
@@ -14,6 +19,9 @@ public partial class GridDrawControl : Control
     private Position _cursorPos = new(0, 0);
     private int _hoveredCell = -1;
     private System.Func<int, FullnessPip?>? _pipResolver;
+    private ImmutableArray<DrawnPose>? _poses;   // Slice 2.5: null until the first SetPoses → rest poses of the grid
+    private System.Guid _bag;
+    private LocationId? _cursorLoc;
 
     public float CellWidth { get; set; } = 80f;
     public float CellHeight { get; set; } = 56f;
@@ -31,6 +39,19 @@ public partial class GridDrawControl : Control
         _grid = grid;
         _cursorPos = cursorPos;
         CustomMinimumSize = new Vector2(Columns * CellWidth, Rows * CellHeight);
+        QueueRedraw();
+    }
+
+    /// <summary>
+    /// Sets the sampled poses (Slice 2.5) and the bag this panel shows; only that bag's poses are drawn.
+    /// <paramref name="cursorLoc"/> is the location whose body or cursor glide moves the highlight (null: the grid
+    /// cursor cell only, e.g. the hand).
+    /// </summary>
+    public void SetPoses(ImmutableArray<DrawnPose> poses, System.Guid bag, LocationId? cursorLoc)
+    {
+        _poses = poses;
+        _bag = bag;
+        _cursorLoc = cursorLoc;
         QueueRedraw();
     }
 
@@ -56,59 +77,16 @@ public partial class GridDrawControl : Control
         float cw = CellWidth;
         float ch = CellHeight;
 
+        // Cells: background, border, frame marker, hover. The stacks are drawn below, at their poses.
         for (int i = 0; i < _grid.Cells.Length; i++)
         {
             int col = i % Columns;
             int row = i / Columns;
             var rect = new Rect2(col * cw, row * ch, cw, ch);
             var cell = _grid.Cells[i];
-            bool isCursor = row == _cursorPos.Row && col == _cursorPos.Col;
 
-            // Background
-            var bgColor = GetCategoryBgColor(cell);
-            DrawRect(rect, bgColor);
-
-            // Border
-            var borderColor = GetBorderColor(cell);
-            DrawRect(rect, borderColor, false, isCursor ? 3.0f : 1.0f);
-
-            // Cursor highlight (bright outline)
-            if (isCursor)
-            {
-                var inner = new Rect2(rect.Position + new Vector2(2, 2), rect.Size - new Vector2(4, 4));
-                DrawRect(inner, new Color(1f, 1f, 0f, 0.8f), false, 2.0f);
-            }
-
-            // Hover highlight
-            if (i == _hoveredCell && !isCursor)
-            {
-                DrawRect(rect, new Color(1f, 1f, 1f, 0.1f));
-            }
-
-            // Cell text
-            if (!cell.IsEmpty)
-            {
-                var stack = cell.Stack!;
-                var abbr = RenderHelpers.AbbreviateName(stack.ItemType.Name);
-                var countText = stack.ItemType.IsStackable ? $"x{stack.Count}" : "";
-
-                // Name line (centered)
-                var nameSize = font.GetStringSize(abbr, HorizontalAlignment.Left, -1, fontSize);
-                var nameX = rect.Position.X + (cw - nameSize.X) / 2f;
-                var nameY = rect.Position.Y + fontSize + 6f;
-                DrawString(font, new Vector2(nameX, nameY), abbr,
-                    HorizontalAlignment.Left, -1, fontSize, Colors.White);
-
-                // Count line (centered, below name)
-                if (countText.Length > 0)
-                {
-                    var countSize = font.GetStringSize(countText, HorizontalAlignment.Left, -1, fontSize);
-                    var countX = rect.Position.X + (cw - countSize.X) / 2f;
-                    var countY = nameY + fontSize + 4f;
-                    DrawString(font, new Vector2(countX, countY), countText,
-                        HorizontalAlignment.Left, -1, fontSize, new Color(0.8f, 0.8f, 0.8f));
-                }
-            }
+            DrawRect(rect, EmptyBgColor);
+            DrawRect(rect, GetBorderColor(cell), false, 1.0f);
 
             // Frame indicator (input/output slot marker)
             if (cell.HasFrame)
@@ -124,15 +102,63 @@ public partial class GridDrawControl : Control
                 DrawRect(new Rect2(markerPos, new Vector2(markerSize, markerSize)), frameColor);
             }
 
+            if (i == _hoveredCell)
+                DrawRect(rect, new Color(1f, 1f, 1f, 0.1f));
+        }
+
+        // Stacks, one tile per pose in this bag: stationary first, moving on top (PoseProjection.ForPanel).
+        var poses = _poses ?? PoseProjection.Rest(_grid, _bag);
+        var drawn = PoseProjection.ForPanel(poses, _bag, Columns);
+        foreach (var d in drawn)
+        {
+            if (PoseProjection.ContentCell(d) is not { } i || i < 0 || i >= _grid.Cells.Length) continue;
+            var cell = _grid.Cells[i];
+            if (cell.IsEmpty) continue;
+
+            var (x, y) = PoseProjection.TileOrigin(d.Pose, (int)cw, (int)ch);
+            var rect = new Rect2(x + 1, y + 1, cw - 2, ch - 2);
+            DrawRect(rect, GetCategoryBgColor(cell));
+
+            var stack = cell.Stack!;
+            var abbr = RenderHelpers.AbbreviateName(stack.ItemType.Name);
+            var countText = stack.ItemType.IsStackable ? $"x{stack.Count}" : "";
+
+            // Name line (centered)
+            var nameSize = font.GetStringSize(abbr, HorizontalAlignment.Left, -1, fontSize);
+            var nameX = x + (cw - nameSize.X) / 2f;
+            var nameY = y + fontSize + 6f;
+            DrawString(font, new Vector2(nameX, nameY), abbr,
+                HorizontalAlignment.Left, -1, fontSize, Colors.White);
+
+            // Count line (centered, below name)
+            if (countText.Length > 0)
+            {
+                var countSize = font.GetStringSize(countText, HorizontalAlignment.Left, -1, fontSize);
+                var countX = x + (cw - countSize.X) / 2f;
+                var countY = nameY + fontSize + 4f;
+                DrawString(font, new Vector2(countX, countY), countText,
+                    HorizontalAlignment.Left, -1, fontSize, new Color(0.8f, 0.8f, 0.8f));
+            }
+
             // Fullness pip (Slice 5): drawn top-right on every bag cell once the eye core is slotted.
             // Empty ○ / partial ◐ / full ● — the same glyphs the TUI paints, from the same Core state.
             if (_pipResolver?.Invoke(i) is { } pip)
             {
                 var pipText = Fullness.Glyph(pip).ToString();
-                var pipPos = new Vector2(rect.Position.X + cw - 14f, rect.Position.Y + fontSize + 2f);
+                var pipPos = new Vector2(x + cw - 14f, y + fontSize + 2f);
                 DrawString(font, pipPos, pipText, HorizontalAlignment.Left, -1, fontSize, Colors.White);
             }
         }
+
+        // Cursor highlight: the body pose (world bag) or a live glide (inventory bag), else the grid cursor cell.
+        var cursorPose = _cursorLoc is { } loc ? PoseProjection.CursorOf(poses, loc, _bag) : null;
+        var (cx, cy) = cursorPose is { } cp
+            ? PoseProjection.TileOrigin(cp, (int)cw, (int)ch)
+            : ((int)(_cursorPos.Col * cw), (int)(_cursorPos.Row * ch));
+        var cursorRect = new Rect2(cx, cy, cw, ch);
+        DrawRect(cursorRect, new Color(0.4f, 0.4f, 0.4f), false, 3.0f);
+        var inner = new Rect2(cursorRect.Position + new Vector2(2, 2), cursorRect.Size - new Vector2(4, 4));
+        DrawRect(inner, new Color(1f, 1f, 0f, 0.8f), false, 2.0f);
     }
 
     public override void _GuiInput(InputEvent @event)
@@ -166,10 +192,12 @@ public partial class GridDrawControl : Control
         return row * Columns + col;
     }
 
+    private static readonly Color EmptyBgColor = new(0.12f, 0.12f, 0.15f);
+
     private static Color GetCategoryBgColor(Cell cell)
     {
         if (cell.IsEmpty)
-            return new Color(0.12f, 0.12f, 0.15f);
+            return EmptyBgColor;
 
         return cell.Stack!.ItemType.Category switch
         {

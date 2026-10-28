@@ -265,7 +265,14 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
     // ==================== Sample ====================
 
     /// <summary>The poses drawn <paramref name="ms"/> after the commit.</summary>
-    public ImmutableArray<Pose> Sample(int ms)
+    public ImmutableArray<Pose> Sample(int ms) => SampleDrawn(ms).Select(d => d.Pose).ToImmutableArray();
+
+    /// <summary>
+    /// <see cref="Sample"/> with each pose's rest key (Slice 2.5): the scene entity a motion track lands on, or an
+    /// overlay's target entity. A frontend finds what to draw there (a stack's content) by the rest key, since an
+    /// in-flight pose still carries its departure key.
+    /// </summary>
+    public ImmutableArray<DrawnPose> SampleDrawn(int ms)
     {
         var live = Tracks.Where(t => t.Channel != Channel.Fade).ToList();
         Track? Active(EntityKey rest, Channel ch, bool overlay) => Pick(live, rest, ch, overlay, ms);
@@ -287,9 +294,10 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
                     Facing = m.To.Facing ?? p.Facing };
             }
             if (Active(r.Entity, Channel.Height, false) is { } h) p = p with { Height = At(h, ms).Height };
-            return new[] { p }.Concat(overlays.Where(o => o.Entity == r.Entity).Select(o => Extra(o.Track!, ms)));
+            return new[] { new DrawnPose(p, r.Entity) }
+                .Concat(overlays.Where(o => o.Entity == r.Entity).Select(o => new DrawnPose(Extra(o.Track!, ms), o.Entity)));
         });
-        var extra = overlays.Where(o => !restKeys.Contains(o.Entity)).Select(o => Extra(o.Track!, ms));
+        var extra = overlays.Where(o => !restKeys.Contains(o.Entity)).Select(o => new DrawnPose(Extra(o.Track!, ms), o.Entity));
         return main.Concat(extra).ToImmutableArray();
     }
 
