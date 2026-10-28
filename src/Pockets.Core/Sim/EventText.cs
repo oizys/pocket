@@ -18,7 +18,16 @@ namespace Pockets.Core.Sim;
 /// </summary>
 public sealed class EventText
 {
-    private readonly Dictionary<Guid, int> _bags = new();
+    private readonly BagNames _names;
+
+    /// <summary>A text formatter with its own fresh bag naming, starting at <c>bag#1</c>.</summary>
+    public EventText() : this(new BagNames()) { }
+
+    /// <summary>A text formatter that names bags through <paramref name="names"/>, which other formatters may share.</summary>
+    public EventText(BagNames names) => _names = names;
+
+    /// <summary>The bag naming this formatter uses (share it so other texts name a bag the same way).</summary>
+    public BagNames Names => _names;
 
     /// <summary>The canonical lines of <paramref name="events"/>, naming bags from <c>bag#1</c> in a fresh stream.</summary>
     public static ImmutableArray<string> Lines(IEnumerable<SimEvent> events)
@@ -40,12 +49,7 @@ public sealed class EventText
     }
 
     /// <summary>A bag's stream name, assigning the next number on first sight.</summary>
-    private string Bag(Guid id)
-    {
-        if (!_bags.TryGetValue(id, out var n))
-            _bags[id] = n = _bags.Count + 1;
-        return "bag#" + n.ToString(CultureInfo.InvariantCulture);
-    }
+    private string Bag(Guid id) => _names.Name(id);
 
     /// <summary>One payload value in its canonical form (see the class summary).</summary>
     private string Format(object? value) => value switch

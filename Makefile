@@ -41,7 +41,7 @@ SHOTS   := artifacts/godot-screenshots
 build:
 	dotnet build Pockets.sln
 
-## Run the shipping test suites (Core + App).
+## Run the shipping test suites (Core + App + Realization).
 test:
 	dotnet test Pockets.sln
 

@@ -14,8 +14,8 @@ grounded in `main` as of that commit:
 - `ControllerResult.Events` read at n = 1 by the TUI, Godot and mock-godot;
 - the journey runner with `--events-out` and `--replay-check`.)*
 
-**PLAN, awaiting ratification.** Decisions are numbered **P2-D1 … P2-D14** at the end. No slice starts
-until Aaron ratifies them.
+**PLAN.** Decisions are numbered **P2-D1 … P2-D14** at the end. **Ratified 2026-10-28: Aaron accepted
+all fourteen as recommended** ("Go with recs").
 
 ## Goal
 
@@ -444,22 +444,24 @@ Godot runs only on Aaron's box. Everything before 2.5 needs nothing there.
 
 ## Decisions for Aaron
 
-| # | Decision | Options | Recommendation |
-|---|---|---|---|
-| **P2-D1** | Number type of Realization's sampling | (a) floats (simplest easing; non-goldenable, cross-machine drift in theory); (b) **integer: ms times, a fixed-point easing table, poses in 1/16ths** | **(b).** It makes the pose stream a golden that mock-godot can produce without Godot (principle 5), at the cost of 1/16-cell quantization, which frontends may smooth with floats on their side (L2b). A text-scan test bans `float`/`double` in `Pockets.Realization`. |
-| **P2-D2** | Entity identity in `Pose` while ids are GUIDs and stacks have none (G7) | (a) pull G7 (deterministic entity and bag ids) into Phase 2; (b) **realization-local `EntityKey`: `Body(loc)` or `Stack(cell)`; a stack in flight keeps its departure key until its track ends** | **(b).** G7 touches every `new Bag` and is a Phase 3 item for MP and saves. Keys are local to Realization and never enter L1. |
-| **P2-D3** | Which events animate in v0 | (a) everything with a cell; (b) **body walk and bump, failed-peek shake, same-bag stack moves, sort permutation, harvest/acquire pop (height), `Rewound` reset; cross-bag moves snap with a fade hint; the rest re-render at n = 1** | **(b).** Cross-bag flights (grid → hand) have no engine-neutral path between two bags' coordinate frames. A frontend may fade. |
-| **P2-D4** | Who consumes Realization this phase | (a) all three animate; (b) **TUI stays n = 1 (its frame is the `u = 1` sample, render unchanged); Godot is the first animated consumer; mock-godot and the runner sample poses through `DebugCommandHandler`'s `poses`** | **(b).** TUI sub-cell rendering would re-record the buffer goldens. mock-godot is how L2 gets goldened without Godot. |
-| **P2-D5** | Pose golden form and timing values | (a) dump the internal tracks; (b) **black-box samples of moving entities at u ∈ {0, ¼, ½, ¾, 1} of each commit's span**. Durations: walk 125 ms (one D6 step), bump 120, shake 150, slide 125, sort 200, pop 160; reactions overlap at 50% | **(b)**, with the values above. Samples survive a refactor of the track representation, and the values are policy, so tuning one after Aaron's pass is a pose re-record and nothing else. |
-| **P2-D6** | What the body is in L1 | (a) a new body entity with `Moved(entity, from, to, walk)` and `Blocked` events; (b) **the cursor of any location whose active bag is a world bag; walk = `CursorMoved`, refusal = `Bumped`** | **(b).** It is golden-neutral and needs no new event kind. It also matches the demo, which walks Quiet 1 as B. The `Moved`/`Blocked`/`Spawned` taxonomy arrives with the rule engine and G7 (Phase 3). |
-| **P2-D7** | D2-B's time base, with L1 still at 1 Hz (P1-D4) | (a) move L1 to 8 Hz now (rescales every duration; a behaviour change); (b) **a shell-handled `FineTick` intent at 8 Hz drives only the integrator; L1 still ticks at 1 Hz, and derived `Move`s apply immediately like any realtime player intent (P1-D2)** | **(b).** It is golden-neutral and deletable (principle 7). L1 at 8 Hz is still Phase 3/5. |
-| **P2-D8** | The shape of steering input | (a) `Steer(vx, vy)` with velocity on the intent; (b) **`Steer(At, Direction8?)`, a held direction, logged on change, with speeds in a policy table** | **(b).** It is data-only with no float (G1). The replay log carries what the player pressed, not a derived quantity, and speed can be tuned without changing old logs' meaning. |
-| **P2-D9** | Where L2a lives | (a) a field on `GameState` (L1 equality and the VM would see it); (b) a field on `SimState` that Step must not read; (c) **`GameSession.Fine`, in its own `Pockets.Core.Fine` namespace, carried by undo snapshots and checkpoints, rebuilt by replay, never in the VM** | **(c).** The wall becomes a namespace rule a test can scan (principle 6), and the fuzz gate can compare the VM directly. |
-| **P2-D10** | Grid edges in a free bag (D2-A wraps today) | (a) wrap, as D2-A does; (b) **clamp at the outer edge with no `Move`** | **(b).** A body gliding off one edge and appearing at the other reads as a bug. D2-A's wrap is unchanged (golden-neutral). Revisit wrap for D2-A separately if it bothers anyone in world bags. |
-| **P2-D11** | What sets the vase offset (the brief's L2a example) | (a) a debug setter only; (b) the offset on drop is taken from the body's sub-position; (c) **nudge on contact (a free body pushes a stack's offset 1/16 per tick, capped at 6) plus a test-only `SetFineOffset`; any L1 move of the stack clears it** | **(c).** It is the one visible, purely-L2a effect, which makes it the natural fuzz target, and it needs no new L1 verb. (b) can follow if dropping in world bags becomes a thing. |
-| **P2-D12** | How the per-bag flag is set | (a) a data-file field on the wilderness templates; (b) **a `Bag.Movement` init property (default `GridLocked`), set by the debug/journey `setMovement` command; the demo profile is unchanged; rogue ignores it** | **(b)** for the experiment. If the verdict is "keep", promoting it to a data field is a small follow-up. |
-| **P2-D13** | What the D7 snap covers in realtime | (a) every commit snaps everything; (b) **a player intent snaps all in-flight tracks; a clock `Tick` adds ambient tracks without snapping; a `FineTick` neither snaps nor adds body tracks** | **(b).** D7 is about input. A 1 Hz tick or an 8 Hz fine tick cutting a walk short would make motion stutter for no player reason. |
-| **P2-D14** | TUI input in a free bag (Terminal.Gui has no key-up) | (a) a key press = steer for one cell's worth of fine ticks; (b) **the TUI keeps sending `Move` (D2-A semantics), and `Reconcile` re-anchors the body** | **(b).** It is honest about the terminal's limits and keeps the TUI golden-neutral. D2-B input is a Godot-and-debug-protocol feature, and mock-godot covers it in the gate. |
+**Ratified 2026-10-28: all as recommended** (Aaron, Discord: "Go with recs").
+
+| # | Decision | Options | Recommendation | Status |
+|---|---|---|---|---|
+| **P2-D1** | Number type of Realization's sampling | (a) floats (simplest easing; non-goldenable, cross-machine drift in theory); (b) **integer: ms times, a fixed-point easing table, poses in 1/16ths** | **(b).** It makes the pose stream a golden that mock-godot can produce without Godot (principle 5), at the cost of 1/16-cell quantization, which frontends may smooth with floats on their side (L2b). A text-scan test bans `float`/`double` in `Pockets.Realization`. | ✓ Ratified 2026-10-28 |
+| **P2-D2** | Entity identity in `Pose` while ids are GUIDs and stacks have none (G7) | (a) pull G7 (deterministic entity and bag ids) into Phase 2; (b) **realization-local `EntityKey`: `Body(loc)` or `Stack(cell)`; a stack in flight keeps its departure key until its track ends** | **(b).** G7 touches every `new Bag` and is a Phase 3 item for MP and saves. Keys are local to Realization and never enter L1. | ✓ Ratified 2026-10-28 |
+| **P2-D3** | Which events animate in v0 | (a) everything with a cell; (b) **body walk and bump, failed-peek shake, same-bag stack moves, sort permutation, harvest/acquire pop (height), `Rewound` reset; cross-bag moves snap with a fade hint; the rest re-render at n = 1** | **(b).** Cross-bag flights (grid → hand) have no engine-neutral path between two bags' coordinate frames. A frontend may fade. | ✓ Ratified 2026-10-28 |
+| **P2-D4** | Who consumes Realization this phase | (a) all three animate; (b) **TUI stays n = 1 (its frame is the `u = 1` sample, render unchanged); Godot is the first animated consumer; mock-godot and the runner sample poses through `DebugCommandHandler`'s `poses`** | **(b).** TUI sub-cell rendering would re-record the buffer goldens. mock-godot is how L2 gets goldened without Godot. | ✓ Ratified 2026-10-28 |
+| **P2-D5** | Pose golden form and timing values | (a) dump the internal tracks; (b) **black-box samples of moving entities at u ∈ {0, ¼, ½, ¾, 1} of each commit's span**. Durations: walk 125 ms (one D6 step), bump 120, shake 150, slide 125, sort 200, pop 160; reactions overlap at 50% | **(b)**, with the values above. Samples survive a refactor of the track representation, and the values are policy, so tuning one after Aaron's pass is a pose re-record and nothing else. | ✓ Ratified 2026-10-28 |
+| **P2-D6** | What the body is in L1 | (a) a new body entity with `Moved(entity, from, to, walk)` and `Blocked` events; (b) **the cursor of any location whose active bag is a world bag; walk = `CursorMoved`, refusal = `Bumped`** | **(b).** It is golden-neutral and needs no new event kind. It also matches the demo, which walks Quiet 1 as B. The `Moved`/`Blocked`/`Spawned` taxonomy arrives with the rule engine and G7 (Phase 3). | ✓ Ratified 2026-10-28 |
+| **P2-D7** | D2-B's time base, with L1 still at 1 Hz (P1-D4) | (a) move L1 to 8 Hz now (rescales every duration; a behaviour change); (b) **a shell-handled `FineTick` intent at 8 Hz drives only the integrator; L1 still ticks at 1 Hz, and derived `Move`s apply immediately like any realtime player intent (P1-D2)** | **(b).** It is golden-neutral and deletable (principle 7). L1 at 8 Hz is still Phase 3/5. | ✓ Ratified 2026-10-28 |
+| **P2-D8** | The shape of steering input | (a) `Steer(vx, vy)` with velocity on the intent; (b) **`Steer(At, Direction8?)`, a held direction, logged on change, with speeds in a policy table** | **(b).** It is data-only with no float (G1). The replay log carries what the player pressed, not a derived quantity, and speed can be tuned without changing old logs' meaning. | ✓ Ratified 2026-10-28 |
+| **P2-D9** | Where L2a lives | (a) a field on `GameState` (L1 equality and the VM would see it); (b) a field on `SimState` that Step must not read; (c) **`GameSession.Fine`, in its own `Pockets.Core.Fine` namespace, carried by undo snapshots and checkpoints, rebuilt by replay, never in the VM** | **(c).** The wall becomes a namespace rule a test can scan (principle 6), and the fuzz gate can compare the VM directly. | ✓ Ratified 2026-10-28 |
+| **P2-D10** | Grid edges in a free bag (D2-A wraps today) | (a) wrap, as D2-A does; (b) **clamp at the outer edge with no `Move`** | **(b).** A body gliding off one edge and appearing at the other reads as a bug. D2-A's wrap is unchanged (golden-neutral). Revisit wrap for D2-A separately if it bothers anyone in world bags. | ✓ Ratified 2026-10-28 |
+| **P2-D11** | What sets the vase offset (the brief's L2a example) | (a) a debug setter only; (b) the offset on drop is taken from the body's sub-position; (c) **nudge on contact (a free body pushes a stack's offset 1/16 per tick, capped at 6) plus a test-only `SetFineOffset`; any L1 move of the stack clears it** | **(c).** It is the one visible, purely-L2a effect, which makes it the natural fuzz target, and it needs no new L1 verb. (b) can follow if dropping in world bags becomes a thing. | ✓ Ratified 2026-10-28 |
+| **P2-D12** | How the per-bag flag is set | (a) a data-file field on the wilderness templates; (b) **a `Bag.Movement` init property (default `GridLocked`), set by the debug/journey `setMovement` command; the demo profile is unchanged; rogue ignores it** | **(b)** for the experiment. If the verdict is "keep", promoting it to a data field is a small follow-up. | ✓ Ratified 2026-10-28 |
+| **P2-D13** | What the D7 snap covers in realtime | (a) every commit snaps everything; (b) **a player intent snaps all in-flight tracks; a clock `Tick` adds ambient tracks without snapping; a `FineTick` neither snaps nor adds body tracks** | **(b).** D7 is about input. A 1 Hz tick or an 8 Hz fine tick cutting a walk short would make motion stutter for no player reason. | ✓ Ratified 2026-10-28 |
+| **P2-D14** | TUI input in a free bag (Terminal.Gui has no key-up) | (a) a key press = steer for one cell's worth of fine ticks; (b) **the TUI keeps sending `Move` (D2-A semantics), and `Reconcile` re-anchors the body** | **(b).** It is honest about the terminal's limits and keeps the TUI golden-neutral. D2-B input is a Godot-and-debug-protocol feature, and mock-godot covers it in the gate. | ✓ Ratified 2026-10-28 |
 
 ## Worker notes
 
@@ -473,3 +475,47 @@ Godot runs only on Aaron's box. Everything before 2.5 needs nothing there.
   `dotnet build src/Pockets.Godot/Pockets.Godot.csproj` in every slice that touches it.
 - Every slice brief should quote its rows from §Decisions, so the worker knows which recommendation it is
   building on.
+
+## Addendum — Slice 2.0 as built (2026-10-28)
+
+Golden-neutral. `dotnet test` green (Core 1032, App 54, Realization 27) and `make parity-full` green.
+The VM, events and 11 buffer goldens are byte-identical, and no call site changed.
+
+### Projects
+
+- `src/Pockets.Realization` (net8.0, references `Pockets.Core` only) and `tests/Pockets.Realization.Tests`
+  (xunit, same package versions as Core.Tests) are both in `Pockets.sln`. `make test` already runs
+  `dotnet test Pockets.sln`, so it picks up the new suite with no change. Only its comment changed.
+
+### Contract types (`src/Pockets.Realization/`)
+
+| Type | Shape | Notes for later slices |
+|---|---|---|
+| `Pose` | `readonly record struct (EntityKey Entity, Guid Bag, int CellCol, int CellRow, int SubX, int SubY, int? Height, Facing? Facing)`, plus `const SubUnits = 16` | A struct, as in two-layer.md §L2. No validation. SubX/SubY are centre-relative, −8…+8 by convention. 2.2 may add fields. |
+| `Facing` | `N = 1 … NW` (clockwise, no zero member) | 2.1 defaults the body to `S`. |
+| `EntityKey` | abstract record, private ctor; `Body(LocationId Loc)`, `Stack(CellRef At)` | Value equality, usable as a dictionary key. The departure-key rule (P2-D2) is documented on the type, and the timeline (2.2) enforces it. |
+| `EaseKind` | `Linear = 1, Smooth = 2` | |
+| `RealizationPolicy` | sealed record of int-ms init properties: Walk 125, Bump 120, Shake 150, Slide 125, Sort 200, Pop 160, `ReactionOverlapPercent` 50, `Ease` = Smooth; `Default` | Values are P2-D5's. |
+| `Ease` | `One = 65536`. `Linear(num, den)` floors. `Smooth(num, den)` uses a **pinned 65-entry smoothstep table** (`(192i²−2i³+2)/4`, i = 0…64), linearly interpolated with 16 fractional bits. `Apply(kind, …)` dispatches. | num is clamped to [0, den], and `den ≤ 0` returns `One` (a zero-length track is finished). Both endpoints are exact and both curves are monotone (tested). |
+| `PoseText` | `entity=Body(B) bag=bag#1 col=2 row=1 subX=3 subY=-4 height=- facing=S`; a stack key is written `Stack(bag#1[4])` | Invariant culture, null as `-`. 2.4 adds the golden's line prefix (journey step, commit, u). |
+
+### Shared bag naming (the one Core edit)
+
+`EventText`'s private bag dictionary moved into a new public `Pockets.Core.Sim.BagNames` (`Name(Guid)` →
+`bag#N` on first sight). `EventText` gained `EventText(BagNames)` and `Names`, and `new EventText()` and
+`EventText.Lines` behave exactly as before. `PoseText(BagNames)` takes the same object. **For 2.4:**
+build the pose writer as `new PoseText(eventText.Names)` with the run's single `EventText`. The event
+and pose lines then name a bag the same way. Naming follows first appearance across both streams in the
+order they are written, so the writer must interleave deterministically (for example, a step's events,
+then its poses).
+
+### Architecture tests (`tests/Pockets.Realization.Tests/RealizationArchitectureTests.cs`)
+
+- `Assembly_ReferencesNoGodotOrTerminalGui` checks both the referenced assemblies and the csproj text,
+  and that the only ProjectReference is Core.
+- `Source_HasNoFloatingPoint` scans `src/Pockets.Realization/**` with `//` comments stripped, using
+  `\b(float|double|decimal|Single|Double|Half)\b|\bMathF?\.`. This also rules out `Math.Clamp`, so
+  `Ease` clamps with ternaries. Later slices must do the same, or add an int helper.
+- `CoreSimAndModels_DoNotReferenceRealization` scans the text of `Pockets.Core/Sim/**` and `Models/**`,
+  and checks that the Core assembly has no reference to Realization (principle 6). 2.6 extends the scan
+  to `Pockets.Core.Fine`.

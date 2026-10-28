@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Pockets.Realization</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="System.Collections.Immutable" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pockets.Core\Pockets.Core.csproj" />
+  </ItemGroup>
+
+</Project>

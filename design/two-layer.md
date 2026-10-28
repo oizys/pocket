@@ -805,7 +805,7 @@ Findings:
    consume events at n = 1.
 2. **Realization v0 + free-movement experiment (A1, moved up from late).**
    Slice plan: [two-layer-phase2-plan.md](two-layer-phase2-plan.md) (slices 2.0–2.9, decisions
-   P2-D1…D14, awaiting ratification).
+   P2-D1…D14, ratified 2026-10-28, all as recommended).
    `Pockets.Realization` with engine-neutral `Pose` (A2), timelines (n=16), rogue
    choreography and the snap policy. A W-bag body with D2-A (default) and **D2-B behind a
    per-bag flag** (L2a fixed-point integrator → `Move` intents), plus the "fuzz L2a ⇒
@@ -835,6 +835,9 @@ Findings:
 **Ratified; Phase 0 and Phase 1 complete.** Phase 1's decisions P1-D1…D9 were ratified
 2026-10-28 (all as recommended), and so was the 1.8 intent-log ruling ("Keep it as built", §History &
 undo). Slices 1.0–1.8 landed golden-neutral, and 1.9 closed out the docs.
+
+**Phase 2 in progress.** Its slice plan's decisions P2-D1…D14 were ratified 2026-10-28 (all as
+recommended). Slice 2.0 (the `Pockets.Realization` scaffold and contract types) landed golden-neutral.
 
 **Open guardrail debt:**
 - G1: the `double` weights in `WildernessTemplate`;
