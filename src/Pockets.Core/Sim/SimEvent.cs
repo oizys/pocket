@@ -48,6 +48,14 @@ public abstract record SimEvent
     /// <summary>The step advanced simulated time (facilities and plants ticked).</summary>
     public sealed record TimeAdvanced(int Step, int Seq) : SimEvent(Step, Seq);
 
+    /// <summary>
+    /// Undo (Slice 1.8, a shell event — Step never emits it): the timeline was rewound to the snapshot taken
+    /// at step <paramref name="ToStep"/>, and the event log truncated back to it. L2 snaps to the state rather
+    /// than animating back (lossy L2 history, A3). Carried-forward fields (dialogue, clock, RNG, step count)
+    /// did not rewind. It is the undo's only event.
+    /// </summary>
+    public sealed record Rewound(int Step, int Seq, int ToStep) : SimEvent(Step, Seq);
+
     // ==================== Cursor and navigation ====================
 
     /// <summary><paramref name="Loc"/>'s cursor moved within <paramref name="Bag"/>.</summary>

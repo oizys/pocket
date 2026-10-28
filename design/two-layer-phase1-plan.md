@@ -319,7 +319,7 @@ dependencies are given in §Order below.
 - **Risk:** low. The Windows shell-agnostic Makefile rule from the portability slice
   applies: no sh-only recipes, and comparison is folded into the runner.
 
-### Slice 1.8 — Event-log retention and compaction policy (+ undo interplay)
+### Slice 1.8 — Event-log retention and compaction policy (+ undo interplay) ✓ landed (see §Addendum — Slice 1.8)
 - The shell keeps an **`EventLog`**, a chunked append-only log of struct events in the
   spike B (b) style.
   - **Retention policy (P1-D9):** keep events back to the **oldest retained snapshot**.
@@ -785,3 +785,63 @@ nothing *and emitted nothing* is left out". After the fix, all three streams are
 - The intent log now includes event-only intents. Undo truncation should cut the log by step *and* entry. A logged event-only intent pushes no undo snapshot, so "truncate to the snapshot's step" must keep or drop those entries consistently. The simplest rule is to record the log length with each snapshot.
 - Neither journey undoes, so the events golden should stay unchanged through 1.8 (its acceptance 4). `ReplayCheck` replays through the shell, so a journey with `Undo` would replay it too, once `Rewound` exists. It would then be a new golden line, so only after a decision.
 - `ReplayCheck` keeps one `EventText` across the replay. If 1.8 makes the `EventLog` the source of the frontend stream, the gate can compare against the log directly.
+
+## Addendum — Slice 1.8 as built (2026-10-28)
+
+**Golden-neutral, events golden included.** The VM checkpoint golden, the 11 TUI buffer goldens and
+`journeys/goldens/target-demo.events` are byte-identical: `make parity-full` is green and `git status` shows nothing under
+`journeys/`. No golden was recorded. No action-log text changed (P1-D6). Neither journey undoes, so no `Rewound` line
+reaches any stream the gates see; `Rewound` is covered by unit tests (acceptance 4).
+
+| Piece | Where | Notes |
+|---|---|---|
+| `EventLog` | `Sim/EventLog.cs` | A chunked append-only log in the spike B (b) style, made **persistent** so the immutable `GameSession` can hold it: an instance never changes. Chunks are fixed-size arrays (default 1024) shared between views. An append claims the next slot of the tail chunk with one `Interlocked.CompareExchange` and writes in place, with no copy. Only appending to a view that is no longer the tail's furthest (after an undo truncation) forks that one chunk. Positions are absolute along the timeline: `Start` is the first retained event, `End` is one past the last. API: `Append`, `CompactTo(horizon)`, `TruncateTo(pos)`, `Events`, `Since(pos)`, `Bytes`, `Truncated`. Events stay the 1.5 record classes. Struct events (spike B's 20 B) would be a taxonomy rewrite, out of scope. |
+| Policy (P1-D9) | `EventLogPolicy` | `MaxBytes` 8 MB, `ChunkSize` 1024, `CheckpointEvery` 8, `CheckpointRing` 1000. It is a session init property (`GameSession.LogPolicy`), so tests can shrink it. |
+| Size accounting | `EventLog.EstimateBytes` | An estimate, and the cap is applied to it. It counts the log slot (reference plus a size word), the record (header, step/seq, a word per field) and array payloads. Items and bags are shared with state, so they are not counted. |
+| Hard cap | `EventLog.Append` → `Cap` | Past `MaxBytes`, the oldest whole chunks are dropped (the newest chunk is always kept), and a `LogTruncated(Before, LastStep, Count)` marker is recorded on the log. `Count` is how many cap drops the log has had in all. The marker is **log metadata, not a `SimEvent`**. Step never emits it, so it never reaches a frontend stream or the golden. |
+| Retention / compaction | `GameSession.RetentionHorizon`, `Retained`, `PushSnapshot` | Events before the oldest retained snapshot are dropped, at whole-chunk granularity, with no marker (this is policy, not truncation). The session's start counts as a snapshot until a bound evicts it, so the horizon is 0 until the first trim. **Rogue:** the snapshots are the undo stack, and a `MaxUndoDepth` trim moves the horizon to the oldest kept mark. **Realtime:** `GameSession.Checkpoints` holds a `Checkpoint(LogMark, GameState)` after every 8th step, ring-bounded to 1000, and an eviction moves the horizon to the oldest kept checkpoint. The realtime undo stack (ticks push undo, as before) does not move the horizon. |
+| Snapshot marks | `GameSession.UndoMarks : ImmutableStack<LogMark>` | This is parallel to `UndoStack` and follows the brief's simplest rule. Each snapshot records `LogMark(Step = TickCount, EventPos = EventLog.End)` taken **before the step's events**. A composite's later sub-step is marked after the earlier sub-steps' events, so undoing a click keeps its `CursorMoved`. An event-only intent pushes no snapshot. Its events sit after the previous mark, so undo drops them with the rest of the abandoned timeline. That is consistent by position, with no step arithmetic. `UndoStack`'s positional shape is unchanged. |
+| Undo | `GameSession.UndoCore` | Restores the snapshot as before. It truncates the event log to the snapshot's mark, drops realtime checkpoints past it (the abandoned timeline), appends **one** `SimEvent.Rewound(Step = TickCount + 1, Seq 0, ToStep = mark.Step)`, and returns it as the undo's only event. A mark before `Start` (already compacted or capped) empties the log and restarts it at that position. Dialogue, `TickCount`, `Elapsed` and the RNG are carried forward exactly as before. |
+| `Rewound` | `Sim/SimEvent.cs` | A shell event (Step never emits it). `EventText` renders it with no change: `7 0 Rewound toStep=3`. Both frontends receive it: the TUI through `ControllerResult.Events`, and Godot and mock-godot as a line in `DebugCommandHandler`'s `events`. At n = 1 they need no handling, because they snap from the VM. The runner's 1.6 `VerifyEvents` rule (a VM change must come with an event) should now pass on an undo step; before 1.8, undo emitted nothing, so it would have failed (not exercised: no journey undoes). |
+| Append site | `GameSession.RunStepCore` | Each step's events are appended in the same `with` that writes the stepped state back, so there is no extra session copy. |
+
+**⚠ Deviation from the slice text, for Aaron: the intent log is *not* truncated by undo.** The spec says undo "truncates
+the event **and intent** logs". The event log is truncated. The intent log is left as 1.3–1.7 built it, append-only with
+`Undo` recorded. The reason: undo carries the dialogue, `TickCount`, `Elapsed`, the RNG **and the action log** (which is in
+the VM golden: `Undo: …`) forward. A truncated intent log therefore cannot replay to the live session, because replay
+would lose the carried-forward step count, RNG draws and `Undo:` lines. That would break contract rule 1 as amended by P1-D1
+("replay(intents) ≡ state"), and it would break `ReplayCheck` on any journey that undoes. `EventLogSessionTests.Undo_KeepsTheIntentLog_SoTheSessionReplays`
+pins the replay. Keeping it is the golden-neutral, behaviour-neutral choice. The log marks carry the event position only. If Aaron wants a
+timeline-mirroring intent view as well, it should be a *derived* view (intents since the restored snapshot) rather than a
+truncation of the replay input.
+
+**Kept exactly:** the 1.3 latent undo bug (a tool at a panel other than B pushes the swapped frame).
+`EventLogSessionTests.KnownBug_ToolAtPanelC_UndoRestoresTheSwappedFrame` now pins it: QuickSplit at C, then undo, leaves B on the facility bag.
+
+**Acceptance:**
+1. Unit tests. `EventLogTests` (20) cover append order, persistence and forking, truncation (including at a chunk boundary and before
+   `Start`), compaction (never drops at or after the horizon, keeps the newest chunk), the cap and its marker, and the estimate.
+   `EventLogSessionTests` (16) cover steps landing in the log, undo truncation plus `Rewound`, composite clicks, double undo then
+   redo, intent-log replay, the rogue trim horizon, realtime checkpoints and the ring horizon, realtime undo dropping
+   abandoned checkpoints, the session cap, `Rewound` through the controller and `DebugCommandHandler`, and the known-bug pin.
+2. Soak. `EventLogSoakTests` runs the demo profile in realtime for 10 simulated minutes, syncing the clock every 100 ms (10× the TUI's
+   1 s sync) with a key every 3 s. Result: 6,341 events and ~0.6 MB retained, under the cap, with no truncation. An append-cost test
+   bounds the log's own steady state at ≤ 16 B per event plus one view per step (measured: 100 B per 3-event step).
+   **gen0 against today**, using an identical out-of-tree harness on `6c87870` vs this slice (Release, 5 trials, same soak):
+   at default GC budgets both runs show 0 gen0 collections. With `DOTNET_GCgen0size=1MB` to force collections, the baseline
+   shows 18–19 and this slice 17–18. Allocation is 20.4 MB vs 21.3 MB per 10 min (+4.4%). The harness is not in the
+   repo, because gen0 counts are machine-dependent. The in-repo test bounds the bytes instead.
+3. and 4. All goldens are identical, including the events golden. The replay check on both journeys and both in-process drivers
+   is unchanged: smoke 65 intents, 76 checkpoints, 149 lines; target-demo 141, 156, 305.
+- `dotnet test`: Core 1025 (987 + 38), App 54. All green. No frontend file changed.
+
+**For 1.9 (close-out):**
+- Document `EventLog`, `Rewound`, the retention rule and the intent-log deviation above in `CLAUDE.md`'s new architecture
+  section and in `two-layer.md` (G5/A3 status). Get the intent-log question ratified or reversed.
+- The **intent log has no retention.** It is the replay input from the profile's start. An idle realtime session that syncs
+  the clock every frame logs one `SetElapsed` per frame: the soak's 10 Hz gave 6k entries per 10 min, and a 60 Hz frontend
+  would give 36k. That is fine for Phase 1. Phase 7 (save = checkpoint + intents since) is where it gets bounded.
+- An idle realtime session never reaches step 8, because a tick that changes nothing is a no-op. So it takes no checkpoints, its horizon stays 0,
+  and it relies on the 8 MB cap alone. That is the cap working as designed, but worth a line in the docs.
+- `ReplayCheck` still compares the streamed lines. It could now also check `session.EventLog` against the replayed log
+  as well, but that was left out to keep the gate unchanged (not yet checked on the journeys).

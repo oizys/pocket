@@ -68,10 +68,43 @@ public record GameSession(
     /// the session and its event stream exactly; an intent that changed nothing and emitted nothing is left
     /// out, which replay never notices. An intent whose only effect is a cue (a refused peek during a dialogue
     /// beat bumps without changing state) is logged so replay reproduces the stream; it is not in the
-    /// view-model, so view-model goldens are unaffected. Append-only; Slice 1.8 adds retention and
-    /// undo truncation.
+    /// view-model, so view-model goldens are unaffected. Append-only, and <b>not</b> truncated by undo (Slice 1.8):
+    /// undo carries the dialogue, clock, RNG, step count and action log forward, so only the full input
+    /// history — <see cref="Intent.Undo"/> included — replays to the same session.
     /// </summary>
     public ImmutableList<(int Step, Intent Intent)> IntentLog { get; init; } = ImmutableList<(int Step, Intent Intent)>.Empty;
+
+    /// <summary>
+    /// The event log (Slice 1.8): every event of the current timeline, in order. Each step's events are
+    /// appended as it runs; undo truncates it back to the restored snapshot's mark and appends one
+    /// <see cref="SimEvent.Rewound"/>. Retention follows <see cref="LogPolicy"/> (P1-D9): events before
+    /// <see cref="RetentionHorizon"/> are compacted away, and the hard cap drops the oldest chunks. Not
+    /// in the view-model.
+    /// </summary>
+    public EventLog EventLog { get; init; } = EventLog.Empty;
+
+    /// <summary>The event log's retention policy (P1-D9: 8 MB, checkpoints every 8 steps, 1000 kept).</summary>
+    public EventLogPolicy LogPolicy { get; init; } = EventLogPolicy.Default;
+
+    /// <summary>
+    /// The log mark of each undo snapshot, parallel to <see cref="UndoStack"/> (top = newest): where the
+    /// timeline stood when the snapshot was pushed. Undo truncates the event log to it.
+    /// </summary>
+    public ImmutableStack<LogMark> UndoMarks { get; init; } = ImmutableStack<LogMark>.Empty;
+
+    /// <summary>
+    /// The realtime checkpoints (Slice 1.8): the state after every <see cref="EventLogPolicy.CheckpointEvery"/>-th
+    /// step, oldest first, ring-bounded to <see cref="EventLogPolicy.CheckpointRing"/>. Empty in rogue mode,
+    /// where the undo snapshots are the snapshots.
+    /// </summary>
+    public ImmutableList<Checkpoint> Checkpoints { get; init; } = ImmutableList<Checkpoint>.Empty;
+
+    /// <summary>
+    /// The event position of the oldest retained snapshot (P1-D9): events before it are compacted away. The
+    /// session's start counts as a snapshot until a bound evicts it, so it stays 0 until the undo stack (rogue)
+    /// or the checkpoint ring (realtime) first trims; it then follows the oldest one kept.
+    /// </summary>
+    public long RetentionHorizon { get; init; }
 
     /// <summary>
     /// The session's counter RNG (Slice 1.1, L1): every in-step random draw comes from it. A session
@@ -162,7 +195,10 @@ public record GameSession(
     private (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) Dispatch(Intent intent)
     {
         if (intent is Intent.Undo)
-            return (UndoCore(), null, ImmutableArray<SimEvent>.Empty);
+        {
+            var (undone, rewound) = UndoCore();
+            return (undone, null, rewound);
+        }
 
         var subs = Simulation.Expand(ToSimState(), intent);
         if (subs.Count == 1 && ReferenceEquals(subs[0], intent))
@@ -184,9 +220,17 @@ public record GameSession(
     /// it and writes the new L1 state back; then, by how the intent resolved, it pushes the undo snapshot and
     /// appends the action-log lines exactly as the pre-1.3 methods did: <c>FAILED: …</c> for a rejected tool,
     /// otherwise the action's line followed by any craft-completion lines. A step that emitted events but
-    /// changed nothing (a bump when no counter moved) is not a change.
+    /// changed nothing (a bump when no counter moved) is not a change. The step's events go on the
+    /// <see cref="EventLog"/>, and every snapshot it pushes is marked with where the log stood before them.
     /// </summary>
     private (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) RunStep(Intent intent)
+    {
+        var (session, trace, events) = RunStepCore(intent);
+        return (session.Retained(TickCount), trace, events);
+    }
+
+    /// <summary><see cref="RunStep"/> before checkpointing and compaction.</summary>
+    private (GameSession Session, StepTrace? Trace, ImmutableArray<SimEvent> Events) RunStepCore(Intent intent)
     {
         var traces = new List<StepTrace>(1);
         var pre = ToSimState();
@@ -195,18 +239,22 @@ public record GameSession(
         var events = result.Events;
         var rejected = events.Length > 0 ? events[0] as SimEvent.IntentRejected : null;
         var changed = rejected is null && result.State != pre;
+        var mark = new LogMark(TickCount, EventLog.End);
 
+        var log = EventLog.Append(events, LogPolicy);
         var session = this;
         if (changed)
         {
             t_debugStepCount++;
-            session = WithSimState(result.State);
+            session = WithSimState(result.State, log);
         }
+        else if (!ReferenceEquals(log, EventLog))
+            session = this with { EventLog = log };
         if (trace is null)
             return (session, null, events);
 
         // Push the pre-step snapshot (a tool run at a panel pushes the swapped frame, as RunAt did).
-        GameSession Undoable(GameState snapshot) => session with { UndoStack = PushWithLimit(UndoStack, snapshot) };
+        GameSession Undoable(GameState snapshot) => session.PushSnapshot(snapshot, mark);
         GameSession Log(IEnumerable<string> lines) => session with { ActionLog = session.ActionLog.AddRange(lines) };
         IEnumerable<string> WithCompletions(string line) => new[] { line }.Concat(CompletionLogs(events, session.Current));
 
@@ -374,19 +422,33 @@ public record GameSession(
     /// rewinds (see <see cref="DialogueState"/>), so the live dialogue substate is carried forward onto the
     /// restored state; <see cref="TickCount"/>, <see cref="Elapsed"/> and the RNG are untouched (they keep
     /// moving forward). A shell operation: the snapshots are shell state, so it never reaches Step.
+    /// <para>
+    /// Slice 1.8: the event log is truncated back to the snapshot's mark (it mirrors the current timeline),
+    /// realtime checkpoints taken after it are dropped with the abandoned timeline, and a single
+    /// <see cref="SimEvent.Rewound"/> is appended and returned. A snapshot with no mark (an undo stack set from
+    /// outside the shell) rewinds without truncating. The intent log is not truncated (see <see cref="IntentLog"/>).
+    /// </para>
     /// </summary>
-    private GameSession UndoCore()
+    private (GameSession Session, ImmutableArray<SimEvent> Events) UndoCore()
     {
-        if (!CanUndo) return this;
+        if (!CanUndo) return (this, ImmutableArray<SimEvent>.Empty);
 
         var previousState = UndoStack.Peek();
         var lastAction = ActionLog.Count > 0 ? ActionLog[^1] : "unknown";
-        return this with
+        var mark = UndoMarks.IsEmpty ? (LogMark?)null : UndoMarks.Peek();
+        var position = mark?.EventPos ?? EventLog.End;
+        var rewound = ImmutableArray.Create<SimEvent>(new SimEvent.Rewound(TickCount + 1, 0, mark?.Step ?? TickCount));
+        var horizon = Math.Min(RetentionHorizon, position);
+        return (this with
         {
             Current = previousState with { Dialogue = Current.Dialogue },
             UndoStack = UndoStack.Pop(),
-            ActionLog = ActionLog.Add($"Undo: {lastAction}")
-        };
+            UndoMarks = UndoMarks.IsEmpty ? UndoMarks : UndoMarks.Pop(),
+            ActionLog = ActionLog.Add($"Undo: {lastAction}"),
+            Checkpoints = Checkpoints.RemoveAll(c => c.Mark.EventPos > position),
+            RetentionHorizon = horizon,
+            EventLog = EventLog.TruncateTo(position).Append(rewound, LogPolicy).CompactTo(horizon)
+        }, rewound);
     }
 
     // ==================== Internal wrappers (one intent each; tests use them) ====================
@@ -517,9 +579,10 @@ public record GameSession(
     /// </summary>
     public SimState ToSimState() => new(Current, TickCount, Elapsed, SplitMode, RecipeMenu, Content, WorldRng);
 
-    /// <summary>Writes a stepped <see cref="SimState"/> back onto the session's L1 fields.</summary>
-    private GameSession WithSimState(SimState s) => this with
+    /// <summary>Writes a stepped <see cref="SimState"/> back onto the session's L1 fields, with the step's <paramref name="log"/>.</summary>
+    private GameSession WithSimState(SimState s, EventLog log) => this with
     {
+        EventLog = log,
         Current = s.Game,
         TickCount = s.TickCount,
         Elapsed = s.Elapsed,
@@ -590,17 +653,56 @@ public record GameSession(
 
 
     /// <summary>
-    /// Pushes a state onto the undo stack, trimming oldest entries if over max depth.
+    /// Pushes an undo snapshot and its log mark, trimming the oldest of both past <see cref="MaxUndoDepth"/>.
+    /// In rogue mode the undo snapshots are the retained snapshots (P1-D9), so a trim moves
+    /// <see cref="RetentionHorizon"/> up to the oldest mark kept.
     /// </summary>
-    private ImmutableStack<GameState> PushWithLimit(ImmutableStack<GameState> stack, GameState state)
+    private GameSession PushSnapshot(GameState snapshot, LogMark mark)
     {
-        var newStack = stack.Push(state);
+        var (stack, trimmed) = PushWithLimit(UndoStack, snapshot);
+        var (marks, _) = PushWithLimit(UndoMarks, mark);
+        var horizon = trimmed && TickMode == TickMode.Rogue && !marks.IsEmpty
+            ? Math.Max(RetentionHorizon, marks.Last().EventPos)
+            : RetentionHorizon;
+        return this with { UndoStack = stack, UndoMarks = marks, RetentionHorizon = horizon };
+    }
+
+    /// <summary>
+    /// The end-of-step retention pass (Slice 1.8), on the session a step produced from one at step
+    /// <paramref name="stepBefore"/>: in realtime, a step that reached a multiple of
+    /// <see cref="EventLogPolicy.CheckpointEvery"/> takes a checkpoint (the ring evicting its oldest, which
+    /// moves <see cref="RetentionHorizon"/>); then the log is compacted to the horizon.
+    /// </summary>
+    private GameSession Retained(int stepBefore)
+    {
+        var session = this;
+        if (TickMode == TickMode.Realtime && TickCount != stepBefore && TickCount % LogPolicy.CheckpointEvery == 0)
+        {
+            var checkpoints = Checkpoints.Add(new Checkpoint(new LogMark(TickCount, EventLog.End), Current));
+            var horizon = RetentionHorizon;
+            if (checkpoints.Count > LogPolicy.CheckpointRing)
+            {
+                checkpoints = checkpoints.RemoveAt(0);
+                horizon = Math.Max(horizon, checkpoints[0].Mark.EventPos);
+            }
+            session = session with { Checkpoints = checkpoints, RetentionHorizon = horizon };
+        }
+        var log = session.EventLog.CompactTo(session.RetentionHorizon);
+        return ReferenceEquals(log, session.EventLog) ? session : session with { EventLog = log };
+    }
+
+    /// <summary>
+    /// Pushes an item onto a stack, trimming oldest entries if over max depth; also says whether it trimmed.
+    /// </summary>
+    private (ImmutableStack<T> Stack, bool Trimmed) PushWithLimit<T>(ImmutableStack<T> stack, T item)
+    {
+        var newStack = stack.Push(item);
         var depth = newStack.Count();
         if (depth <= MaxUndoDepth)
-            return newStack;
+            return (newStack, false);
 
         // Trim: convert to list, take most recent MaxUndoDepth, rebuild stack
-        var items = new List<GameState>();
+        var items = new List<T>();
         var current = newStack;
         while (!current.IsEmpty)
         {
@@ -609,10 +711,10 @@ public record GameSession(
         }
         // items[0] is newest, items[^1] is oldest — keep first MaxUndoDepth
         var trimmed = items.Take(MaxUndoDepth).Reverse();
-        var rebuilt = ImmutableStack<GameState>.Empty;
-        foreach (var item in trimmed)
-            rebuilt = rebuilt.Push(item);
-        return rebuilt;
+        var rebuilt = ImmutableStack<T>.Empty;
+        foreach (var x in trimmed)
+            rebuilt = rebuilt.Push(x);
+        return (rebuilt, true);
     }
 
     private static string FormatGrabLog(ItemStack? item, Position pos) =>
