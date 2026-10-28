@@ -8,7 +8,7 @@ namespace Pockets.Realization;
 /// <summary>
 /// The debug protocol with poses (Slice 2.4): <see cref="DebugCommandHandler"/>'s dispatch plus one
 /// <see cref="PoseStream"/> per controller. Every success response gains <c>"poses"</c> (the commit's pose lines; empty
-/// for a <c>state</c> query, which is not a commit), and <c>{"action":"poses"}</c> returns the last commit's lines.
+/// for a <c>state</c> or <c>fine</c> query, which is not a commit; the stream is given the session's fine view, Slice 2.6), and <c>{"action":"poses"}</c> returns the last commit's lines.
 /// </summary>
 public static class PoseDebugCommandHandler
 {
@@ -27,7 +27,7 @@ public static class PoseDebugCommandHandler
         catch (System.Exception) { cmd = null; }
 
         var stream = Streams.GetValue(controller,
-            c => new PoseStream(c.Session.Current, DebugCommandHandler.EventTextFor(c).Names));
+            c => new PoseStream(c.Session.Current, DebugCommandHandler.EventTextFor(c).Names, null, FineView.Of(c.Session.Fine)));
 
         if (cmd is JsonObject && cmd["action"]?.GetValue<string>() == "poses")
             return new JsonObject
@@ -40,9 +40,9 @@ public static class PoseDebugCommandHandler
             }.ToJsonString();
 
         return DebugCommandHandler.Handle(controller, json, out mutated, (c, result, response) =>
-            response["poses"] = c["action"]?.GetValue<string>() == "state"
+            response["poses"] = c["action"]?.GetValue<string>() is "state" or "fine"
                 ? new JsonArray()
-                : Strings(stream.Commit(result.Events, controller.Session.Current, AtMs(c))));
+                : Strings(stream.Commit(result.Events, controller.Session.Current, AtMs(c), FineView.Of(controller.Session.Fine))));
     }
 
     /// <summary>Convenience overload without the <c>mutated</c> flag.</summary>

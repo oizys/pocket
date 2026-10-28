@@ -36,7 +36,7 @@ public static partial class Simulation
     /// Every random draw comes from <see cref="SimState.Rng"/> positioned at the step (Slice 1.1): the
     /// AcquireRandom type from <see cref="SimStream.Acquire"/>, DSL draws from <see cref="SimStream.Dsl"/>,
     /// recipe outputs from <see cref="SimStream.Craft"/>. The advanced RNG is kept only when the intent changes
-    /// state. <see cref="Intent.Undo"/> is the session shell's (it owns the snapshots) and throws here.
+    /// state. <see cref="Intent.Undo"/> and <see cref="Intent.SetFineOffset"/> are the session shell's (it owns the snapshots and the fine state) and throw here.
     /// </summary>
     public static StepResult<SimState> Step(SimState s, IReadOnlyList<Intent> intents) =>
         StepTraced(s, intents, null);

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
+using Pockets.Core.Fine;
 using Pockets.Core.Models;
 using Pockets.Core.Sim;
 
@@ -22,6 +23,8 @@ namespace Pockets.Core.Rendering;
 ///   {"action":"tick"}                                         → Tick
 ///   {"action":"advanceTime","ms":5000}                        → AdvanceClock (scripted clock advance)
 ///   {"action":"state"}                                        → serialize (no mutation)
+///   {"action":"fine"}                                         → the L2a fine state as a <c>fine</c> line array (no mutation)
+///   {"action":"setOffset","loc":"B","index":3,"dx":2,"dy":-1} → SetFineOffset (test-only, P2-D11)
 /// <c>Pockets.Realization.PoseDebugCommandHandler</c> wraps this dispatch with a <c>poses</c> query and a
 /// <c>poses</c> field on every success response (Slice 2.4), because Core cannot reference Realization; it plugs in
 /// through the <c>extend</c> callback of the four-argument <see cref="Handle(GameController, string, out bool, Action{JsonNode, ControllerResult, JsonObject}?)"/>.
@@ -101,6 +104,16 @@ public static class DebugCommandHandler
                 return Success(controller, controller.AdvanceClock(System.TimeSpan.FromMilliseconds(ms)), cmd, extend);
             case "state":
                 return Success(controller, ControllerResult.Handle(controller.Session, "State query"), cmd, extend);
+            case "fine":
+                return Success(controller, ControllerResult.Handle(controller.Session, "Fine query"), cmd,
+                    (c, r, response) =>
+                    {
+                        response["fine"] = new JsonArray(FineText.Lines(controller.Session.Fine, EventTextFor(controller).Names)
+                            .Select(l => (JsonNode?)JsonValue.Create(l)).ToArray());
+                        extend?.Invoke(c, r, response);
+                    });
+            case "setOffset":
+                return HandleSetOffset(controller, cmd, extend, out mutated);
             default:
                 return Error($"Unknown action: {action}");
         }
@@ -123,6 +136,41 @@ public static class DebugCommandHandler
             return Error($"Unknown key: {keyName}. Valid: {string.Join(", ", System.Enum.GetNames<GameKey>())}");
 
         return Success(controller, controller.HandleKey(gameKey), cmd, extend);
+    }
+
+    /// <summary>
+    /// <c>setOffset</c>: validates <c>loc</c> (a defined <see cref="LocationId"/> name) and the int fields
+    /// <c>index</c>, <c>dx</c>, <c>dy</c>, then sets the offset. Any missing or bad field is an error and no mutation.
+    /// </summary>
+    private static string HandleSetOffset(GameController controller, JsonNode cmd,
+        Action<JsonNode, ControllerResult, JsonObject>? extend, out bool mutated)
+    {
+        mutated = false;
+        var locName = cmd["loc"]?.GetValue<string>();
+        if (locName is null || !System.Enum.TryParse<LocationId>(locName, ignoreCase: true, out var loc)
+            || !System.Enum.GetNames<LocationId>().Contains(locName, StringComparer.OrdinalIgnoreCase))
+            return Error($"Missing or unknown 'loc': {locName}. Valid: {string.Join(", ", System.Enum.GetNames<LocationId>())}");
+        if (!TryInt(cmd, "index", out var index) || !TryInt(cmd, "dx", out var dx) || !TryInt(cmd, "dy", out var dy))
+            return Error("Missing or invalid 'index'/'dx'/'dy' fields");
+
+        mutated = true;
+        return Success(controller, controller.SetFineOffset(loc, index, dx, dy), cmd, extend);
+    }
+
+    /// <summary>Reads <paramref name="field"/> of <paramref name="cmd"/> as an int; false when absent or not an int.</summary>
+    private static bool TryInt(JsonNode cmd, string field, out int value)
+    {
+        value = 0;
+        try
+        {
+            if (cmd[field] is not JsonValue v) return false;
+            value = v.GetValue<int>();
+            return true;
+        }
+        catch (System.Exception)
+        {
+            return false;
+        }
     }
 
     private static string HandleClick(GameController controller, JsonNode cmd,

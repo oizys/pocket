@@ -170,7 +170,7 @@ public class SimContractTests
                 "AcquireRandom", "AdjustSplit", "AdvanceDialogue", "BeginSplit", "CancelSplit", "Click",
                 "CloseRecipeMenu", "CommitSplit", "ConfirmRecipeMenu", "CycleRecipe", "Drop", "Dsl", "EnterBag",
                 "Grab", "Harvest", "Interact", "Leave", "LeaveBag", "ModalSplit", "Move", "MoveRecipeMenu",
-                "OpenRecipeMenu", "Peek", "Primary", "QuickSplit", "Secondary", "SetCursor", "SetElapsed",
+                "OpenRecipeMenu", "Peek", "Primary", "QuickSplit", "Secondary", "SetCursor", "SetElapsed", "SetFineOffset",
                 "Sort", "Tick", "ToolPrimary", "Undo"
             },
             cases.Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray());

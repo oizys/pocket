@@ -877,3 +877,121 @@ always empty.
     would mean ticks happen outside the socket. If so, either route the scene's clock through the handler's stream or
     pause the clock under the debug server.
 - Godot already references `Pockets.Realization`, so the 2.5 csproj edit is done.
+
+## Addendum — Slice 2.6 as built (2026-10-28)
+
+L2a fine state exists: a store, the shell plumbing and the L1 wall. D2-B is not in yet. **No golden was added or
+changed.** The fine state is empty in both journeys, so the VM, events, 11 buffer goldens and `target-demo.poses`
+are byte-identical. `dotnet test` is green (Core 1085, App 54, Realization 114). `make parity-full` is green, and the
+Godot build in WSL has 0 warnings and 0 errors. The tests were written first and seen failing (compile) before any
+production code.
+
+### Production
+
+- **`src/Pockets.Core/Fine/`** (`namespace Pockets.Core.Fine`):
+  - `FineBody(Px, Py, Vx, Vy, Direction8? Held)`, with `Rest` and `IsRest`.
+  - `FineState`, holding `Bodies[(Loc, Bag)]` and `Offsets[CellRef]`.
+    - Everything is in 1/16ths, ints only. `MaxOffset = 6`, and offsets are clamped.
+    - The store is **sparse**: a body at rest and a zero offset are not stored, so `Empty` stays `Empty`.
+    - Equality is by **content**. Equals and GetHashCode are overridden because the dictionaries would otherwise
+      compare by reference.
+    - `WithOffset` and `WithBody` return `this` when nothing changes.
+  - `FineLogic.Reconcile(fine, events, game')` and `FineLogic.SetOffset(fine, game, at, index, dx, dy)`.
+  - `FineText.Lines(fine, BagNames)`: `body loc=B bag=bag#2 px=3 py=-2 vx=4 vy=0 held=E`, then
+    `offset cell=bag#1[2] dx=-6 dy=0`.
+    - Bodies are ordered by `LocationId` order, offsets by bag name and then index.
+    - Naming a bag that hasn't been seen yet assigns it the stream's next `bag#N`.
+  - `FineCheckpoint(LogMark, FineState)`.
+- **`Direction8` lives in `Models`, not `Fine` (a deviation).** 2.7's `Steer(At, Direction8?)` intent lives in
+  `Sim/Intent.cs`, which must not cross the wall. So the enum is a plain L1-side type: N = 1 … NW, with no zero member.
+- **`Intent.SetFineOffset(At, Index, Dx, Dy)`** (P2-D11, test-only) is shell-handled like `Undo`.
+  - `Simulation.Step` throws on it.
+  - It changes only `Fine`: no step, no event, no undo push, no action-log line. It is logged in `IntentLog` only when
+    it changes the fine state.
+  - A no-op is any of: an empty cell, an index out of range, an absent location, or the same value.
+  - Shape pin: the intent cases go from 32 to 33.
+- **`GameSession`** is the only L1-side file that names `Pockets.Core.Fine`. It gains three init properties:
+  - **`Fine`**.
+  - **`FineMarks`**: a stack parallel to `UndoStack`/`UndoMarks`, pushed and trimmed with them. It holds the
+    *pre-step* fine state of each snapshot.
+  - **`FineCheckpoints`**: parallel to `Checkpoints`, with the same `LogMark`. It is added and evicted with the ring,
+    and pruned with it on undo.
+  - **Deviation from "UndoMarks gains the fine state":** `LogMark` is in `Sim`, behind the wall, so it cannot carry a
+    `FineState`. The fine marks are a parallel stack instead, which keeps `UndoStack`'s positional shape as 1.8 did.
+  - `RunStepCore` reconciles after every step that changed state or emitted events. A no-op step still returns the
+    same session instance.
+  - `UndoCore` restores `FineMarks.Peek()`. With no mark (a snapshot pushed from outside the shell), it restores
+    `Empty`, which is the A3 reset.
+  - Replay needs nothing new: `ReplayCheck.Replay` runs `SetFineOffset`, the reconciles and the undos through the
+    shell, so the fine state rebuilds exactly.
+- **Reconcile rules:**
+  - An offset is dropped for any cell named by `StackMoved`/`StackSplit`/`StackMerged` (both ends),
+    `StackRemoved`, or `Harvested` (the cell and its yields' cells).
+  - `BagRearranged` drops every offset of its bag.
+  - An offset is also dropped for any cell that is empty, missing or out of range in `game'`.
+  - `CursorMoved(loc, bag)` zeroes that body's `Px`/`Py`. `BagEntered`/`BagLeft` zero every body of that location.
+    Velocity and `Held` are kept, and a body that ends up at rest is removed.
+  - `Empty` returns immediately.
+- **`GameController.SetFineOffset(at, index, dx, dy)`** sends the intent.
+- **Debug protocol** (Core `DebugCommandHandler`; Rendering may reference Fine):
+  - `{"action":"fine"}` is a query. It does not mutate, and adds `"fine": [FineText lines]`, named through
+    `EventTextFor(controller)`.
+  - `{"action":"setOffset","loc":"B","index":3,"dx":2,"dy":-1}` mutates. A bad or missing field is an error with
+    `mutated = false`.
+- **Realization:**
+  - `FineView.Of(FineState)` returns `FineView.Empty` for an empty store, else an adapter.
+  - `PoseStream(initial, names, policy, fine)` and `Commit(events, next, atMs, fine)` take the view. The TUI driver,
+    `PoseDebugCommandHandler` and `PoseReplayCheck` each pass `FineView.Of(session.Fine)` of the session they are
+    following.
+  - `PoseDebugCommandHandler` treats `fine` as a query, like `state`: its poses are `[]` and it makes no commit.
+- **`Timeline` (an edit the plan did not list):** a same-bag slide, a cross-bag fade origin and a sort slide now start
+  from the stack's offset in the *previous* scene (`PrevSub`). Before this they started at sub (0, 0). With no
+  offsets this is still (0, 0), so the goldens are unchanged. Without it a nudged stack would jump to centre when it
+  moves.
+
+### The wall (`tests/Pockets.Core.Tests/Fine/FineWallTests.cs`)
+
+- A text scan: no file under `Sim/**` or `Models/**` except `Models/GameSession.cs` mentions `Pockets.Core.Fine` or
+  any public type name in that namespace.
+- Reflection:
+  - every `Simulation.Step*` method takes and returns no fine type, including generic arguments;
+  - `GameState`, `SimState`, `SimContent` and `Bag` carry no fine-typed property.
+- VM-neutrality: setting offsets leaves `ViewModelSerializer` output byte-identical. This is tested at the session
+  level and over the debug protocol.
+
+### Tests
+
+- Core `Fine/`: `FineStateTests`, `FineReconcileTests` (each event kind, same-instance rules, `SetOffset` bounds),
+  `FineSessionTests` (the shell intent, logging, reconcile on a grab, undo restore, mark trimming, realtime
+  checkpoints and their ring and undo, replay), `FineWallTests` and `FineDebugCommandTests`.
+- Realization: `FineViewTests` (the adapter, rest-pose offsets, `fine` as a non-commit, a sort sliding from the
+  offset poses, pose replay rebuilding the offsets, and the direct TUI-style stream matching the handler).
+- One trap: in realtime a cursor `Move` does not advance `TickCount`, because it applies with no time advance. So
+  checkpoint tests must step with tools or ticks.
+
+### Notes for 2.5 (Godot, next)
+
+- Draw from `Scene`/`Timeline` with `FineView.Of(controller.Session.Fine)`, passed to the scene controller's own
+  `PoseStream`/`Timeline` on every commit, exactly as the TUI driver does. Offsets then show at rest, and slides
+  start from them.
+- `DebugWebSocketServer` needed no change. `fine` and `setOffset` reach it through `PoseDebugCommandHandler` → Core.
+  Its local screenshot response is unchanged.
+- No Godot file was touched in 2.6.
+
+### Notes for 2.7 (D2-B)
+
+- `Direction8` already exists in `Models`. Use it for `Steer` and `FineBody.Held`.
+- `Reconcile` re-anchors on **every** `CursorMoved`/`BagEntered`/`BagLeft` today. The integrator's derived `Move`
+  must skip re-anchoring for the body it is moving. Do this with a parameter, or by handling the
+  `p −= 16·dir` itself after the reconcile.
+- `FineTick` and `Steer` should follow `SetFineOffset`'s template:
+  - handled in `GameSession.Dispatch` before `Expand`;
+  - `Step` throws on them;
+  - logged only when `Fine` changes;
+  - no undo push.
+  The derived `Move` goes through `RunStep` (so it is reconciled, retained and checkpointed) and is not logged
+  separately.
+- Undo restores the fine state at the last L1 snapshot (risk 4: exact and coarse). Realtime `FineTick`s push no
+  snapshots, so undo in a free bag jumps the body back to the pre-snapshot sub-position.
+- `FineText` exists for the 2.8 fuzz and for `--fuzz-fine` diagnostics. The runner does not yet compare fine state at
+  replay boundaries; the pose replay covers it indirectly.

@@ -229,6 +229,8 @@ public static partial class Simulation
 
             case Intent.Undo:
                 throw new InvalidOperationException("Undo is handled by the session shell, which owns the undo snapshots.");
+            case Intent.SetFineOffset:
+                throw new InvalidOperationException("SetFineOffset is handled by the session shell, which owns the fine state (L2a).");
             default:
                 throw new InvalidOperationException($"Unhandled intent {intent.GetType().Name}");
         }

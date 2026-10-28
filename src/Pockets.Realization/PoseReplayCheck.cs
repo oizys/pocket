@@ -25,7 +25,7 @@ public static class PoseReplayCheck
     {
         var failures = new List<string>();
         var text = new EventText();
-        var stream = new PoseStream(fresh.Current, text.Names);
+        var stream = new PoseStream(fresh.Current, text.Names, null, FineView.Of(fresh.Fine));
         var session = fresh;
         var pending = new List<SimEvent>();
         var next = 0;
@@ -35,7 +35,7 @@ public static class PoseReplayCheck
             while (next < commits.Count && commits[next].IntentCount == applied)
             {
                 var c = commits[next++];
-                var lines = stream.Commit(pending.ToList(), session.Current, c.AtMs);
+                var lines = stream.Commit(pending.ToList(), session.Current, c.AtMs, FineView.Of(session.Fine));
                 pending.Clear();
                 var i = Enumerable.Range(0, c.Lines.Count > lines.Length ? c.Lines.Count : lines.Length)
                     .Cast<int?>()

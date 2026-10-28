@@ -154,4 +154,10 @@ public abstract record Intent
     /// it is an intent so the intent log replays it. Dialogue, the RNG and <c>TickCount</c> keep moving forward.
     /// </summary>
     public sealed record Undo : Intent;
+
+    /// <summary>
+    /// Test-only (P2-D11): set the L2a offset of cell <paramref name="Index"/> of <paramref name="At"/>'s active bag.
+    /// Handled by the session shell like <see cref="Undo"/>, which owns the fine state; it never reaches Step.
+    /// </summary>
+    public sealed record SetFineOffset(LocationId At, int Index, int Dx, int Dy) : Intent;
 }

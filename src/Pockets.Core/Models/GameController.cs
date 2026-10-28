@@ -414,6 +414,17 @@ public class GameController
     public ControllerResult HandleDsl(string dslExpression) =>
         Collect(() => HandleDslCore(dslExpression));
 
+    /// <summary>
+    /// Test-only (P2-D11): sets the L2a offset of cell <paramref name="index"/> of <paramref name="at"/>'s active bag
+    /// (<see cref="Intent.SetFineOffset"/>). No Step runs; the shell changes the session's fine state.
+    /// </summary>
+    public ControllerResult SetFineOffset(LocationId at, int index, int dx, int dy) =>
+        Collect(() =>
+        {
+            Send(new Intent.SetFineOffset(at, index, dx, dy));
+            return ControllerResult.Handle(_session, "Fine offset");
+        });
+
     private ControllerResult HandleDslCore(string dslExpression)
     {
         Send(new Intent.Dsl(dslExpression));

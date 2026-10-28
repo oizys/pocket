@@ -42,7 +42,7 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
         var built = new List<List<Track>>();
         foreach (var ev in list)
         {
-            var (added, loc, facing) = Build(ev, applied, policy);
+            var (added, loc, facing) = Build(ev, applied, Scene, policy);
             if (loc is { } l && facing is { } fc)
             {
                 facings = facings.SetItem(l, fc);
@@ -98,7 +98,7 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
 
     /// <summary>The tracks (and any facing change) one event produces.</summary>
     private static (List<Track> Tracks, LocationId? Loc, Facing? Facing) Build(
-        SimEvent ev, Scene next, RealizationPolicy policy)
+        SimEvent ev, Scene next, Scene prev, RealizationPolicy policy)
     {
         var none = new List<Track>();
         var curve = policy.Ease == EaseKind.Linear ? Curve.Linear : Curve.Smooth;
@@ -163,11 +163,11 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
                     new(r.Entity, r, r with { SubX = r.SubX + 2 }, 0, policy.ShakeMs, Curve.Shake, Channel.Motion)
                 }, null, null);
             }
-            case SimEvent.StackMoved s: return (Stack(s.From, s.To, false, next, policy, curve), null, null);
-            case SimEvent.StackSplit s: return (Stack(s.From, s.To, false, next, policy, curve), null, null);
-            case SimEvent.StackMerged s: return (Stack(s.From, s.To, true, next, policy, curve), null, null);
+            case SimEvent.StackMoved s: return (Stack(s.From, s.To, false, next, prev, policy, curve), null, null);
+            case SimEvent.StackSplit s: return (Stack(s.From, s.To, false, next, prev, policy, curve), null, null);
+            case SimEvent.StackMerged s: return (Stack(s.From, s.To, true, next, prev, policy, curve), null, null);
             case SimEvent.BagRearranged r:
-                return (Rearrange(r, next, policy, curve), null, null);
+                return (Rearrange(r, next, prev, policy, curve), null, null);
             case SimEvent.Acquired a:
                 return (Pop(new[] { a.Cell }, next, policy), null, null);
             case SimEvent.Harvested h:
@@ -176,8 +176,12 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
         }
     }
 
-    /// <summary>The tracks of a stack leaving <paramref name="from"/> for <paramref name="to"/>.</summary>
-    private static List<Track> Stack(CellRef from, CellRef to, bool overlay, Scene next, RealizationPolicy policy, Curve curve)
+    /// <summary>The L2a offset the stack in <paramref name="cell"/> rested at in <paramref name="prev"/>, (0, 0) when none: a slide starts from it.</summary>
+    private static (int SubX, int SubY) PrevSub(Scene prev, CellRef cell) =>
+        RestStack(prev, cell) is { } p ? (p.SubX, p.SubY) : (0, 0);
+
+    /// <summary>The tracks of a stack leaving <paramref name="from"/> for <paramref name="to"/>, starting at its offset in <paramref name="prev"/>.</summary>
+    private static List<Track> Stack(CellRef from, CellRef to, bool overlay, Scene next, Scene prev, RealizationPolicy policy, Curve curve)
     {
         var rest = RestStack(next, to);
         if (from.Bag == to.Bag)
@@ -185,7 +189,8 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
             if (!next.Columns.TryGetValue(from.Bag, out var cols)) return new List<Track>();
             var r = rest ?? new Pose(new EntityKey.Stack(to), to.Bag, to.Index % cols, to.Index / cols, 0, 0, null, null);
             var key = new EntityKey.Stack(from);
-            var start = new Pose(key, from.Bag, from.Index % cols, from.Index / cols, 0, 0, null, null);
+            var (sx, sy) = PrevSub(prev, from);
+            var start = new Pose(key, from.Bag, from.Index % cols, from.Index / cols, sx, sy, null, null);
             return new List<Track>
             {
                 new Track(key, start, r, 0, policy.SlideMs, curve, Channel.Motion) { Overlay = overlay }
@@ -196,14 +201,15 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
             ? new Pose(toKey, to.Bag, to.Index % tc, to.Index / tc, 0, 0, null, null)
             : null);
         if (target is not { } tp) return new List<Track>();
+        var (ox, oy) = PrevSub(prev, from);
         var origin = next.Columns.TryGetValue(from.Bag, out var fc)
-            ? new Pose(new EntityKey.Stack(from), from.Bag, from.Index % fc, from.Index / fc, 0, 0, null, null)
+            ? new Pose(new EntityKey.Stack(from), from.Bag, from.Index % fc, from.Index / fc, ox, oy, null, null)
             : tp;
         return new List<Track> { new(toKey, origin, tp, 0, policy.SlideMs, Curve.Linear, Channel.Fade) };
     }
 
-    /// <summary>The parallel slides of a sort.</summary>
-    private static List<Track> Rearrange(SimEvent.BagRearranged r, Scene next, RealizationPolicy policy, Curve curve)
+    /// <summary>The parallel slides of a sort, each starting at its stack's offset in <paramref name="prev"/>.</summary>
+    private static List<Track> Rearrange(SimEvent.BagRearranged r, Scene next, Scene prev, RealizationPolicy policy, Curve curve)
     {
         if (!next.Columns.TryGetValue(r.Bag, out var cols)) return new List<Track>();
         return r.Permutation
@@ -214,7 +220,8 @@ public sealed record Timeline(Scene Scene, ImmutableArray<Track> Tracks, Immutab
             .Select(t =>
             {
                 var key = new EntityKey.Stack(new CellRef(r.Bag, t.old));
-                var origin0 = new Pose(key, r.Bag, t.old % cols, t.old / cols, 0, 0, null, null);
+                var (sx, sy) = PrevSub(prev, new CellRef(r.Bag, t.old));
+                var origin0 = new Pose(key, r.Bag, t.old % cols, t.old / cols, sx, sy, null, null);
                 return new Track(key, origin0, t.rest!.Value, 0, policy.SortMs, curve, Channel.Motion);
             })
             .ToList();

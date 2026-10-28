@@ -17,12 +17,15 @@ public sealed class PoseStream
     /// <summary>The locations whose bodies and stacks the scene shows.</summary>
     public static ImmutableArray<LocationId> Shown { get; } = [LocationId.B, LocationId.H, LocationId.T];
 
-    /// <summary>Starts at the rest timeline of <paramref name="initial"/>; <paramref name="policy"/> defaults to <see cref="RealizationPolicy.Default"/>.</summary>
-    public PoseStream(GameState initial, BagNames names, RealizationPolicy? policy = null)
+    /// <summary>
+    /// Starts at the rest timeline of <paramref name="initial"/>, its poses offset by <paramref name="fine"/> (none when
+    /// null); <paramref name="policy"/> defaults to <see cref="RealizationPolicy.Default"/>.
+    /// </summary>
+    public PoseStream(GameState initial, BagNames names, RealizationPolicy? policy = null, IFineView? fine = null)
     {
         _text = new PoseText(names);
         _policy = policy ?? RealizationPolicy.Default;
-        Timeline = Timeline.Rest(Scene.FromState(initial, Shown));
+        Timeline = Timeline.Rest(Scene.FromState(initial, Shown, fine));
         Last = [];
     }
 
@@ -34,11 +37,12 @@ public sealed class PoseStream
 
     /// <summary>
     /// Commits <paramref name="events"/> leading to <paramref name="next"/> at clock delta <paramref name="atMs"/>
-    /// and returns (and remembers) the commit's pose lines.
+    /// and returns (and remembers) the commit's pose lines. <paramref name="fine"/> is the fine view after the commit
+    /// (the session's L2a state); null means none.
     /// </summary>
-    public ImmutableArray<string> Commit(IEnumerable<SimEvent> events, GameState next, int atMs)
+    public ImmutableArray<string> Commit(IEnumerable<SimEvent> events, GameState next, int atMs, IFineView? fine = null)
     {
-        Timeline = Timeline.Commit(events, Scene.FromState(next, Shown, null, Timeline.Facings), _policy, atMs);
+        Timeline = Timeline.Commit(events, Scene.FromState(next, Shown, fine, Timeline.Facings), _policy, atMs);
         Last = Lines(Timeline, _text);
         return Last;
     }

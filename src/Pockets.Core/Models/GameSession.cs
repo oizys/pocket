@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Pockets.Core.Data;
+using Pockets.Core.Fine;
 using Pockets.Core.Sim;
 
 namespace Pockets.Core.Models;
@@ -98,6 +99,23 @@ public record GameSession(
     /// where the undo snapshots are the snapshots.
     /// </summary>
     public ImmutableList<Checkpoint> Checkpoints { get; init; } = ImmutableList<Checkpoint>.Empty;
+
+    /// <summary>
+    /// The L2a fine state (P2-D9): sub-cell body positions and stack offsets. Session state outside L1 — not in
+    /// <see cref="GameState"/>, <see cref="SimState"/> or the view-model. Reconciled after every Step, carried by
+    /// the undo snapshots (<see cref="FineMarks"/>) and checkpoints (<see cref="FineCheckpoints"/>), and rebuilt by
+    /// replaying the intent log.
+    /// </summary>
+    public FineState Fine { get; init; } = FineState.Empty;
+
+    /// <summary>
+    /// The fine state at each undo snapshot, parallel to <see cref="UndoStack"/> (top = newest). A parallel stack
+    /// because <see cref="LogMark"/> lives in Sim, behind the L1 wall.
+    /// </summary>
+    public ImmutableStack<FineState> FineMarks { get; init; } = ImmutableStack<FineState>.Empty;
+
+    /// <summary>The fine state after each realtime checkpoint's step, parallel to <see cref="Checkpoints"/>.</summary>
+    public ImmutableList<FineCheckpoint> FineCheckpoints { get; init; } = ImmutableList<FineCheckpoint>.Empty;
 
     /// <summary>
     /// The event position of the oldest retained snapshot (P1-D9): events before it are compacted away. The
@@ -199,6 +217,11 @@ public record GameSession(
             var (undone, rewound) = UndoCore();
             return (undone, null, rewound);
         }
+        if (intent is Intent.SetFineOffset o)
+        {
+            var fine = FineLogic.SetOffset(Fine, Current, o.At, o.Index, o.Dx, o.Dy);
+            return (ReferenceEquals(fine, Fine) ? this : this with { Fine = fine }, null, ImmutableArray<SimEvent>.Empty);
+        }
 
         var subs = Simulation.Expand(ToSimState(), intent);
         if (subs.Count == 1 && ReferenceEquals(subs[0], intent))
@@ -240,6 +263,7 @@ public record GameSession(
         var rejected = events.Length > 0 ? events[0] as SimEvent.IntentRejected : null;
         var changed = rejected is null && result.State != pre;
         var mark = new LogMark(TickCount, EventLog.End);
+        var fineMark = Fine;
 
         var log = EventLog.Append(events, LogPolicy);
         var session = this;
@@ -250,12 +274,18 @@ public record GameSession(
         }
         else if (!ReferenceEquals(log, EventLog))
             session = this with { EventLog = log };
+        if (!events.IsEmpty || changed)
+        {
+            var fine = FineLogic.Reconcile(Fine, events, session.Current);
+            if (!ReferenceEquals(fine, Fine))
+                session = session with { Fine = fine };
+        }
         if (trace is null)
             return (session, null, events);
 
         // Push the pre-step snapshot. A tool run at a panel other than B still pushes the unswapped
         // pre-step state: the swapped frame is only the tool's view (and its log line's).
-        GameSession Undoable(GameState snapshot) => session.PushSnapshot(snapshot, mark);
+        GameSession Undoable(GameState snapshot) => session.PushSnapshot(snapshot, mark, fineMark);
         GameSession Log(IEnumerable<string> lines) => session with { ActionLog = session.ActionLog.AddRange(lines) };
         IEnumerable<string> WithCompletions(string line) => new[] { line }.Concat(CraftLogs(events, session.Current));
 
@@ -425,7 +455,7 @@ public record GameSession(
     /// moving forward). A shell operation: the snapshots are shell state, so it never reaches Step.
     /// <para>
     /// Slice 1.8: the event log is truncated back to the snapshot's mark (it mirrors the current timeline),
-    /// realtime checkpoints taken after it are dropped with the abandoned timeline, and a single
+    /// realtime checkpoints taken after it are dropped with the abandoned timeline, the fine state returns to the snapshot's (an empty one when it has no fine mark), and a single
     /// <see cref="SimEvent.Rewound"/> is appended and returned. A snapshot with no mark (an undo stack set from
     /// outside the shell) rewinds without truncating. The intent log is not truncated (see <see cref="IntentLog"/>).
     /// </para>
@@ -447,6 +477,9 @@ public record GameSession(
             UndoMarks = UndoMarks.IsEmpty ? UndoMarks : UndoMarks.Pop(),
             ActionLog = ActionLog.Add($"Undo: {lastAction}"),
             Checkpoints = Checkpoints.RemoveAll(c => c.Mark.EventPos > position),
+            Fine = FineMarks.IsEmpty ? FineState.Empty : FineMarks.Peek(),
+            FineMarks = FineMarks.IsEmpty ? FineMarks : FineMarks.Pop(),
+            FineCheckpoints = FineCheckpoints.RemoveAll(c => c.Mark.EventPos > position),
             RetentionHorizon = horizon,
             EventLog = EventLog.TruncateTo(position).Append(rewound, LogPolicy).CompactTo(horizon)
         }, rewound);
@@ -654,14 +687,15 @@ public record GameSession(
     /// In rogue mode the undo snapshots are the retained snapshots (P1-D9), so a trim moves
     /// <see cref="RetentionHorizon"/> up to the oldest mark kept.
     /// </summary>
-    private GameSession PushSnapshot(GameState snapshot, LogMark mark)
+    private GameSession PushSnapshot(GameState snapshot, LogMark mark, FineState fine)
     {
         var (stack, trimmed) = PushWithLimit(UndoStack, snapshot);
         var (marks, _) = PushWithLimit(UndoMarks, mark);
+        var (fineMarks, _) = PushWithLimit(FineMarks, fine);
         var horizon = trimmed && TickMode == TickMode.Rogue && !marks.IsEmpty
             ? Math.Max(RetentionHorizon, marks.Last().EventPos)
             : RetentionHorizon;
-        return this with { UndoStack = stack, UndoMarks = marks, RetentionHorizon = horizon };
+        return this with { UndoStack = stack, UndoMarks = marks, FineMarks = fineMarks, RetentionHorizon = horizon };
     }
 
     /// <summary>
@@ -675,14 +709,17 @@ public record GameSession(
         var session = this;
         if (TickMode == TickMode.Realtime && TickCount != stepBefore && TickCount % LogPolicy.CheckpointEvery == 0)
         {
-            var checkpoints = Checkpoints.Add(new Checkpoint(new LogMark(TickCount, EventLog.End), Current));
+            var checkpointMark = new LogMark(TickCount, EventLog.End);
+            var checkpoints = Checkpoints.Add(new Checkpoint(checkpointMark, Current));
+            var fineCheckpoints = FineCheckpoints.Add(new FineCheckpoint(checkpointMark, Fine));
             var horizon = RetentionHorizon;
             if (checkpoints.Count > LogPolicy.CheckpointRing)
             {
                 checkpoints = checkpoints.RemoveAt(0);
+                fineCheckpoints = fineCheckpoints.RemoveAt(0);
                 horizon = Math.Max(horizon, checkpoints[0].Mark.EventPos);
             }
-            session = session with { Checkpoints = checkpoints, RetentionHorizon = horizon };
+            session = session with { Checkpoints = checkpoints, FineCheckpoints = fineCheckpoints, RetentionHorizon = horizon };
         }
         var log = session.EventLog.CompactTo(session.RetentionHorizon);
         return ReferenceEquals(log, session.EventLog) ? session : session with { EventLog = log };

@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text;
 using Terminal.Gui;
 using Pockets.Core;
+using Pockets.Core.Fine;
 using Pockets.Core.Models;
 using Pockets.Core.Rendering;
 using Pockets.Core.Sim;
@@ -58,7 +59,7 @@ public sealed class TuiDriver : IJourneyDriver, ISessionDriver
         var contents = Application.Driver.Contents;
         _rows = contents.GetLength(0);
         _cols = contents.GetLength(1);
-        _stream = new PoseStream(_view.Controller.Session.Current, _text.Names);
+        _stream = new PoseStream(_view.Controller.Session.Current, _text.Names, null, FineView.Of(_view.Controller.Session.Fine));
         Render();
     }
 
@@ -122,7 +123,7 @@ public sealed class TuiDriver : IJourneyDriver, ISessionDriver
     private void Record(ImmutableArray<SimEvent> events, int atMs)
     {
         _events.AddRange(events.Select(_text.Line));
-        var lines = _stream.Commit(events, _view.Controller.Session.Current, atMs);
+        var lines = _stream.Commit(events, _view.Controller.Session.Current, atMs, FineView.Of(_view.Controller.Session.Fine));
         _poses.Add(new ObservedCommit(atMs, _view.Controller.Session.IntentLog.Count, lines));
     }
 
