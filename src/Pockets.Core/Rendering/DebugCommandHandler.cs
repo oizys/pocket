@@ -22,6 +22,9 @@ namespace Pockets.Core.Rendering;
 ///   {"action":"tick"}                                         → Tick
 ///   {"action":"advanceTime","ms":5000}                        → AdvanceClock (scripted clock advance)
 ///   {"action":"state"}                                        → serialize (no mutation)
+/// <c>Pockets.Realization.PoseDebugCommandHandler</c> wraps this dispatch with a <c>poses</c> query and a
+/// <c>poses</c> field on every success response (Slice 2.4), because Core cannot reference Realization; it plugs in
+/// through the <c>extend</c> callback of the four-argument <see cref="Handle(GameController, string, out bool, Action{JsonNode, ControllerResult, JsonObject}?)"/>.
 /// Response: {"handled":bool,"status":"...","state":{...},"events":["…"]} or {"error":"..."}.
 /// <c>events</c> (Slice 1.6) is the command's <see cref="ControllerResult.Events"/> as canonical
 /// <see cref="EventText"/> lines (P1-D8), so the Godot WebSocket driver and mock-godot see the same stream the
@@ -42,7 +45,23 @@ public static class DebugCommandHandler
     /// <paramref name="mutated"/> when the command may have changed state (key/click/back/tick),
     /// letting a transport refresh its own UI; false for pure queries / errors.
     /// </summary>
-    public static string Handle(GameController controller, string json, out bool mutated)
+    public static string Handle(GameController controller, string json, out bool mutated) =>
+        Handle(controller, json, out mutated, null);
+
+    /// <summary>
+    /// The controller's one <see cref="EventText"/> naming stream (created on first use), the one the <c>events</c>
+    /// lines are written with, so another stream (poses) can share its bag names.
+    /// </summary>
+    public static EventText EventTextFor(GameController controller) =>
+        Streams.GetValue(controller, _ => new EventText());
+
+    /// <summary>
+    /// <see cref="Handle(GameController, string, out bool)"/> with an optional <paramref name="extend"/> callback,
+    /// invoked as <c>extend(command, result, response)</c> for every success response after the standard fields are
+    /// set and before it is serialized (never for an error), so a wrapper can add fields.
+    /// </summary>
+    public static string Handle(GameController controller, string json, out bool mutated,
+        Action<JsonNode, ControllerResult, JsonObject>? extend)
     {
         mutated = false;
         JsonNode? cmd;
@@ -66,22 +85,22 @@ public static class DebugCommandHandler
         {
             case "key":
                 mutated = true;
-                return HandleKey(controller, cmd);
+                return HandleKey(controller, cmd, extend);
             case "click":
                 mutated = true;
-                return HandleClick(controller, cmd);
+                return HandleClick(controller, cmd, extend);
             case "back":
                 mutated = true;
-                return Success(controller, controller.HandleBackClick());
+                return Success(controller, controller.HandleBackClick(), cmd, extend);
             case "tick":
                 mutated = true;
-                return Success(controller, controller.Tick());
+                return Success(controller, controller.Tick(), cmd, extend);
             case "advanceTime":
                 mutated = true;
                 var ms = cmd["ms"]?.GetValue<long>() ?? 0;
-                return Success(controller, controller.AdvanceClock(System.TimeSpan.FromMilliseconds(ms)));
+                return Success(controller, controller.AdvanceClock(System.TimeSpan.FromMilliseconds(ms)), cmd, extend);
             case "state":
-                return Success(controller, ControllerResult.Handle(controller.Session, "State query"));
+                return Success(controller, ControllerResult.Handle(controller.Session, "State query"), cmd, extend);
             default:
                 return Error($"Unknown action: {action}");
         }
@@ -93,7 +112,8 @@ public static class DebugCommandHandler
     public static string Handle(GameController controller, string json) =>
         Handle(controller, json, out _);
 
-    private static string HandleKey(GameController controller, JsonNode cmd)
+    private static string HandleKey(GameController controller, JsonNode cmd,
+        Action<JsonNode, ControllerResult, JsonObject>? extend)
     {
         var keyName = cmd["key"]?.GetValue<string>();
         if (keyName is null)
@@ -102,10 +122,11 @@ public static class DebugCommandHandler
         if (!System.Enum.TryParse<GameKey>(keyName, ignoreCase: true, out var gameKey))
             return Error($"Unknown key: {keyName}. Valid: {string.Join(", ", System.Enum.GetNames<GameKey>())}");
 
-        return Success(controller, controller.HandleKey(gameKey));
+        return Success(controller, controller.HandleKey(gameKey), cmd, extend);
     }
 
-    private static string HandleClick(GameController controller, JsonNode cmd)
+    private static string HandleClick(GameController controller, JsonNode cmd,
+        Action<JsonNode, ControllerResult, JsonObject>? extend)
     {
         var row = cmd["row"]?.GetValue<int>() ?? -1;
         var col = cmd["col"]?.GetValue<int>() ?? -1;
@@ -116,16 +137,18 @@ public static class DebugCommandHandler
         if (!System.Enum.TryParse<ClickType>(buttonName, ignoreCase: true, out var clickType))
             clickType = ClickType.Primary;
 
-        return Success(controller, controller.HandleGridClick(new Position(row, col), clickType));
+        return Success(controller, controller.HandleGridClick(new Position(row, col), clickType), cmd, extend);
     }
 
     /// <summary>
     /// The success response for <paramref name="result"/>: handled, status, the canonical view-model, and the
-    /// result's events as this controller's <see cref="EventText"/> lines.
+    /// result's events as this controller's <see cref="EventText"/> lines;
+    /// then <paramref name="extend"/>, when given, may add fields.
     /// </summary>
-    private static string Success(GameController controller, ControllerResult result)
+    private static string Success(GameController controller, ControllerResult result, JsonNode cmd,
+        Action<JsonNode, ControllerResult, JsonObject>? extend)
     {
-        var text = Streams.GetValue(controller, _ => new EventText());
+        var text = EventTextFor(controller);
         var response = new JsonObject
         {
             ["handled"] = result.Handled,
@@ -133,6 +156,7 @@ public static class DebugCommandHandler
             ["state"] = ViewModelSerializer.Serialize(controller.Session),
             ["events"] = new JsonArray(result.Events.Select(e => (JsonNode?)JsonValue.Create(text.Line(e))).ToArray())
         };
+        extend?.Invoke(cmd, result, response);
         return response.ToJsonString();
     }
 

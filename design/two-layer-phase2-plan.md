@@ -760,3 +760,120 @@ over both journeys.
 - **For 2.7:** `FineTick` should join `IsClock`'s clock envelopes (no snap). The timeline should add no
   body walk for integrator-originated `CursorMoved` (2.7's own rule). `IsClock`'s pattern match on
   `Intent.Tick or Intent.SetElapsed` is the one place to extend.
+
+## Addendum — Slice 2.4 as built (2026-10-28)
+
+This slice adds **exactly one golden**, `journeys/goldens/target-demo.poses` (305 lines). `make record-goldens`
+rewrote no existing golden: `git status` showed only `?? journeys/goldens/target-demo.poses`. The VM, events and 11
+buffer goldens are byte-identical. `dotnet test` is green (Core 1033, App 54, Realization 107) and `make parity-full` is
+green. The tests were written first and seen failing (compile) before any production code.
+
+### The one architectural deviation: where the poses half of the protocol lives
+
+The plan put the `Timeline` inside `DebugCommandHandler`. But that handler lives in `Pockets.Core.Rendering`, and Core
+must never reference Realization (principle 6, `CoreSimAndModels_DoNotReferenceRealization`). So the handler is split:
+
+- **Core** (`DebugCommandHandler`) gains a seam and nothing else. The 3-arg `Handle` is byte-identical to before.
+  - `Handle(controller, json, out mutated, Action<JsonNode, ControllerResult, JsonObject>? extend)`: `extend` sees every
+    success response (key/click/back/tick/advanceTime/state) after its fields are set, and never sees an error.
+  - `EventTextFor(controller)` is the controller's one naming stream.
+- **Realization** gets `PoseDebugCommandHandler`, the protocol frontends now call. Godot's `DebugWebSocketServer`
+  and mock-godot both use it (principle 4).
+  - It keeps one `PoseStream` per controller in a `ConditionalWeakTable`. The stream is created on the first command,
+    before that command applies, and named by `EventTextFor(controller).Names`.
+  - Every success response gains `"poses"`. A **`state` query returns `[]` and does not commit**: an empty commit counts
+    as input and would snap (2.3).
+  - `{"action":"poses"}` returns the last commit's lines together with the VM.
+  - `AtMs(cmd)` is the commit's clock delta (P2-D13): `advanceTime` gives its `ms`, `tick` gives `GameController.TickLengthMs`,
+    and anything else gives 0. It is never wall-clock. It reads `ms` as a long or an int and clamps it.
+- Replay: Core's `ReplayCheck` gains a public read-only **`Replay(fresh, log)`** enumerator. It yields
+  `(applied, session, events)` after each intent, `Run` now uses it, and `PoseReplayCheck` uses it as well. This
+  avoids opening Core's internals (`ApplyTraced`) to Realization.
+
+### Production (`src/Pockets.Realization/`)
+
+- **`PoseStream(GameState initial, BagNames names, RealizationPolicy? policy = null)`** holds one run's timeline.
+  - `Shown` is `[B, H, T]`, the same set the journey tests use.
+  - `Commit(events, next, atMs)` commits with `Scene.FromState(next, Shown, null, Timeline.Facings)`, then returns the
+    commit's lines and stores them in `Last`.
+  - `Lines(timeline, text)`: for q = 0…4 it samples at `t = SpanMs·q/4` (integer) and keeps the poses whose entity is
+    in the **moving set**, meaning every track's `Entity` and `To.Entity` on every channel. Each pose becomes the line
+    `u=q/4 t=ms <PoseText>`.
+  - A commit with no tracks has no lines.
+  - **Only what `Sample` draws is written.** A finished overlay, such as a cursor glide, has no `u=4/4` line, because
+    the rest scene does not draw a cursor.
+- **`PoseGolden.Lines(journeyStep, commits)`** prefixes `<journeyStep>:<k> `, where k is the commit ordinal inside the
+  journey step. **An empty commit keeps its ordinal**, so k can skip. This differs from `EventGolden`, which derives k
+  from `seq`. Pose lines carry no seq, so the drivers report commits explicitly.
+- **`PoseCommit(JourneyStep, IntentCount, AtMs, Lines)`** and **`PoseReplayCheck.Run(fresh, log, commits)`**.
+  - Replay commits at each recorded intent count, using the recorded `atMs`. Several commits at the same count become
+    empty commits.
+  - It names each intent's events before the commit's poses, which matches the live order.
+  - It reports one failure per differing commit.
+
+### Runner, Makefile, Godot
+
+- `DriverObservation.Poses` is a list of `ObservedCommit(AtMs, IntentCount?, Lines)`, one per mutating command since
+  the last observation. It is null when a (pre-2.4) Godot build sends no `poses`, and the runner then notes it.
+  - **tui** builds its own `PoseStream` over the events it records, named by its `EventText`, with events named first.
+    Nothing is rendered (P2-D4).
+  - **mock-godot** reads the `poses` field of each response.
+  - **godot** does the same, with no intent count.
+- `--poses-out <file>` writes the golden. `--replay-check` also runs `PoseReplayCheck`, and its failures are prefixed
+  `replay poses:`. The format is documented in `tools/journey-runner/README.md` §Pose golden.
+- Makefile:
+  - `parity` diffs the smoke pose streams across drivers.
+  - `parity-full` does the same for target-demo and adds `golden: pose stream`.
+  - `record-goldens` writes the pose golden.
+  - `parity-godot` adds `tui vs live-godot poses` and `golden: pose stream (live-godot)`.
+- **Godot files touched:**
+  - `src/Pockets.Godot/Pockets.Godot.csproj` gains a `ProjectReference` to `Pockets.Realization`. That reference was
+    planned for 2.5 and is needed now.
+  - `src/Pockets.Godot/Scripts/DebugWebSocketServer.cs` routes through `PoseDebugCommandHandler`, its local screenshot
+    response gains `"poses": []`, and its docs list `poses`.
+  - `dotnet build src/Pockets.Godot/Pockets.Godot.csproj` succeeds in WSL.
+
+### Acceptance
+
+1. `make parity-full` is green with the new golden, and `git status` showed only the new file.
+2. The VM, buffer and events goldens are unchanged.
+3. The tui and mock-godot pose streams are byte-identical on both journeys: smoke has 159 lines over 70 commits, and
+   target-demo has 305 lines over 147 commits. `PoseGoldenTests.Handler_EqualsDirectStream` pins the same property
+   in-process.
+4. Replay: on both drivers and both journeys, `--replay-check` reports "N commits and M pose lines identical".
+   `PoseGoldenTests.Replay_*` also pins a tampered line being reported.
+5. Mutation: `Mutation_Walk126_FailsTheGolden` checks that walk 126 ms differs from the golden while 125 ms matches it.
+   The same mutation was also run once through the real runner and `--compare`, and 6 lines diverged (journey step 96,
+   first diff at `u=2/4 t=62 → t=63`).
+
+### Golden shape
+
+There are 305 lines. 30 lines are `Body(B)` samples (walks and bump lunges in Quiet 1). The rest are mostly inventory
+`Cursor(B)` glides, plus stack slides and pops. As predicted, the clock commits (`advanceTime` ≥ 1000 ms) are almost
+always empty.
+
+### Notes for 2.6 (fine state, next)
+
+- When `IFineView` is backed by `FineState`, `PoseStream` must pass it to `Scene.FromState`. Today it passes `null`
+  at both call sites: the constructor and `Commit`. Add it as a constructor argument, or as a `Func<IFineView>`, so the
+  TUI driver, the debug handler and the replay all thread the same view.
+- **Golden risk:** if L2a gives a non-zero offset to anything in the demo journeys, the rest poses change, and so does
+  any pose line of a moving entity. The flag is off in both journeys (principle 3), and offsets should stay zero there.
+  `make parity-full`'s `golden: pose stream` is the tripwire.
+- `PoseReplayCheck` replays L1 intents only. Once undo snapshots carry fine state and `FineTick` exists (2.7), the pose
+  replay must rebuild L2a the same way, or it will diverge on free-bag journeys. That matters for the `free-move.*`
+  goldens in 2.8.
+
+### Notes for 2.5 (Godot)
+
+- The debug server already returns poses from `PoseDebugCommandHandler`'s own stream. `GameSceneController` (2.5)
+  should hold **its own** `Timeline` for drawing, like the TUI driver does, and commit every `ControllerResult.Events`,
+  including clock ticks.
+  - Do not draw from the debug handler's stream. That stream sees only commands that came over the socket, so it misses
+    window input and the realtime clock's ticks.
+  - The same is true of `bag#N` naming today. "Start Godot fresh, send no input" still applies to `parity-godot`.
+  - If live Godot's realtime clock ticks the controller during a `parity-godot` run, the debug-side pose stream will
+    miss those commits. On Aaron's box, check whether `tui vs live-godot poses` diverges only at clock commits. That
+    would mean ticks happen outside the socket. If so, either route the scene's clock through the handler's stream or
+    pause the clock under the debug server.
+- Godot already references `Pockets.Realization`, so the 2.5 csproj edit is done.

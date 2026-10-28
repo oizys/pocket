@@ -144,4 +144,32 @@ public class DebugCommandHandlerTests
         Assert.Contains("reason=FailedPeek", bump);
         Assert.DoesNotContain(Events(resp), l => l.Contains(" PanelOpened "));
     }
+
+    /// <summary>
+    /// Slice 2.4 seam: the <c>extend</c> callback sees every success response (command, result, response object) before it
+    /// is serialized, and may add fields; it is not called for an error. <see cref="DebugCommandHandler.EventTextFor"/> is the
+    /// controller's one naming stream, the one the <c>events</c> lines use.
+    /// </summary>
+    [Fact]
+    public void Extend_SeesEverySuccess_AndEventTextIsTheControllersStream()
+    {
+        var controller = NewController();
+        var seen = new List<string>();
+        void Extend(JsonNode cmd, ControllerResult result, JsonObject response)
+        {
+            seen.Add(cmd["action"]!.GetValue<string>());
+            response["extra"] = result.Events.Length;
+        }
+
+        var resp = JsonNode.Parse(DebugCommandHandler.Handle(controller, """{"action":"key","key":"Right"}""", out var mutated, Extend))!;
+        Assert.True(mutated);
+        Assert.Equal(Events(resp).Length, resp["extra"]!.GetValue<int>());
+
+        DebugCommandHandler.Handle(controller, """{"action":"state"}""", out _, Extend);
+        DebugCommandHandler.Handle(controller, """{"action":"bogus"}""", out _, Extend);
+        Assert.Equal(new[] { "key", "state" }, seen);
+
+        Assert.Same(DebugCommandHandler.EventTextFor(controller), DebugCommandHandler.EventTextFor(controller));
+        Assert.NotSame(DebugCommandHandler.EventTextFor(controller), DebugCommandHandler.EventTextFor(NewController()));
+    }
 }

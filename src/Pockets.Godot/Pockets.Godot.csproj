@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pockets.Core\Pockets.Core.csproj" />
+    <ProjectReference Include="..\Pockets.Realization\Pockets.Realization.csproj" />
   </ItemGroup>
 </Project>

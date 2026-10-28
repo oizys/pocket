@@ -11,9 +11,11 @@ using Pockets.JourneyRunner;
 //   journey-runner --driver tui|godot|mock-godot --script <file> [--out <file>]
 //                  [--data <dir>] [--seed <int>] [--url ws://host:port] [--dump]
 //                  [--goldens <dir>] [--screenshots <dir>] [--events-out <file>] [--replay-check]
+//                  [--poses-out <file>]
 // --events-out writes the event golden (one `<journeyStep>:<k> <step> <seq> <Kind> field=value…` line per
 // event); --replay-check replays the run's intent log on a fresh session and requires identical VMs and
-// events (in-process drivers only; Slice 1.7).
+// events (in-process drivers only; Slice 1.7) and, since Slice 2.4, identical pose lines at every commit.
+// --poses-out writes the pose golden (Slice 2.4): `<journeyStep>:<k> u=<q>/4 t=<ms> <PoseText>` per moving entity.
 // --goldens captures the TUI character buffer at every golden-flagged checkpoint (Slice 8 ledger-row
 // render goldens); --screenshots captures a Godot viewport PNG at the same checkpoints (real Godot only).
 //
@@ -48,7 +50,7 @@ if (args.Length > 0 && args[0] is "--compare" or "--compare-dirs")
 var opts = ParseArgs(args);
 if (opts is null) { PrintUsage(); return 2; }
 
-var (driverName, scriptPath, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck) = opts.Value;
+var (driverName, scriptPath, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck, posesOut) = opts.Value;
 
 var script = JourneyScript.Load(scriptPath);
 
@@ -94,6 +96,14 @@ if (eventsOut is not null)
     Console.Error.WriteLine($"[journey-runner] wrote {result.EventLines.Count} event line(s) → {eventsOut}");
 }
 
+// Pose golden (Slice 2.4): the moving entities' samples at u ∈ {0, ¼, ½, ¾, 1} of each commit, prefixed like the events.
+if (posesOut is not null)
+{
+    EnsureParentDir(posesOut);
+    File.WriteAllText(posesOut, string.Join('\n', result.PoseLines) + (result.PoseLines.Count > 0 ? "\n" : ""));
+    Console.Error.WriteLine($"[journey-runner] wrote {result.PoseLines.Count} pose line(s) → {posesOut}");
+}
+
 // Golden render buffers (Slice 8): one file per flagged ledger-row checkpoint. Only drivers with a
 // render probe (tui) populate them; others emit a note and this loop writes nothing.
 if (goldensDir is not null && result.Goldens.Count > 0)
@@ -125,11 +135,11 @@ return 1;
 // --- arg parsing ---
 
 static (string driver, string script, string? outPath, string dataDir, int? seed, string url, bool dump,
-        string? goldensDir, string? screenshotsDir, string? eventsOut, bool replayCheck)?
+        string? goldensDir, string? screenshotsDir, string? eventsOut, bool replayCheck, string? posesOut)?
     ParseArgs(string[] args)
 {
     string? driver = null, script = null, outPath = null, dataDir = null, url = "ws://localhost:9080";
-    string? goldensDir = null, screenshotsDir = null, eventsOut = null;
+    string? goldensDir = null, screenshotsDir = null, eventsOut = null, posesOut = null;
     bool replayCheck = false;
     int? seed = null;
     bool dump = false;
@@ -149,6 +159,7 @@ static (string driver, string script, string? outPath, string dataDir, int? seed
             case "--screenshots": screenshotsDir = Next(args, ref i); break;
             case "--events-out": eventsOut = Next(args, ref i); break;
             case "--replay-check": replayCheck = true; break;
+            case "--poses-out": posesOut = Next(args, ref i); break;
             default:
                 Console.Error.WriteLine($"Unknown argument: {args[i]}");
                 return null;
@@ -157,7 +168,7 @@ static (string driver, string script, string? outPath, string dataDir, int? seed
 
     if (driver is null || script is null) return null;
     dataDir ??= DefaultDataDir();
-    return (driver, script, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck);
+    return (driver, script, outPath, dataDir, seed, url, dump, goldensDir, screenshotsDir, eventsOut, replayCheck, posesOut);
 }
 
 // Optional --label <text> for the compare modes (names the gate in PASS/FAIL output). Empty if absent.
@@ -194,8 +205,9 @@ static void PrintUsage() => Console.Error.WriteLine(
     "Usage: journey-runner --driver tui|godot|mock-godot --script <file> [--out <file>]\n" +
     "                      [--data <dir>] [--seed <int>] [--url ws://host:port] [--dump]\n" +
     "                      [--goldens <dir>] [--screenshots <dir>]\n" +
-    "                      [--events-out <file>] [--replay-check]\n" +
+    "                      [--events-out <file>] [--replay-check] [--poses-out <file>]\n" +
     "  --goldens <dir>      write a TUI character-buffer golden per golden-flagged checkpoint (tui driver)\n" +
     "  --screenshots <dir>  save a Godot viewport PNG per golden-flagged checkpoint (godot driver)\n" +
     "  --events-out <file>  write the event golden: `<journeyStep>:<k> <step> <seq> <Kind> field=value…` per line\n" +
-    "  --replay-check       replay the intent log on a fresh session; VMs and events must be identical (tui, mock-godot)");
+    "  --replay-check       replay the intent log on a fresh session; VMs, events and poses must be identical (tui, mock-godot)\n" +
+    "  --poses-out <file>   write the pose golden: `<journeyStep>:<k> u=<q>/4 t=<ms> entity=… bag=… col=… …` per line");

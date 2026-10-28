@@ -35,32 +35,50 @@ public sealed class GodotWebSocketDriver : IJourneyDriver, IScreenshotDriver
     /// </summary>
     private List<string>? _events = new();
 
+    /// <summary>
+    /// The <c>poses</c> of every mutating response since the last <see cref="Observe"/>, one per commit (Slice 2.4); null
+    /// once a mutating response lacked the field, i.e. the Godot build predates 2.4. The session is remote, so no intent count.
+    /// </summary>
+    private List<ObservedCommit>? _poses = new();
+
     public DriverObservation Observe()
     {
         var resp = Send(new JsonObject { ["action"] = "state" });
         var events = _events;
+        var poses = _poses;
         _events = events is null ? null : new List<string>();
-        return new DriverObservation((JsonObject)resp["state"]!, FullState: null, RenderProbe: null, events);
+        _poses = poses is null ? null : new List<ObservedCommit>();
+        return new DriverObservation((JsonObject)resp["state"]!, FullState: null, RenderProbe: null, events, poses);
     }
 
     public void Key(GameKey key) =>
-        Send(new JsonObject { ["action"] = "key", ["key"] = key.ToString() });
+        Commit(new JsonObject { ["action"] = "key", ["key"] = key.ToString() });
 
-    public void Tick() => Send(new JsonObject { ["action"] = "tick" });
+    public void Tick() => Commit(new JsonObject { ["action"] = "tick" });
 
     public void AdvanceTime(TimeSpan delta) =>
-        Send(new JsonObject { ["action"] = "advanceTime", ["ms"] = (long)delta.TotalMilliseconds });
+        Commit(new JsonObject { ["action"] = "advanceTime", ["ms"] = (long)delta.TotalMilliseconds });
 
-    public void Back() => Send(new JsonObject { ["action"] = "back" });
+    public void Back() => Commit(new JsonObject { ["action"] = "back" });
 
     public void Click(Position pos, ClickType type) =>
-        Send(new JsonObject
+        Commit(new JsonObject
         {
             ["action"] = "click",
             ["row"] = pos.Row,
             ["col"] = pos.Col,
             ["button"] = type.ToString()
         });
+
+    /// <summary>Sends a mutating command and records its response's poses as one commit (Slice 2.4).</summary>
+    private void Commit(JsonObject command)
+    {
+        var resp = Send(command);
+        if (MockGodotDriver.PoseLines(resp) is { } lines)
+            _poses?.Add(new ObservedCommit(Pockets.Realization.PoseDebugCommandHandler.AtMs(command), null, lines));
+        else
+            _poses = null;
+    }
 
     /// <summary>
     /// Golden screenshot capture (Slice 8): asks the live Godot server to save its viewport to

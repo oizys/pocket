@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using Pockets.Core.Models;
 using Pockets.Core.Rendering;
@@ -83,12 +84,11 @@ public static class ReplayCheck
         }
 
         CheckBoundaries(0);
-        for (var n = 0; n < log.Count; n++)
+        foreach (var (applied, s, events) in Replay(fresh, log))
         {
-            var (s, _, events) = session.ApplyTraced(log[n].Intent);
             session = s;
             pending.AddRange(events.Select(text.Line));
-            CheckBoundaries(n + 1);
+            CheckBoundaries(applied);
         }
 
         failures.AddRange(boundaries.Skip(next)
@@ -102,6 +102,24 @@ public static class ReplayCheck
                 .Select(k => $"IntentLog #{k}: recorded ({log[k].Step}, {log[k].Intent}) vs replayed ({session.IntentLog[k].Step}, {session.IntentLog[k].Intent})"));
 
         return failures;
+    }
+
+    /// <summary>
+    /// Replays <paramref name="log"/> from <paramref name="fresh"/> through the shell (<see cref="GameSession.ApplyTraced"/>,
+    /// so <c>Undo</c> included) and yields, after each intent, how many have been applied, the session and that intent's
+    /// events. Read-only for callers: it is how a downstream projection (the Slice 2.4 pose replay in Realization) sees the
+    /// replayed events without access to the shell's internals.
+    /// </summary>
+    public static IEnumerable<(int Applied, GameSession Session, ImmutableArray<SimEvent> Events)> Replay(
+        GameSession fresh, IReadOnlyList<(int Step, Intent Intent)> log)
+    {
+        var session = fresh;
+        for (var n = 0; n < log.Count; n++)
+        {
+            var (s, _, events) = session.ApplyTraced(log[n].Intent);
+            session = s;
+            yield return (n + 1, session, events);
+        }
     }
 
     /// <summary>A compact excerpt of both strings around the first differing character.</summary>

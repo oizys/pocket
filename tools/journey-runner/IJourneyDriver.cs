@@ -12,10 +12,19 @@ namespace Pockets.JourneyRunner;
 /// observable render surface here. <see cref="Events"/> (Slice 1.6) is the canonical
 /// <see cref="Pockets.Core.Sim.EventText"/> lines the driver's frontend received since the previous
 /// observation, named by one stream per run; null when the driver's transport carries no events (a stale
-/// Godot build), which the runner reports.
+/// Godot build), which the runner reports. <see cref="Poses"/> (Slice 2.4) is one <see cref="ObservedCommit"/> per
+/// commit (each mutating command) since the previous observation; null when the transport carries no poses (a
+/// pre-2.4 Godot build).
 /// </summary>
 public record DriverObservation(JsonObject ViewModel, GameState? FullState, string? RenderProbe,
-    IReadOnlyList<string>? Events = null);
+    IReadOnlyList<string>? Events = null, IReadOnlyList<ObservedCommit>? Poses = null);
+
+/// <summary>
+/// One commit's pose lines (Slice 2.4): the unprefixed <c>u=q/4 t=ms PoseText</c> lines of the moving entities, the
+/// commit's deterministic clock delta <see cref="AtMs"/>, and the session's intent count right after it
+/// (<see cref="IntentCount"/>; null when the session is in another process). The replay check needs both.
+/// </summary>
+public record ObservedCommit(int AtMs, int? IntentCount, IReadOnlyList<string> Lines);
 
 /// <summary>
 /// A frontend driver the journey runner can plug in. All frontends converge on

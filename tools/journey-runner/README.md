@@ -9,8 +9,8 @@ gate — see [design/parity-drift-report.md](../../design/parity-drift-report.md
 ## One-command entry points
 
 ```bash
-make parity          # FAST gate: tui + mock-godot over journeys/smoke.journey.json, diff the VM + event streams, replay check
-make parity-full     # FULL gate: BOTH journeys on both drivers + target-demo VM, buffer and events goldens
+make parity          # FAST gate: tui + mock-godot over journeys/smoke.journey.json, diff the VM, event and pose streams, replay check
+make parity-full     # FULL gate: BOTH journeys on both drivers + target-demo VM, buffer, events and poses goldens
 make record-goldens  # regenerate journeys/goldens/ after an INTENTIONAL journey/state change
 make parity-godot    # the full journey vs a live Godot build + screenshot set (needs a Godot runtime)
 make test            # the shipping suites (Core + App)
@@ -20,7 +20,7 @@ Two standing gates (build plan sync policy — both pre-push):
 
 - **`make parity`** — the **fast** gate: [`journeys/smoke.journey.json`](../../journeys/smoke.journey.json),
   the first ~10 minutes (through Slice 4's look-in-vs-enter). Run it constantly. It passes when both
-  drivers finish invariant-green, their checkpoint **and event** streams diff clean, and each driver's
+  drivers finish invariant-green, their checkpoint, event **and pose** streams diff clean, and each driver's
   `--replay-check` passes.
 - **`make parity-full`** — the **full** demo gate:
   [`journeys/target-demo.journey.json`](../../journeys/target-demo.journey.json), the complete
@@ -43,7 +43,12 @@ Committed under [`journeys/goldens/`](../../journeys/goldens/):
   compares a fresh run against it (`golden: event stream`). It is LF-pinned by `.gitattributes` like the
   other goldens.
 
-`make record-goldens` regenerates both after an intentional change (then commit the diff). On Aaron's
+- `target-demo.poses` (Phase 2 Slice 2.4). This is the canonical **pose stream** of the target demo, the one L2
+  golden: what Godot will draw, proved without Godot. It is in the format described under
+  [Pose golden](#pose-golden-phase-2-slice-24), recorded from tui, diffed cross-driver, and compared by
+  `parity-full` (`golden: pose stream`). LF-pinned like the others.
+
+`make record-goldens` regenerates them all after an intentional change (then commit the diff). On Aaron's
 Windows box, `make parity-godot` additionally saves a Godot **screenshot** per ledger row into
 `artifacts/godot-screenshots/` — the render-golden set for a vision-model pass (see drift report).
 
@@ -55,7 +60,7 @@ dotnet run --project tools/journey-runner -- \
   --script journeys/target-demo.journey.json \
   [--out artifacts/parity/tui.checkpoints] \
   [--goldens <dir>] [--screenshots <dir>] \
-  [--events-out <file>] [--replay-check] \
+  [--events-out <file>] [--replay-check] [--poses-out <file>] \
   [--data <dir>] [--seed <int>] [--url ws://localhost:9080] [--dump]
 ```
 
@@ -70,7 +75,8 @@ Exit code `0` = pass, `1` = a failed assertion / invariant / driver error, `2` =
 
 - `--events-out <file>` — write the run's event golden (below).
 - `--replay-check` — replay the run's intent log on a fresh session (tui, mock-godot); fails if any
-  step's view-model or event stream differs. Skipped with a note for `godot`.
+  step's view-model or event stream differs, or any commit's pose lines differ. Skipped with a note for `godot`.
+- `--poses-out <file>` — write the run's pose golden (below).
 
 ## Event golden + replay check (Phase 1 Slice 1.7)
 
@@ -108,6 +114,39 @@ Notes:
 - `godot` has no in-process session, so `--replay-check` is skipped there with a note. The tui leg of
   `parity-godot` runs the check instead.
 
+## Pose golden (Phase 2 Slice 2.4)
+
+`--poses-out` writes one line per **moving entity** per sample of each **commit**, LF-terminated:
+
+```
+<journeyStep>:<k> u=<q>/4 t=<ms> entity=<key> bag=bag#N col=<c> row=<r> subX=<x> subY=<y> height=<h|-> facing=<f|->
+```
+
+- A **commit** is one mutating command: a key, click, back, `tick` or `advanceTime` (one `Timeline.Commit` of that
+  response's events). `<k>` is its 0-based ordinal within the journey step (a `tick: 3` step has commits 0–2). An empty
+  commit still takes its ordinal, so k can skip. A `state` or `poses` query is not a commit.
+- `u=<q>/4` is the sample point, q = 0…4, at `t = SpanMs·q/4` ms (integer) of the commit's span (P2-D5). After a clock
+  commit, kept tracks may have started before 0; t = 0 is "now".
+- The moving entities are the keys of the timeline's tracks (departure and landing keys, every channel), sampled with
+  `Timeline.Sample`. A commit with no tracks writes no lines. The rest of the scene is the VM, already goldened.
+- `entity=…` onward is the canonical `PoseText` (invariant culture; `Body(B)`, `Cursor(B)` or `Stack(bag#N[i])`). Bags
+  are named through the run's **one** `EventText`, and a commit's events are named before its poses, so `bag#N`
+  matches the event golden.
+- Example: `112:0 u=2/4 t=62 entity=Body(B) bag=bag#7 col=3 row=1 subX=-8 subY=0 height=- facing=E` (a walk's midpoint).
+
+Where the lines come from:
+- mock-godot and live Godot: the `"poses"` array that `Pockets.Realization.PoseDebugCommandHandler` adds to every
+  success response (one `PoseStream` per controller; `state` returns `[]`). It wraps Core's `DebugCommandHandler`, which
+  cannot hold a `Timeline` itself because Core never references Realization (principle 6). `{"action":"poses"}`
+  returns the last commit's lines.
+- tui: the driver's own `PoseStream` over the events it records. The TUI renders nothing new (P2-D4).
+- The commit's `atMs` (P2-D13) is the clock delta: `advanceTime`'s ms, `GameController.TickLengthMs` for a `tick`, else
+  0. It is never wall-clock.
+- `--replay-check` replays the intent log through `PoseReplayCheck`, committing at each recorded commit's intent count
+  with its `atMs`, and requires identical lines (failures are prefixed `replay poses:`).
+- Timings are policy (`RealizationPolicy`, P2-D5). Tuning one is a pose re-record (`make record-goldens`), never an
+  L1 change; the VM, event and buffer goldens must not move.
+
 ### Running `make parity-godot` on Windows (Aaron)
 
 1. `dotnet build src/Pockets.Godot`, then launch the game. **Start a fresh Godot build and send it no
@@ -116,8 +155,9 @@ Notes:
 2. `make parity-godot`. This runs:
    - the tui leg, with `--events-out` and `--replay-check`;
    - the godot leg over `ws://localhost:9080`, with `--events-out` and the screenshots;
-   - three comparisons: the checkpoints tui vs live-godot, the events tui vs live-godot, and the events
-     golden vs live-godot.
+   - five comparisons: the checkpoints tui vs live-godot, the events and the poses tui vs live-godot, and the
+     events and poses goldens vs live-godot. A pre-2.4 Godot build sends no `poses`; rebuild it (it now references
+     `Pockets.Realization`).
 3. To run it again, restart Godot first (step 1).
 
 ## Drivers
@@ -125,7 +165,7 @@ Notes:
 | `--driver` | Path to Core | Full invariants? | Notes |
 |------------|--------------|------------------|-------|
 | `tui` | Real headless `GameView` under Terminal.Gui `FakeDriver`, driven via `ProcessKey` | yes | Provides a render probe (character buffer) for `assertRender`. |
-| `mock-godot` | In-process `GameController` via `DebugCommandHandler` (the exact Godot WS dispatch) | yes | Mock transport; no render probe. Used by `make parity` where Godot can't run. |
+| `mock-godot` | In-process `GameController` via `PoseDebugCommandHandler` (the exact Godot WS dispatch) | yes | Mock transport; no render probe. Used by `make parity` where Godot can't run. |
 | `godot` | Live WebSocket to a running Godot build's `DebugWebSocketServer` | census limited* | Needs a Godot runtime. Used by `make parity-godot`. |
 
 \* Over the wire only the active-bag view-model is available, so the global conservation

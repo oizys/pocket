@@ -6,6 +6,7 @@ using Pockets.Core.Models;
 using Pockets.Core.Rendering;
 using Pockets.Core.Sim;
 using Pockets.App.Views;
+using Pockets.Realization;
 using TgKey = Terminal.Gui.Key; // disambiguate from this class's Key(GameKey) method
 
 namespace Pockets.JourneyRunner;
@@ -16,6 +17,10 @@ namespace Pockets.JourneyRunner;
 /// <c>ProcessKey</c> input path — the same code a real terminal exercises, including the TUI
 /// keymap and UI refresh. Observations read the live controller session (for the view-model +
 /// invariant pack) and the character buffer (for assert-render).
+///
+/// Poses (Slice 2.4, P2-D4): the driver builds its own <see cref="PoseStream"/> from the events the view received and
+/// names it through the run's <see cref="EventText"/>. The TUI renders nothing new — it is n = 1, and its frame is the
+/// u = 1 sample — so the stream exists only to be diffed against mock-godot's and the golden.
 ///
 /// Terminal.Gui's Application is global/static, so at most one TuiDriver may exist at a time.
 /// </summary>
@@ -30,6 +35,12 @@ public sealed class TuiDriver : IJourneyDriver, ISessionDriver
 
     /// <summary>The event lines the view's controller emitted since the last <see cref="Observe"/>.</summary>
     private readonly List<string> _events = new();
+
+    /// <summary>This run's pose stream (Slice 2.4), named by <see cref="_text"/>; created on the initial state.</summary>
+    private readonly PoseStream _stream;
+
+    /// <summary>The pose commits since the last <see cref="Observe"/>.</summary>
+    private readonly List<ObservedCommit> _poses = new();
 
     public TuiDriver(DemoProfile profile)
     {
@@ -47,6 +58,7 @@ public sealed class TuiDriver : IJourneyDriver, ISessionDriver
         var contents = Application.Driver.Contents;
         _rows = contents.GetLength(0);
         _cols = contents.GetLength(1);
+        _stream = new PoseStream(_view.Controller.Session.Current, _text.Names);
         Render();
     }
 
@@ -60,14 +72,16 @@ public sealed class TuiDriver : IJourneyDriver, ISessionDriver
         var session = _view.Controller.Session;
         var vm = ViewModelSerializer.Serialize(session);
         var events = _events.ToList();
+        var poses = _poses.ToList();
         _events.Clear();
-        return new DriverObservation(vm, session.Current, DumpBuffer(), events);
+        _poses.Clear();
+        return new DriverObservation(vm, session.Current, DumpBuffer(), events, poses);
     }
 
     public void Key(GameKey key)
     {
         _view.ProcessKey(new KeyEvent(MapToKey(key), new KeyModifiers()));
-        Record(_view.LastEvents);
+        Record(_view.LastEvents, atMs: 0);
         Render();
     }
 
@@ -78,13 +92,13 @@ public sealed class TuiDriver : IJourneyDriver, ISessionDriver
     {
         // Rogue demo profile ticks per action; a wait step advances a facility tick explicitly,
         // matching the realtime timer's Controller.Tick(). (Render refreshes on the next key.)
-        Record(_view.Controller.Tick().Events);
+        Record(_view.Controller.Tick().Events, GameController.TickLengthMs);
         Render();
     }
 
     public void Click(Position pos, ClickType type)
     {
-        Record(_view.Controller.HandleGridClick(pos, type).Events);
+        Record(_view.Controller.HandleGridClick(pos, type).Events, atMs: 0);
         Render();
     }
 
@@ -95,13 +109,22 @@ public sealed class TuiDriver : IJourneyDriver, ISessionDriver
     /// </summary>
     public void AdvanceTime(TimeSpan delta)
     {
-        Record(_view.Controller.AdvanceClock(delta).Events);
+        Record(_view.Controller.AdvanceClock(delta).Events, (int)delta.TotalMilliseconds);
         _view.RefreshUi();
         Render();
     }
 
-    /// <summary>Appends <paramref name="events"/> to the pending lines, in this run's naming.</summary>
-    private void Record(ImmutableArray<SimEvent> events) => _events.AddRange(events.Select(_text.Line));
+    /// <summary>
+    /// Appends <paramref name="events"/> to the pending lines, in this run's naming, then commits them to the pose stream
+    /// as one commit (events named before poses, as the debug handler does). <paramref name="atMs"/> is the clock delta
+    /// (P2-D13): the advance's ms, one tick's length, else 0 — the same values <see cref="PoseDebugCommandHandler.AtMs"/> gives.
+    /// </summary>
+    private void Record(ImmutableArray<SimEvent> events, int atMs)
+    {
+        _events.AddRange(events.Select(_text.Line));
+        var lines = _stream.Commit(events, _view.Controller.Session.Current, atMs);
+        _poses.Add(new ObservedCommit(atMs, _view.Controller.Session.IntentLog.Count, lines));
+    }
 
     // --- Terminal.Gui plumbing ---
 

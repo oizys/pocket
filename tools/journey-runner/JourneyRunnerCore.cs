@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Pockets.Core.Models;
 using Pockets.Core.Rendering;
 using Pockets.Core.Sim;
+using Pockets.Realization;
 
 namespace Pockets.JourneyRunner;
 
@@ -16,10 +17,14 @@ public record RunResult(
     IReadOnlyList<string> Failures,
     IReadOnlyList<string> Notes,
     IReadOnlyList<GoldenCapture> Goldens,
-    IReadOnlyList<string>? EventLines = null)
+    IReadOnlyList<string>? EventLines = null,
+    IReadOnlyList<string>? PoseLines = null)
 {
     /// <summary>The event golden lines (<see cref="EventGolden.Lines"/> per journey step; start = -1), in order.</summary>
     public IReadOnlyList<string> EventLines { get; init; } = EventLines ?? Array.Empty<string>();
+
+    /// <summary>The pose golden lines (<see cref="PoseGolden.Lines"/> per journey step; Slice 2.4), in order.</summary>
+    public IReadOnlyList<string> PoseLines { get; init; } = PoseLines ?? Array.Empty<string>();
 
     public bool Passed => Failures.Count == 0;
 }
@@ -51,6 +56,9 @@ public static class JourneyRunnerCore
         var notes = new List<string>();
         var goldens = new List<GoldenCapture>();
         var eventLines = new List<string>();
+        var poseLines = new List<string>();
+        var poseCommits = new List<PoseCommit>();
+        var posesMissing = false;
         var boundaries = new List<ReplayBoundary>();
         var sessionDriver = driver as ISessionDriver;
         var completed = true;
@@ -71,6 +79,7 @@ public static class JourneyRunnerCore
         var prevCensus = start.FullState is { } s0 ? InvariantChecker.Census(s0) : null;
         Emit(checkpoints, -1, "start", start.ViewModel);
         eventLines.AddRange(EventGolden.Lines(-1, start.Events ?? Array.Empty<string>()));
+        RecordPoses(-1, start);
         if (replayFrom is not null && sessionDriver is not null)
             boundaries.Add(Boundary(-1, sessionDriver, start));
         VerifyStructural(driver.Name, -1, "start", start, failures, notes);
@@ -147,6 +156,7 @@ public static class JourneyRunnerCore
 
             Emit(checkpoints, i, label, obs.ViewModel);
             eventLines.AddRange(EventGolden.Lines(i, obs.Events ?? Array.Empty<string>()));
+            RecordPoses(i, obs);
             if (replayFrom is not null && sessionDriver is not null)
                 boundaries.Add(Boundary(i, sessionDriver, obs));
 
@@ -180,10 +190,32 @@ public static class JourneyRunnerCore
                 if (replayFailures.Count == 0)
                     notes.Add($"replay check: {log.Count} intents replayed, {boundaries.Count} checkpoints and " +
                               $"{boundaries.Sum(b => b.Events.Count)} event lines identical");
+
+                // Slice 2.4: the replayed pose lines must match at every commit too.
+                var poseFailures = PoseReplayCheck.Run(replayFrom(), log, poseCommits);
+                failures.AddRange(poseFailures.Select(f => "replay poses: " + f));
+                if (poseFailures.Count == 0)
+                    notes.Add($"replay check: {poseCommits.Count} commits and {poseCommits.Sum(c => c.Lines.Count)} pose lines identical");
             }
         }
 
-        return new RunResult(driver.Name, checkpoints, failures, notes, goldens, eventLines);
+        if (posesMissing)
+            notes.Add($"{driver.Name} sent no poses (a pre-2.4 build?) — its pose stream is empty.");
+
+        return new RunResult(driver.Name, checkpoints, failures, notes, goldens, eventLines, poseLines);
+
+        // One observation's pose commits: the golden lines, and (in process) the replay record of each commit.
+        void RecordPoses(int journeyStep, DriverObservation obs)
+        {
+            if (obs.Poses is not { } commits)
+            {
+                posesMissing = true;
+                return;
+            }
+            poseLines.AddRange(PoseGolden.Lines(journeyStep, commits.Select(c => c.Lines)));
+            poseCommits.AddRange(commits.Where(c => c.IntentCount is not null)
+                .Select(c => new PoseCommit(journeyStep, c.IntentCount!.Value, c.AtMs, c.Lines)));
+        }
     }
 
     /// <summary>One replay boundary: the session's intent count now, the observed view-model text and events.</summary>

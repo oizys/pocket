@@ -8,7 +8,9 @@
     stays focused on the shipping suites; `make parity` builds and runs it directly.
 
     References Pockets.App for the real headless TUI driver (GameView under FakeDriver)
-    and Pockets.Core for the shared serializer / debug command handler / invariant pack.
+    and Pockets.Core for the shared serializer / debug command handler / invariant pack, and
+    Pockets.Realization for the pose stream (Slice 2.4: the debug protocol with poses, the TUI driver's own
+    timeline, and the pose replay check).
   -->
 
   <PropertyGroup>
@@ -27,6 +29,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Pockets.Core/Pockets.Core.csproj" />
     <ProjectReference Include="../../src/Pockets.App/Pockets.App.csproj" />
+    <ProjectReference Include="../../src/Pockets.Realization/Pockets.Realization.csproj" />
   </ItemGroup>
 
 </Project>

@@ -19,9 +19,10 @@ namespace Pockets.Godot.Scripts;
 ///   {"action": "tick"}                              → Tick
 ///   {"action": "advanceTime", "ms": 5000}           → AdvanceClock (scripted clock advance)
 ///   {"action": "state"}                             → Return current state (no mutation)
+///   {"action": "poses"}                             → The last commit's pose lines (Slice 2.4; no mutation)
 ///   {"action": "screenshot", "path": "/tmp/ss.png"} → Save viewport screenshot
 ///
-/// Response: {"handled": bool, "status": "...", "state": {...}}
+/// Response: {"handled": bool, "status": "...", "state": {...}, "events": [...], "poses": [...]}
 /// </summary>
 public partial class DebugWebSocketServer : Node
 {
@@ -98,14 +99,14 @@ public partial class DebugWebSocketServer : Node
                 return ErrorResponse("GameController not initialized");
 
             // Screenshot needs the Godot viewport, so it stays transport-local. Every other
-            // action routes through the shared Core dispatch (Pockets.Core.Rendering.
-            // DebugCommandHandler) — the exact same server-side path the journey runner's
-            // mock transport exercises, and one shared view-model serializer for both.
+            // action routes through the shared dispatch (Pockets.Realization.PoseDebugCommandHandler:
+            // Core's DebugCommandHandler plus the pose stream, Slice 2.4) — the exact same server-side
+            // path the journey runner's mock transport exercises, and one shared view-model serializer for both.
             var cmd = JsonNode.Parse(json);
             if (cmd is not null && cmd["action"]?.GetValue<string>() == "screenshot")
                 return HandleScreenshot(cmd);
 
-            var response = Core.Rendering.DebugCommandHandler.Handle(Controller, json, out var mutated);
+            var response = Realization.PoseDebugCommandHandler.Handle(Controller, json, out var mutated);
             if (mutated)
                 CallDeferred(nameof(DeferredRefreshUI));
             return response;
@@ -128,7 +129,8 @@ public partial class DebugWebSocketServer : Node
             ["handled"] = true,
             ["status"] = $"Screenshot saved to {path}",
             ["state"] = Core.Rendering.ViewModelSerializer.Serialize(Controller!.Session),
-            ["events"] = new JsonArray() // Slice 1.6: every response carries events; a screenshot emits none
+            ["events"] = new JsonArray(), // Slice 1.6: every response carries events; a screenshot emits none
+            ["poses"] = new JsonArray()   // Slice 2.4: nor poses; a screenshot is not a commit
         };
         return response.ToJsonString();
     }
