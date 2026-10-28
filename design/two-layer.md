@@ -740,7 +740,8 @@ Findings:
 ```
 
 0. **Design doc and spikes.** ✓ (this doc, `spikes/`).
-1. **Step contract, events, scheduler skeleton (no behaviour change).** Refactor
+1. **Step contract, events, scheduler skeleton (no behaviour change).** Slice plan:
+   [two-layer-phase1-plan.md](two-layer-phase1-plan.md). Refactor
    `ApplyResult`/`TickFacilities`/`Tick` into `Step(state, intents) → (state, events)`. Add
    an `Intent` type for every controller path, a seeded counter RNG in state (G2), a stable
    `ScheduleOrder` (G3), and a per-bag `rate/mode` field that is always `Observed/1` for now.
