@@ -519,3 +519,55 @@ then its poses).
 - `CoreSimAndModels_DoNotReferenceRealization` scans the text of `Pockets.Core/Sim/**` and `Models/**`,
   and checks that the Core assembly has no reference to Realization (principle 6). 2.6 extends the scan
   to `Pockets.Core.Fine`.
+
+## Addendum — Slice 2.1 as built (2026-10-28)
+
+Golden-neutral, with no Core, App or Godot edit. `dotnet test` is green (Core 1032, App 54, Realization 45)
+and `make parity-full` is green. The VM, events and 11 buffer goldens are byte-identical.
+
+### Production (`src/Pockets.Realization/`)
+
+- **`IFineView`** (P2-D9) has two members: `StackOffset(CellRef) → (Dx, Dy)` and
+  `BodyOffset(LocationId, Guid bag) → (Px, Py)`, both centre-relative in 1/16ths. `FineView.Empty` is the
+  all-zero view. It lives in Realization, not in Core, so Core stays untouched. **For 2.6:** back it with
+  a small adapter over `FineState` (Realization may read Core). Alternatively, move the interface to
+  `Pockets.Core.Fine` and let `FineState` implement it directly; either way, the call sites keep the
+  same shape.
+- **`Scene(ImmutableArray<Pose> Poses)`**:
+  - `Scene.FromState(GameState, IReadOnlyList<LocationId> shown, IFineView? fine = null,
+    IReadOnlyDictionary<LocationId, Facing>? facings = null)`.
+  - It walks `shown` in order and skips absent locations. Each location's bag is `ActiveBagAt(loc)`.
+  - For each location it emits a `Body(loc)` first (only in a world bag), at the location's cursor and
+    facing `facings[loc]`, or `S` if there is none. It then emits one `Stack(cell)` per non-empty cell in
+    index order.
+  - Everything is at Sub (0, 0) plus the fine offset, with `Height = null`. Stacks have `Facing = null`.
+  - A bag shown by two locations emits its stacks once, at its first occurrence.
+  - `Find(EntityKey) → Pose?`.
+  - **For 2.2:** the timeline passes the last walk direction through `facings`.
+- **The world-bag predicate:** `Scene.IsWorldBag(bag) = GameState.IsWildernessType(env) || bag.EnterOnly`.
+  This **widens the plan's body definition.** The demo's Quiet 1 has env `"Quiet 1"`, which is not a
+  wilderness-type name, but it is `EnterOnly`, and without that clause the demo would have no body. It
+  matches `GameState.IsDescendableBag`'s existing reasoning.
+
+### Tests (`tests/Pockets.Realization.Tests/`)
+
+- **`ZoomAscii.Render(poses, bag, n = 4)`** is a test-side helper:
+  - each cell is n×n `.`; cells are joined by `|`, and grid rows are separated by `-`/`+` lines;
+  - the sub index is `floor((sub + 8)·n / 16)`, so a centred pose at n = 4 sits on index 2, and
+    `SubX = +8` lands on index 0 of the next cell (the two-layer.md boundary example);
+  - stacks draw `GlyphRenderer.GlyphFor`, or `*` if the keyed cell is empty (useful for in-flight
+    departure keys in 2.2); the body draws `@` on top;
+  - other bags' poses and off-grid poses are skipped.
+- **`ZoomAsciiTests`** covers an empty bag, row separators, a body, a stack glyph, the boundary example,
+  and body-over-stack with foreign and off-grid poses skipped.
+- **`SceneTests`** covers the demo start (no body, centred stacks), a world bag's body at the cursor
+  facing S, the facing override, fine offsets, absent locations, a bag shown twice, H/T bags,
+  `FineView.Empty` and `Find`.
+- **`SceneJourneyTests`** is the **n = 1 ≡ VM** property. It runs both journeys through
+  `DebugCommandHandler`, and at the start and after every step it checks `Scene.FromState(state, [B, H, T])`
+  against `ViewModelSerializer`:
+  - B's stack cells equal the VM's non-empty cells;
+  - there is a body iff B's bag is a world bag, and it sits on the VM cursor;
+  - the hand count and the toolbar slot indices match the VM;
+  - every pose is centred, with no height.
+  It also asserts that target-demo reaches a body (Quiet 1), so the check is not vacuous.
