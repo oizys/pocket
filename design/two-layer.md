@@ -166,6 +166,27 @@ runs in three phases:
    vacated in this same step**, and the mover wins the target's deterministic tie-break.
 3. **Commit:** apply all winning moves at once, and emit `Moved` / `Blocked` events.
 
+**Belt rulings (Aaron, ratified 2026-10-27):**
+
+- **R1. A completely full belt loop stops.** If every cell of a ring is occupied, nothing
+  can vacate first, so the ring stalls and each cell emits `Blocked(full)`. A ring with at
+  least one gap rotates. This needs no SCC detection: an on-stack hit in `Vacates` simply
+  counts as "not vacating".
+- **R2. Merges use fixed side priority.** For a target belt flowing in direction D, the
+  order is **straight-through** (the input from behind) **> left side > right side**
+  (> head-on, which is degenerate). Targets with no direction (sinks) use a fixed N, E, S, W.
+  The main line always wins, and a side input enters **only when the main line leaves room**.
+  - **Consequence, accepted:** a saturated main line **starves** its side inputs
+    indefinitely (spike A: over 100 steps the main source delivers 100 and the side 0). The
+    player's eventual tool for this is a buildable **priority splitter / merger** frame (or
+    similar), not a change to the rule.
+  - **Rationale:** it is deterministic **and stateless**. No per-merge cursor (`LastWinner`)
+    lives in L1 state, so there is nothing to save, snapshot, diff or replay. Each step's
+    outcome depends only on occupancy. It also gives a **simpler catch-up bound**: the main
+    line never yields, so it remains a linear chain whose exact item recurrence (spike C)
+    is unaffected by side inputs. Only the side inputs need the bounded treatment, and they
+    see a known gap schedule.
+
 Spike A showed why the resolve phase is required: the naive "move if the target was empty
 last frame" rule *is* Rule 184. A full belt starts with a ripple and settles at half
 throughput. Chain resolution moves a full belt as a single unit. (Details in §Spike A.)
@@ -335,7 +356,7 @@ k ∈ {2, 4, 8}; details in §Spike C):
 | P1 plaque accumulator | end state exact, crossing times ±(k−1) | exact | closed form, exact, 1 op | `ClosedForm` |
 | P2 plaque spread (Moore) | **diverges** (maxAbs 16→352 as k 2→8) | exact | threshold jumps, exact, 56–60 jumps for 240–2400 steps | `EventSkippable` |
 | Linear belt (source→sink) | **diverges** (items lost/late) | exact | item recurrence, exact, cost = #items | `EventSkippable` |
-| Belt network with merges | (not spiked) | exact (it is just Step) | no closed form shown | `BoundedCatchUp` |
+| Belt network with merges | (not spiked) | exact (it is just Step) | no closed form shown. Under R2 the main line keeps its exact linear recurrence; only side inputs need bounding | `BoundedCatchUp` (main line `EventSkippable`) |
 | Lint random walk | stateful RNG diverges; counter RNG exact | exact only with counter RNG | none | `MustSimulate` |
 
 ### L2 Realization (D11, A2)
@@ -470,23 +491,34 @@ never develops gaps:
  t00 ⇒▶▶▶▶K out=0   t02 ⇒AA▶▶K out=0   t04 ⇒AAAAK out=0   t05 ⇒AAAAK out=1   t06 ⇒AAAAK out=2
 ```
 
-**Conflict: two sources into one cell.** The merge cell keeps `LastWinner` (integer
-state, part of L1). The first contested pick uses the fixed order N, E, S, W. After that,
-the winner is the next contender cyclically after the last winner (round-robin). The
+**Conflict: two sources into one cell.** This uses fixed side priority (ruling R2) and keeps
+no per-merge state. In `.⇓.|⇒▶K` the merge cell flows east, so A (from the west) is
+straight-through and B (from the north) is a side input. A saturated main line starves B
+completely: over 2N steps A delivers 2N and B delivers 0. If the main line leaves gaps (A
+emits every 2nd step), B fills exactly those gaps. With three inputs (W main every 3rd
+step, N = left, S = right), left beats right in every gap and the right input starves. The
 loser and **its whole chain** stay put (no phantom compression). The result is identical
-across 10 seeded shuffles of input order, and over 2N steps each source gets exactly N.
+across 10 seeded shuffles of the input listing order.
 
 ```
- 2-way merge  .⇓.|⇒▶K               loser's chain stays put (A from W vs a column of B from N)
- t01 .⇓.|⇒BK out=0  ← N first       t00 .B.|.B.|.B.|A▶K out=0
- t02 .⇓.|⇒AK out=1  ← then W        t01 .▼.|.B.|.B.|ABK out=0
- t03 .⇓.|⇒BK out=2                  t02 .▼.|.B.|.B.|▶AK out=1   ← B-chain did not compress
- t04 .⇓.|⇒AK out=3                  t03 .▼.|.▼.|.B.|▶BK out=2
+ saturated main (B starves)    main every 2nd step          3 inputs, main every 3rd (C starves)
+ t00 .⇓.|⇒▶K out=0             t00 .⇓.|⇒▶K out=0            t00 .⇓.|⇒▶K|.⇑. out=0
+ t01 .⇓.|⇒AK out=0             t01 .⇓.|⇒AK out=0            t01 .⇓.|⇒AK|.⇑. out=0   main
+ t02 .⇓.|⇒AK out=1             t02 .⇓.|⇒BK out=1  ← gap     t02 .⇓.|⇒BK|.⇑. out=1   left
+ t03 .⇓.|⇒AK out=2             t03 .⇓.|⇒AK out=2            t03 .⇓.|⇒BK|.⇑. out=2   left
+ t04 .⇓.|⇒AK out=3             t04 .⇓.|⇒BK out=3  ← gap     t04 .⇓.|⇒AK|.⇑. out=3   main
+
+ loser's chain stays put (A = main from W, column of Bs = side from N)
+ t00 .B.|.B.|.B.|A▶K out=0
+ t01 .B.|.B.|.B.|▶AK out=0   ← A wins, the Bs wait (no compression)
+ t02 .▼.|.B.|.B.|▶BK out=1   ← B enters the room A left
+ t03 .▼.|.▼.|.B.|▶BK out=2
+ t04 .▼.|.▼.|.▼.|▶BK out=3
 ```
 
 The resolver is a memoized `Vacates(cell)` with cycle detection. A ring with one gap rotates.
 A **fully saturated ring stalls** (an on-stack hit counts as "not vacating") and emits one
-`Blocked` per cell. That is a deliberate, documented choice (see Status). Conservation
+`Blocked` per cell, as ratified in R1. Conservation
 (`items before + emitted = items after + consumed`) holds for 200 steps of a messy 5×3 belt
 soup under both step functions.
 
@@ -671,9 +703,9 @@ Findings:
 **Ratified; Phase 0 complete.** Next: Phase 1 slice plan (worker-sized, parity-gated).
 Open questions carried forward:
 
-- Full saturated belt rings: stall (spike A choice) or rotate as a unit (needs SCC detection)?
 - Lint spawn determinism on observe (entropy Q3) now has an architectural default:
   counter-RNG keyed `(seed, bag, closedDuration)`, which is MP-safe (G8). The tension
   vs. reroll question is still a design call.
-- Merge fairness for belts: round-robin per merge cell (spike A) vs. Factorio-style
-  side priority. This is a feel question, and both are deterministic.
+
+Resolved since Phase 0 (2026-10-27): a full belt loop **stalls** (R1), and merges use **fixed
+side priority** with accepted side-input starvation (R2). See §Rule kinds.

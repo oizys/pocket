@@ -37,8 +37,8 @@ public readonly record struct CellSpec(int X, int Y, CellKind Kind, int Dir, cha
 ///   items layer: '.' empty; a letter = item sitting on that belt; on a SOURCE cell the letter is the item it emits.
 /// Example: Parse("⇒▶▶▶K", "A.....") is a saturated source 'A' feeding a 3-belt line into a sink.
 /// Render() is the single-layer view used in traces: items show as their letter, empty belts as arrows.
-/// Per-cell integer memory: Period (source emit period / sink consume period, fires when Tick % Period == 0)
-/// and LastWinner (merge memory: side of the last contested winner, -1 = none).
+/// Per-cell integer memory: Period (source emit period / sink consume period, fires when Tick % Period == 0).
+/// Merges are stateless (fixed side priority, see BeltSim), so there is no per-merge memory.
 /// </summary>
 public sealed class BeltState
 {
@@ -56,19 +56,16 @@ public sealed class BeltState
     public char[] Item { get; }
     /// <summary>Source emit period / sink consume period (>= 1).</summary>
     public int[] Period { get; }
-    /// <summary>Merge memory per target cell: side (0..3) that won the last contested resolution, or -1.</summary>
-    public int[] LastWinner { get; }
-
-    private BeltState(int w, int h, int tick, CellKind[] k, int[] d, char[] i, int[] p, int[] lw)
-    { W = w; H = h; Tick = tick; Kind = k; Dir = d; Item = i; Period = p; LastWinner = lw; }
+    private BeltState(int w, int h, int tick, CellKind[] k, int[] d, char[] i, int[] p)
+    { W = w; H = h; Tick = tick; Kind = k; Dir = d; Item = i; Period = p; }
 
     /// <summary>Create an empty world.</summary>
     public static BeltState Empty(int w, int h) => new(w, h, 0, new CellKind[w * h], new int[w * h],
-        new char[w * h], Enumerable.Repeat(1, w * h).ToArray(), Enumerable.Repeat(-1, w * h).ToArray());
+        new char[w * h], Enumerable.Repeat(1, w * h).ToArray());
 
     /// <summary>Deep copy, optionally with a new tick.</summary>
     public BeltState Clone(int? tick = null) => new(W, H, tick ?? Tick, (CellKind[])Kind.Clone(), (int[])Dir.Clone(),
-        (char[])Item.Clone(), (int[])Period.Clone(), (int[])LastWinner.Clone());
+        (char[])Item.Clone(), (int[])Period.Clone());
 
     /// <summary>Copy with a different tick counter (phase of source/sink periods).</summary>
     public BeltState WithTick(int tick) => Clone(tick);

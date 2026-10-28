@@ -102,20 +102,21 @@ public class BeltTests
     }
 
     [Fact]
-    public void Merge_TwoSources_Trace_Alternates_StartingWithNorth()
+    public void Merge_SidePriority_SaturatedMain_Starves_Side()
     {
+        // merge cell (1,1) flows east: A from the west is straight-through (main), B from the north is a side input.
         var s = BeltState.Parse(".⇓./⇒▶K", ".B./A..");
         var expected = Lines(
             "t00 .⇓.|⇒▶K out=0",
-            "t01 .⇓.|⇒BK out=0",
+            "t01 .⇓.|⇒AK out=0",
             "t02 .⇓.|⇒AK out=1",
-            "t03 .⇓.|⇒BK out=2",
+            "t03 .⇓.|⇒AK out=2",
             "t04 .⇓.|⇒AK out=3");
         Assert.Equal(expected, Trace(s, 4, BeltSim.ChainStep));
     }
 
     [Fact]
-    public void Merge_TwoSources_Fair_Over_2N_And_Repeatable()
+    public void Merge_SidePriority_Over_2N_Main_Gets_All_Side_Starves_And_Repeatable()
     {
         const int N = 50;
         int Count(char who)
@@ -130,22 +131,54 @@ public class BeltTests
             }
             return c;
         }
-        Assert.Equal(N, Count('A'));
-        Assert.Equal(N, Count('B'));
+        Assert.Equal(2 * N, Count('A'));
+        Assert.Equal(0, Count('B'));
         Assert.Equal(Count('A'), Count('A'));
     }
 
     [Fact]
-    public void Merge_ThreeSources_RoundRobin_N_S_W()
+    public void Merge_SidePriority_Side_Enters_Only_When_Main_Leaves_Room()
     {
-        var s = BeltState.Parse(".⇓./⇒▶K/.⇑.", ".B./A../.C.");
+        // main source A emits every 2nd step; the side input B fills exactly the gaps.
+        var specs = new List<CellSpec>
+        {
+            new(1, 0, CellKind.Source, 2, 'B', 1),
+            new(0, 1, CellKind.Source, 1, 'A', 2),
+            new(1, 1, CellKind.Belt, 1, '\0', 1),
+            new(2, 1, CellKind.Sink, 0, '\0', 1),
+        };
+        var expected = Lines(
+            "t00 .⇓.|⇒▶K out=0",
+            "t01 .⇓.|⇒AK out=0",
+            "t02 .⇓.|⇒BK out=1",
+            "t03 .⇓.|⇒AK out=2",
+            "t04 .⇓.|⇒BK out=3");
+        Assert.Equal(expected, Trace(BeltState.FromSpecs(3, 2, specs), 4, BeltSim.ChainStep));
+    }
+
+    [Fact]
+    public void Merge_ThreeInputs_SidePriority_Straight_Then_Left_Then_Right()
+    {
+        // east-flowing merge: W = straight (period 3), N = left side, S = right side. Left beats right in the gaps.
+        var specs = new List<CellSpec>
+        {
+            new(1, 0, CellKind.Source, 2, 'B', 1),
+            new(0, 1, CellKind.Source, 1, 'A', 3),
+            new(1, 1, CellKind.Belt, 1, '\0', 1),
+            new(2, 1, CellKind.Sink, 0, '\0', 1),
+            new(1, 2, CellKind.Source, 0, 'C', 1),
+        };
         var expected = Lines(
             "t00 .⇓.|⇒▶K|.⇑. out=0",
-            "t01 .⇓.|⇒BK|.⇑. out=0",
-            "t02 .⇓.|⇒CK|.⇑. out=1",
-            "t03 .⇓.|⇒AK|.⇑. out=2",
-            "t04 .⇓.|⇒BK|.⇑. out=3");
-        Assert.Equal(expected, Trace(s, 4, BeltSim.ChainStep));
+            "t01 .⇓.|⇒AK|.⇑. out=0",
+            "t02 .⇓.|⇒BK|.⇑. out=1",
+            "t03 .⇓.|⇒BK|.⇑. out=2",
+            "t04 .⇓.|⇒AK|.⇑. out=3",
+            "t05 .⇓.|⇒BK|.⇑. out=4",
+            "t06 .⇓.|⇒BK|.⇑. out=5");
+        var trace = Trace(BeltState.FromSpecs(3, 3, specs), 6, BeltSim.ChainStep);
+        Assert.Equal(expected, trace);
+        Assert.DoesNotContain('C', trace.Replace("⇑", ""));
     }
 
     [Fact]
@@ -171,12 +204,12 @@ public class BeltTests
     [Fact]
     public void Merge_Loser_Chain_Stays_Put_NoCompression()
     {
-        // north chain of 3 B's and one A from the west contest the merge cell (1,3); sink eats 1/step.
+        // north chain of 3 B's (side input) and one A from the west (straight-through) contest the merge cell (1,3).
         var s = BeltState.Parse(".▼./.▼./.▼./▶▶K", ".B./.B./.B./A..");
         var expected = Lines(
             "t00 .B.|.B.|.B.|A▶K out=0",
-            "t01 .▼.|.B.|.B.|ABK out=0",
-            "t02 .▼.|.B.|.B.|▶AK out=1",
+            "t01 .B.|.B.|.B.|▶AK out=0",
+            "t02 .▼.|.B.|.B.|▶BK out=1",
             "t03 .▼.|.▼.|.B.|▶BK out=2",
             "t04 .▼.|.▼.|.▼.|▶BK out=3");
         var trace = Trace(s, 4, BeltSim.ChainStep);
@@ -187,9 +220,9 @@ public class BeltTests
     public void Merge_Loser_Gets_LostMerge_Event()
     {
         var s = BeltState.Parse(".▼./▶▶K", ".B./A..");
-        var r = BeltSim.ChainStep(s);              // B (north) wins first; A loses
-        Assert.Contains(r.Events, e => e is Blocked { Reason: "lost-merge" } b && b.From == new Pos(0, 1));
-        Assert.Contains(r.Events, e => e is Moved { Cause: "belt" } m && m.Item == 'B');
+        var r = BeltSim.ChainStep(s);              // A (straight-through) wins; B (side) loses
+        Assert.Contains(r.Events, e => e is Blocked { Reason: "lost-merge" } b && b.From == new Pos(1, 0));
+        Assert.Contains(r.Events, e => e is Moved { Cause: "belt" } m && m.Item == 'A');
     }
 
     [Fact]

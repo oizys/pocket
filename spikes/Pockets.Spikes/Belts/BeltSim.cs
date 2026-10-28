@@ -8,9 +8,11 @@ namespace Pockets.Spikes.Belts;
 /// ChainStep: an item enters a cell if it is empty OR its occupant moves out this same step; resolved through memoized
 ///   recursion Vacates(cell). CYCLE CHOICE: a hit on a cell already on the recursion stack counts as "not vacating", so a
 ///   fully saturated ring stalls (no cell can start the chain); a ring with at least one gap rotates.
-/// MERGE TIE-BREAK: contenders into a target cell are identified by the SIDE they sit on (N,E,S,W). The target keeps
-///   LastWinner; the next contested decision picks the first contender at or after side (LastWinner+1) cyclically
-///   (first decision: fixed order N,E,S,W). Memory is only updated when a contest (>=2 contenders) is actually accepted.
+/// MERGE TIE-BREAK (ratified 2026-10-27): FIXED SIDE PRIORITY, stateless. Contenders into a target cell are identified
+///   by the side they sit on. For a belt target flowing in direction D the order is: straight-through (the input from
+///   behind, Opposite(D)) > left side > right side (> head-on, degenerate). The side input therefore only enters when
+///   the main line leaves room; a saturated main line starves it (accepted — a player-built priority splitter is the
+///   eventual tool). Targets without a direction (sinks) use fixed N,E,S,W. No per-merge memory in state.
 ///   Sources are ordinary contenders. Nothing depends on dictionary order or on listing order of cells.
 /// </summary>
 public static class BeltSim
@@ -54,8 +56,7 @@ public static class BeltSim
             var sides = Contenders(t);
             if (sides.Length == 0) return -1;
             if (sides.Length == 1) return sides[0];
-            int start = (s.LastWinner[t] + 1) & 3;   // LastWinner -1 => start 0 => fixed order N,E,S,W
-            return Enumerable.Range(0, 4).Select(i => (start + i) & 3).First(sides.Contains);
+            return Priority(s, t).First(sides.Contains);
         }
 
         var memo = new byte[n]; // 0 unknown, 1 on stack, 2 false, 3 true
@@ -109,10 +110,18 @@ public static class BeltSim
             }
         }
         foreach (var (cell, item) in placements) after.Item[cell] = item;
-        for (int t = 0; t < n; t++)
-            if (s.Kind[t] is CellKind.Belt or CellKind.Sink && Contenders(t).Length >= 2 && Accept(t))
-                after.LastWinner[t] = Winner(t);
         return new StepResult(after, events);
+    }
+
+    /// <summary>
+    /// Fixed side-priority order of input sides into target <paramref name="t"/>: for a belt flowing D,
+    /// straight-through (from behind), then left, then right, then head-on; for sinks, N,E,S,W.
+    /// </summary>
+    private static int[] Priority(BeltState s, int t)
+    {
+        if (s.Kind[t] != CellKind.Belt) return new[] { 0, 1, 2, 3 };
+        int d = s.Dir[t];
+        return new[] { Dirs.Opposite(d), (d + 3) & 3, (d + 1) & 3, d };
     }
 }
 
