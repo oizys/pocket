@@ -48,7 +48,8 @@ public static class JourneyRunnerCore
 {
     /// <param name="screenshotDir">
     /// When non-null and the driver implements <see cref="IScreenshotDriver"/> (real Godot only),
-    /// each golden-flagged checkpoint saves a <c>&lt;label&gt;.png</c> here. Ignored otherwise.
+    /// each golden-flagged checkpoint saves a <c>&lt;label&gt;.png</c> here. Ignored otherwise. A relative dir is
+    /// resolved against the runner's cwd and sent to the driver as an absolute path.
     /// </param>
     /// <param name="replayFrom">
     /// When non-null (<c>--replay-check</c>), a factory for a fresh session of the same profile; for an
@@ -88,6 +89,9 @@ public static class JourneyRunnerCore
         var screenshotter = driver as IScreenshotDriver;
         if (screenshotDir is not null)
         {
+            // Rooted against the runner's cwd: the Godot server resolves a relative path against its own
+            // project dir (res://), not ours, so a relative path would point at a dir that doesn't exist there.
+            screenshotDir = Path.GetFullPath(screenshotDir);
             if (screenshotter is null)
                 notes.Add($"screenshot capture requested but {driver.Name} has no viewport — skipped " +
                           "(only the live godot driver captures screenshots; see drift report).");

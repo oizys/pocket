@@ -81,6 +81,8 @@ Exit code `0` = pass, `1` = a failed assertion / invariant / driver error, `2` =
 - `--screenshots <dir>` — at every `"golden": true` checkpoint, ask a screenshot-capable driver
   (real **godot** only) to save `<dir>/<label>.png` (the transport-local `screenshot` action). Other
   drivers note-skip; it never blocks the run.
+  A relative `<dir>` resolves against the runner's cwd and is sent to Godot as an absolute path, so the PNGs land in
+  the repo-root `artifacts/godot-screenshots/` (not under `src/Pockets.Godot/`, where Godot resolves relative paths).
 
 - `--events-out <file>` — write the run's event golden (below).
 - `--replay-check` — replay the run's intent log on a fresh session (tui, mock-godot); fails if any

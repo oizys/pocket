@@ -63,8 +63,9 @@ test:
 ## FAST parity gate: run the smoke journey on the TUI driver (real headless GameView) and the
 ## mock-transport Godot driver (shared debug-command handler), then diff the checkpoint and event
 ## streams. Both runs also assert the invariant pack after every step and the replay gate at the end.
-## Fails if either run fails or the streams diverge.
+## Fails if either run fails or the streams diverge. Runs the runner's own unit tests first.
 parity:
+	dotnet test tools/journey-runner-tests
 	dotnet run --project $(RUNNER) -- --driver tui        --script $(SMOKE) --out $(OUT)/smoke.tui.checkpoints        --events-out $(OUT)/smoke.tui.events        --poses-out $(OUT)/smoke.tui.poses        --replay-check
 	dotnet run --project $(RUNNER) -- --driver mock-godot --script $(SMOKE) --out $(OUT)/smoke.mock-godot.checkpoints --events-out $(OUT)/smoke.mock-godot.events --poses-out $(OUT)/smoke.mock-godot.poses --replay-check
 	dotnet run --project $(RUNNER) -- --compare $(OUT)/smoke.tui.checkpoints $(OUT)/smoke.mock-godot.checkpoints --label "smoke cross-driver"
